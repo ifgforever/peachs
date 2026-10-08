@@ -3,257 +3,655 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Peach's on 47th · Brunch on King Drive</title>
-  <meta name="description" content="Peach's on 47th — Bronzeville brunch at 4652 S. King Drive, Chicago. Open Wednesday–Sunday, 8am–2pm. Dine in or order online for pickup.">
-  <meta name="theme-color" content="#fff4e8">
+  <!-- Concept preview: keep it out of search so it never competes with the live site. -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>Peach’s on 47th | Southern Breakfast &amp; Brunch in Bronzeville, Chicago</title>
+  <meta name="description" content="Peach’s on 47th: Southern breakfast and brunch at 4652 S. King Drive in Chicago’s Bronzeville. 7-Up pancakes, peach bourbon French toast, shrimp &amp; grits. Open Wednesday to Sunday, 8am to 2pm. Dine in, pickup and catering.">
+  <meta name="theme-color" content="#F9AE7F">
+  <link rel="icon" type="image/png" href="assets/img/brand/badge.png">
+  <link rel="apple-touch-icon" href="assets/img/brand/badge.png">
+
+  <meta property="og:type" content="restaurant">
+  <meta property="og:site_name" content="Peach’s on 47th">
+  <meta property="og:title" content="Peach’s on 47th | Breakfast, stacked high in Bronzeville">
+  <meta property="og:description" content="Southern breakfast and brunch at 4652 S. King Drive, Chicago. Open Wednesday to Sunday, 8am to 2pm.">
+  <meta property="og:url" content="https://peachson47th.com/">
+  <meta property="og:image" content="https://peachson47th.com/assets/img/food/berry-pancakes.webp">
+  <meta property="og:image:width" content="750">
+  <meta property="og:image:height" content="750">
+  <meta property="og:image:alt" content="A tall stack of pancakes with blueberry lemon topping">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@peachson47th">
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;1,9..144,500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <script>document.documentElement.classList.add("js")</script>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;display=swap">
+  <link rel="stylesheet" href="assets/css/styles.css">
+
+  <!-- Import-map polyfill for older Safari (iOS < 16.4); no-op in browsers that support import maps -->
+  <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" crossorigin="anonymous"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Restaurant",
+    "name": "Peach's on 47th",
+    "alternateName": "Peach's Restaurant",
+    "url": "https://peachson47th.com/",
+    "image": "https://peachson47th.com/assets/img/food/berry-pancakes.webp",
+    "logo": "https://peachson47th.com/assets/img/brand/badge.png",
+    "telephone": "+1-773-966-5801",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "4652 S. King Drive",
+      "addressLocality": "Chicago",
+      "addressRegion": "IL",
+      "postalCode": "60653",
+      "addressCountry": "US"
+    },
+    "openingHoursSpecification": [
+      {
+        "@type": "OpeningHoursSpecification",
+        "dayOfWeek": ["https://schema.org/Wednesday", "https://schema.org/Thursday", "https://schema.org/Friday", "https://schema.org/Saturday", "https://schema.org/Sunday"],
+        "opens": "08:00",
+        "closes": "14:00"
+      }
+    ],
+    "servesCuisine": ["Southern", "Breakfast", "Brunch"],
+    "priceRange": "$$",
+    "menu": "https://peachson47th.com/#menu",
+    "potentialAction": {
+      "@type": "OrderAction",
+      "target": "https://order.toasttab.com/online/peachs-restaurant-king-dr",
+      "deliveryMethod": "http://purl.org/goodrelations/v1#DeliveryModePickUp"
+    },
+    "sameAs": [
+      "https://www.instagram.com/peachson47th/",
+      "https://www.facebook.com/Peachson47th/",
+      "https://twitter.com/peachson47th",
+      "https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html"
+    ]
+  }
+  </script>
+
+  <script type="module" src="assets/js/main.js"></script>
 </head>
-<body>
-
-  <!-- Shared drawings for the floating pancake stack -->
-  <svg width="0" height="0" class="sr-defs" aria-hidden="true" focusable="false">
-    <defs>
-      <linearGradient id="pc-side" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#f7dca4"/>
-        <stop offset=".28" stop-color="#e9b56a"/>
-        <stop offset=".7" stop-color="#c97d36"/>
-        <stop offset="1" stop-color="#9a5420"/>
-      </linearGradient>
-      <radialGradient id="pc-top" cx=".5" cy=".46" r=".6">
-        <stop offset="0" stop-color="#c06a26"/>
-        <stop offset=".45" stop-color="#d98d3e"/>
-        <stop offset=".82" stop-color="#eebc72"/>
-        <stop offset="1" stop-color="#f8dba2"/>
-      </radialGradient>
-      <radialGradient id="berry" cx=".35" cy=".3" r=".75">
-        <stop offset="0" stop-color="#8f9be0"/>
-        <stop offset=".35" stop-color="#3d4592"/>
-        <stop offset="1" stop-color="#1b1d48"/>
-      </radialGradient>
-      <linearGradient id="compote" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#6a2f7d"/>
-        <stop offset=".6" stop-color="#43195a"/>
-        <stop offset="1" stop-color="#2a0f36"/>
-      </linearGradient>
-      <radialGradient id="cream" cx=".4" cy=".35" r=".7">
-        <stop offset="0" stop-color="#ffffff"/>
-        <stop offset=".7" stop-color="#fbf3e4"/>
-        <stop offset="1" stop-color="#ead9bd"/>
-      </radialGradient>
-
-      <symbol id="pancake" viewBox="0 0 320 92">
-        <path d="M18 40 V54 A142 30 0 0 0 302 54 V40 Z" fill="url(#pc-side)"/>
-        <path d="M18 54 A142 30 0 0 0 302 54" fill="none" stroke="#8a4a1b" stroke-opacity=".35" stroke-width="2"/>
-        <ellipse cx="160" cy="40" rx="142" ry="30" fill="url(#pc-top)"/>
-        <ellipse cx="160" cy="40" rx="141" ry="29" fill="none" stroke="#fbe3b3" stroke-opacity=".7" stroke-width="2"/>
-        <g fill="#b45f22" opacity=".28">
-          <ellipse cx="118" cy="36" rx="16" ry="5"/>
-          <ellipse cx="196" cy="45" rx="20" ry="6"/>
-          <ellipse cx="170" cy="30" rx="10" ry="3.5"/>
-          <ellipse cx="96" cy="47" rx="9" ry="3"/>
-          <ellipse cx="228" cy="33" rx="12" ry="4"/>
-        </g>
-      </symbol>
-
-      <symbol id="blueberry" viewBox="0 0 40 40">
-        <circle cx="20" cy="21" r="17" fill="url(#berry)"/>
-        <path d="M20 9 l2.4 3.6 4.2-.6-2.4 3.4 2.4 3.4-4.2-.6L20 21.8l-2.4-3.6-4.2.6 2.4-3.4-2.4-3.4 4.2.6Z" fill="#1a1a3a" opacity=".55" transform="translate(0 -2) scale(1 .75) translate(0 3)"/>
-        <ellipse cx="13" cy="14" rx="4" ry="2.4" fill="#fff" opacity=".35" transform="rotate(-30 13 14)"/>
-      </symbol>
-
-      <symbol id="whip" viewBox="0 0 120 70">
-        <path d="M10 56 C4 44 18 36 28 38 C26 24 44 16 56 24 C60 10 82 10 86 26 C100 22 114 34 106 46 C118 52 110 66 96 64 L22 64 C12 64 8 60 10 56Z" fill="url(#cream)"/>
-        <path d="M30 46 C40 40 52 44 58 50 M62 36 C70 30 82 32 86 40" fill="none" stroke="#e6d2b0" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>
-      </symbol>
-    </defs>
+<body id="top">
+  <!-- Icon sprite -->
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M7 17L17 7M8 7h9v9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v15m-6-6l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6.6 10.8a15.2 15.2 0 006.6 6.6l2.2-2.2a1 1 0 011-.25 11.4 11.4 0 003.6.57 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1z"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 2a7 7 0 00-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><path d="M3 5h18a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1zm1.4 2L12 12.4 19.6 7H4.4zM20 8.6l-8 5.6-8-5.6V17h16V8.6z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M12 3v11m-4.5-4.5L12 14l4.5-4.5M5 20h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-train" viewBox="0 0 24 24"><path d="M12 2c-4 0-7 .5-7 4v9.5A3.5 3.5 0 008.5 19L7 20.5v.5h2l2-2h2l2 2h2v-.5L15.5 19a3.5 3.5 0 003.5-3.5V6c0-3.5-3-4-7-4zM7.5 17a1.5 1.5 0 110-3 1.5 1.5 0 010 3zm3.5-7H7V6h4v4zm2 0V6h4v4h-4zm3.5 7a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"/></symbol>
+    <symbol id="i-instagram" viewBox="0 0 24 24"><path d="M12 7.3A4.7 4.7 0 1016.7 12 4.7 4.7 0 0012 7.3zm0 7.8a3.1 3.1 0 113.1-3.1 3.1 3.1 0 01-3.1 3.1zm6-8a1.1 1.1 0 11-1.1-1.1A1.1 1.1 0 0118 7.1zM21.9 8.2a5.4 5.4 0 00-1.5-3.8 5.4 5.4 0 00-3.8-1.5C15.1 2.8 8.9 2.8 7.4 2.9a5.4 5.4 0 00-3.8 1.5 5.4 5.4 0 00-1.5 3.8c-.1 1.5-.1 6.1 0 7.6a5.4 5.4 0 001.5 3.8 5.4 5.4 0 003.8 1.5c1.5.1 7.7.1 9.2 0a5.4 5.4 0 003.8-1.5 5.4 5.4 0 001.5-3.8c.1-1.5.1-6.1 0-7.6zm-2 9.4a3.1 3.1 0 01-1.8 1.8c-1.2.5-4.1.4-5.4.4s-4.3.1-5.4-.4a3.1 3.1 0 01-1.8-1.8c-.5-1.2-.4-4.1-.4-5.4s-.1-4.3.4-5.4a3.1 3.1 0 011.8-1.8c1.2-.5 4.1-.4 5.4-.4s4.3-.1 5.4.4a3.1 3.1 0 011.8 1.8c.5 1.2.4 4.1.4 5.4s.1 4.3-.4 5.4z"/></symbol>
+    <symbol id="i-facebook" viewBox="0 0 24 24"><path d="M22 12a10 10 0 10-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9a15.3 15.3 0 012.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0022 12z"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M17.8 3h3.1l-6.8 7.7L22 21h-6.2l-4.9-6.4L5.3 21H2.2l7.2-8.3L1.8 3h6.4l4.4 5.8zm-1.1 16.2h1.7L7.3 4.7H5.5z"/></symbol>
+    <symbol id="i-tripadvisor" viewBox="0 0 24 24"><path d="M12 6.2c-2.5 0-4.9.7-6.8 2H1.7l1.6 1.8a4.9 4.9 0 107.1 6.4L12 18.2l1.6-1.8a4.9 4.9 0 107.1-6.4l1.6-1.8h-3.5a12.4 12.4 0 00-6.8-2zM7 17.3a3.2 3.2 0 113.2-3.2A3.2 3.2 0 017 17.3zm10 0a3.2 3.2 0 113.2-3.2 3.2 3.2 0 01-3.2 3.2zM12 8a10.6 10.6 0 014 .8 4.9 4.9 0 00-4 4.8 4.9 4.9 0 00-4-4.8A10.6 10.6 0 0112 8zM7 12.4a1.7 1.7 0 101.7 1.7A1.7 1.7 0 007 12.4zm10 0a1.7 1.7 0 101.7 1.7 1.7 1.7 0 00-1.7-1.7z"/></symbol>
   </svg>
 
-  <a class="skip" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-  <header class="site-header" id="top">
-    <a class="brand" href="#top" aria-label="Peach's on 47th home">
-      <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 40 40"><path d="M20 9c7.5 0 13 5.6 13 13.2C33 30 27.2 35 20 35S7 30 7 22.2C7 14.6 12.5 9 20 9Z" fill="#f2925f"/><path d="M20 10c-2 6-2 18 0 25" stroke="#d9703f" stroke-width="1.6" fill="none"/><path d="M21 9c3-5 8-6 11-4-2 4-7 6-11 4Z" fill="#4f8a55"/></svg>
-      </span>
-      <span class="brand-word">Peach's <em>on 47th</em></span>
-    </a>
-    <nav class="nav" aria-label="Main">
-      <a href="#favorites">Favorites</a>
-      <a href="#menus">Menus</a>
-      <a href="#visit">Visit</a>
-    </nav>
-    <a class="btn btn-small" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order pickup</a>
+  <!-- 1. Announcement bar -->
+  <div class="topbar" role="region" aria-label="Today at Peach’s">
+    <div class="topbar__inner wrap">
+      <p class="topbar__status" data-open-status>
+        <span class="status-dot" aria-hidden="true"></span>
+        <span data-open-text>Wed – Sun · 8am – 2pm</span>
+      </p>
+      <a class="topbar__link topbar__address" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">
+        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg>4652 S. King Drive<span class="visually-hidden"> (opens Google Maps in a new tab)</span>
+      </a>
+      <a class="topbar__link" href="tel:+17739665801">
+        <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>773.966.5801
+      </a>
+    </div>
+  </div>
+
+  <!-- 2. Header -->
+  <header class="site-header" data-header>
+    <div class="site-header__inner wrap">
+      <a class="brand" href="#top" aria-label="Peach’s on 47th, back to top">
+        <span class="wordmark" aria-hidden="true"></span>
+        <span class="brand__sub" aria-hidden="true">on 47th</span>
+      </a>
+
+      <nav class="nav" aria-label="Main">
+        <button class="nav__toggle" type="button" aria-expanded="false" aria-controls="nav-menu" data-nav-toggle>
+          <span class="nav__toggle-bars" aria-hidden="true"><span></span><span></span></span>
+          <span class="nav__toggle-label">Menu</span>
+        </button>
+        <ul class="nav__list" id="nav-menu" data-nav-menu>
+          <li><a href="#menu" data-nav-link>Menu</a></li>
+          <li><a href="#favorites" data-nav-link>Favorites</a></li>
+          <li><a href="#catering" data-nav-link>Catering</a></li>
+          <li><a href="#press" data-nav-link>Press</a></li>
+          <li><a href="#visit" data-nav-link>Visit</a></li>
+          <li class="nav__mobile-extra"><a href="tel:+17739665801">Call 773.966.5801</a></li>
+        </ul>
+      </nav>
+
+      <a class="btn btn--primary btn--sm header-cta" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">
+        Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span>
+      </a>
+    </div>
   </header>
 
-  <main id="main">
-
-    <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-copy">
-        <p class="eyebrow"><span class="status-dot" data-open-dot></span><span data-open-label>Wed–Sun · 8am–2pm</span></p>
-        <h1 id="hero-title">Brunch worth<br><em>the wait</em> on King&nbsp;Drive.</h1>
-        <p class="lede">Stacked pancakes, shrimp &amp; grits and Southside comfort, made fresh every morning in the heart of Bronzeville.</p>
-        <div class="hero-actions">
-          <a class="btn" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order online for pickup</a>
-          <a class="btn btn-ghost" href="#menus">See the menu</a>
+  <main id="main" tabindex="-1">
+    <!-- 3. Hero (3D pancake stack mounts into .hero__stage) -->
+    <section id="hero" class="hero" data-hero-track data-hero-required aria-label="Welcome to Peach’s on 47th">
+      <div class="hero__sticky">
+        <div class="hero__stage" aria-hidden="true"></div>
+        <img class="hero__fallback" src="assets/img/food/berry-pancakes.webp" alt="A tall stack of Peach’s pancakes with blueberry lemon topping" width="750" height="750" decoding="async">
+        <div class="hero__copy">
+          <p class="eyebrow hero__eyebrow">Bronzeville · Chicago</p>
+          <h1 class="hero__title">
+            <span class="hero__title-line">Breakfast,</span>
+            <span class="hero__title-accent">stacked high</span>
+            <span class="hero__title-line">on 47th.</span>
+          </h1>
+          <p class="hero__sub">Home of 7-Up pancakes, peach bourbon French toast and shrimp &amp; grits, done the Southern way.</p>
+          <div class="hero__ctas">
+            <a class="btn btn--primary" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">
+              Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span>
+              <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>
+            </a>
+            <a class="btn btn--ghost" href="#menu">See the Menu</a>
+          </div>
+          <p class="hero__hours"><span>Wed – Sun</span><span aria-hidden="true">·</span><span>8am – 2pm</span><span aria-hidden="true">·</span><span>4652 S. King Drive</span></p>
         </div>
-        <p class="hero-address">4652 S. King Drive, Chicago</p>
-      </div>
-
-      <div class="stack-stage" data-stack aria-hidden="true">
-        <div class="stage-word">47th</div>
-        <div class="plate-shadow" data-shadow></div>
-        <div class="plate"></div>
-        <!-- pancakes, toppings and berries are positioned by script.js -->
-        <div class="layer pancake"><svg viewBox="0 0 320 92"><use href="#pancake"/></svg></div>
-        <div class="layer pancake"><svg viewBox="0 0 320 92"><use href="#pancake"/></svg></div>
-        <div class="layer pancake"><svg viewBox="0 0 320 92"><use href="#pancake"/></svg></div>
-        <div class="layer pancake"><svg viewBox="0 0 320 92"><use href="#pancake"/></svg></div>
-        <div class="layer pancake"><svg viewBox="0 0 320 92"><use href="#pancake"/></svg></div>
-        <div class="layer pancake top-cake">
-          <svg viewBox="0 0 320 92"><use href="#pancake"/></svg>
-          <svg class="compote" data-compote viewBox="0 0 320 170" preserveAspectRatio="xMidYMin meet">
-            <path fill="url(#compote)" opacity=".94" d="M60 40 C60 26 108 18 160 18 C214 18 262 26 262 40 C262 50 256 56 252 60 C252 72 254 86 250 94 C247 100 241 98 241 90 C241 80 243 70 240 64 C226 68 214 69 206 69 C207 90 208 112 203 122 C199 129 192 127 192 118 C192 102 194 84 194 70 C172 72 150 72 128 71 C129 82 129 94 125 100 C122 105 116 103 116 96 C116 88 117 78 116 70 C100 68 86 66 76 62 C76 76 76 90 72 96 C69 100 63 99 63 92 C63 82 66 70 64 58 C61 54 60 48 60 40Z"/>
-            <path d="M84 30 C110 22 150 21 176 23" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="4" stroke-linecap="round"/>
-                        <g>
-              <use href="#blueberry" x="92" y="22" width="18" height="18"/>
-              <use href="#blueberry" x="206" y="26" width="16" height="16"/>
-              <use href="#blueberry" x="236" y="30" width="14" height="14"/>
-              <use href="#blueberry" x="70" y="30" width="14" height="14"/>
-            </g>
-          </svg>
+        <div class="hero__cue" aria-hidden="true">
+          <span>Scroll to stack</span>
+          <svg class="icon"><use href="#i-down"/></svg>
         </div>
-        <div class="layer topping whip"><svg viewBox="0 0 120 70"><use href="#whip"/></svg></div>
-        <div class="layer topping berry"><svg viewBox="0 0 40 40"><use href="#blueberry"/></svg></div>
-        <div class="layer topping berry"><svg viewBox="0 0 40 40"><use href="#blueberry"/></svg></div>
-        <div class="layer topping berry"><svg viewBox="0 0 40 40"><use href="#blueberry"/></svg></div>
       </div>
     </section>
 
-    <div class="ticker" aria-hidden="true">
-      <div class="ticker-track">
-        <span>Berry Pancakes</span><span>Shrimp &amp; Grits</span><span>Banana French Toast</span><span>Hangover Chicken Wings</span><span>Avocado Toast</span><span>The Burger</span>
-        <span>Berry Pancakes</span><span>Shrimp &amp; Grits</span><span>Banana French Toast</span><span>Hangover Chicken Wings</span><span>Avocado Toast</span><span>The Burger</span>
+    <!-- 4. Dish marquee -->
+    <div class="marquee" role="region" aria-label="Dishes we’re known for">
+      <button class="marquee__toggle" type="button" aria-pressed="false" data-marquee-toggle>
+        <span class="visually-hidden">Pause the dish ticker</span>
+        <svg class="icon icon--pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+        <svg class="icon icon--play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>
+      </button>
+      <div class="marquee__track">
+        <ul class="marquee__list">
+          <li>7-Up Pancakes</li>
+          <li>Peach Bourbon French Toast</li>
+          <li>Shrimp &amp; Grits</li>
+          <li>Salmon Croquettes</li>
+          <li>Hangover Plate</li>
+          <li>Yardbird &amp; Sweet Toast</li>
+          <li>“The Big Bird”</li>
+          <li>Southern Benedict</li>
+          <li>Bayou Breakfast Bowl</li>
+          <li>Banana Rum French Toast</li>
+          <li>Peach Cobbler</li>
+          <li>Peach Palmer</li>
+        </ul>
+        <ul class="marquee__list" aria-hidden="true">
+          <li>7-Up Pancakes</li>
+          <li>Peach Bourbon French Toast</li>
+          <li>Shrimp &amp; Grits</li>
+          <li>Salmon Croquettes</li>
+          <li>Hangover Plate</li>
+          <li>Yardbird &amp; Sweet Toast</li>
+          <li>“The Big Bird”</li>
+          <li>Southern Benedict</li>
+          <li>Bayou Breakfast Bowl</li>
+          <li>Banana Rum French Toast</li>
+          <li>Peach Cobbler</li>
+          <li>Peach Palmer</li>
+        </ul>
       </div>
     </div>
 
-    <section class="section favorites" id="favorites" aria-labelledby="fav-title">
-      <div class="section-head">
-        <p class="eyebrow">House favorites</p>
-        <h2 id="fav-title">What the regulars order.</h2>
+    <!-- 5. Signature plates -->
+    <section class="section plates" id="plates" aria-labelledby="plates-title">
+      <div class="wrap">
+        <header class="section-head" data-reveal>
+          <p class="eyebrow">From the kitchen</p>
+          <h2 class="display" id="plates-title">Signature <em class="accent">plates</em></h2>
+          <p class="section-head__lede">The dishes people cross the city for. Southern comfort, Wednesday through Sunday on King Drive.</p>
+        </header>
+
+        <ul class="plates__grid" role="list">
+          <li class="plate plate--feature" data-reveal>
+            <figure class="plate__media">
+              <img src="assets/img/food/berry-pancakes.webp" srcset="assets/img/food/berry-pancakes-480.webp 480w, assets/img/food/berry-pancakes.webp 750w" sizes="(min-width: 960px) 52vw, 100vw" alt="A tall stack of pancakes topped with blueberry lemon sauce and cream" width="750" height="750" loading="lazy" decoding="async">
+            </figure>
+            <div class="plate__body">
+              <p class="plate__num" aria-hidden="true">01</p>
+              <h3 class="plate__name">Pancakes, blueberry lemon topping</h3>
+              <p class="plate__price"><span class="plate__price-main">6 / 9 / 12</span> <span class="plate__price-note">side / short / full stack · topping +3</span></p>
+              <p class="plate__desc">Our pancakes, piled high with blueberry lemon topping. Or go banana rum, or peach compote.</p>
+            </div>
+          </li>
+          <li class="plate plate--wide" data-reveal>
+            <figure class="plate__media">
+              <img src="assets/img/food/shrimp-and-grits.webp" srcset="assets/img/food/shrimp-and-grits-480.webp 480w, assets/img/food/shrimp-and-grits.webp 750w" sizes="(min-width: 960px) 40vw, 100vw" alt="Shrimp and grits in a white bowl with scallions and a wedge of garlic Texas toast" width="750" height="750" loading="lazy" decoding="async">
+            </figure>
+            <div class="plate__body">
+              <p class="plate__num" aria-hidden="true">02</p>
+              <h3 class="plate__name">Peach’s Shrimp &amp; Grits</h3>
+              <p class="plate__price"><span class="plate__price-main">24</span> <span class="plate__badge"><svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>Obama’s Favorite</span></p>
+              <p class="plate__desc">Shrimp with garlic cream sauce, pork bacon, mushrooms, tomatoes, scallions on top of cheese or plain grits. Served with garlic Texas toast</p>
+            </div>
+          </li>
+          <li class="plate" data-reveal>
+            <figure class="plate__media">
+              <img src="assets/img/food/banana-rum-french-toast.webp" srcset="assets/img/food/banana-rum-french-toast-480.webp 480w, assets/img/food/banana-rum-french-toast.webp 750w" sizes="(min-width: 960px) 30vw, 100vw" alt="Banana rum French toast wedges topped with sliced bananas and whipped cream" width="750" height="750" loading="lazy" decoding="async">
+            </figure>
+            <div class="plate__body">
+              <p class="plate__num" aria-hidden="true">03</p>
+              <h3 class="plate__name">Banana Rum French Toast</h3>
+              <p class="plate__price"><span class="plate__price-main">14</span> <span class="plate__price-note">6 wedges</span></p>
+              <p class="plate__desc">Six wedges of French toast under our banana rum topping.</p>
+            </div>
+          </li>
+          <li class="plate" data-reveal>
+            <figure class="plate__media">
+              <img src="assets/img/food/avocado-toast.webp" srcset="assets/img/food/avocado-toast-480.webp 480w, assets/img/food/avocado-toast.webp 750w" sizes="(min-width: 960px) 30vw, 100vw" alt="Avocado toast topped with chopped cherry tomatoes, red onion and greens" width="750" height="750" loading="lazy" decoding="async">
+            </figure>
+            <div class="plate__body">
+              <p class="plate__num" aria-hidden="true">04</p>
+              <h3 class="plate__name">Avocado Toast</h3>
+              <p class="plate__price"><span class="plate__price-main">11</span> <abbr class="tag" title="Vegetarian">V</abbr></p>
+              <p class="plate__desc">Avocado, cherry tomatoes, micro greens, feta, &amp; balsamic glaze on toast. Add 1 egg for $3.50</p>
+            </div>
+          </li>
+          <li class="plate" data-reveal>
+            <figure class="plate__media">
+              <img src="assets/img/food/hangover-wings.webp" srcset="assets/img/food/hangover-wings-480.webp 480w, assets/img/food/hangover-wings.webp 750w" sizes="(min-width: 960px) 30vw, 100vw" alt="Hangover chicken wings glazed in sweet and spicy sauce with scallions, shown on Texas toast" width="750" height="750" loading="lazy" decoding="async">
+            </figure>
+            <div class="plate__body">
+              <p class="plate__num" aria-hidden="true">05</p>
+              <h3 class="plate__name">Hangover Chicken Wings &amp; Fries</h3>
+              <p class="plate__price"><span class="plate__price-main">17</span></p>
+              <p class="plate__desc">(4) Fried chicken wings tossed in our signature sweet &amp; spicy hangover sauce with french fries</p>
+            </div>
+          </li>
+        </ul>
       </div>
-      <ul class="dish-grid">
-        <li class="dish reveal">
-          <img src="assets/menu/berry-pancakes.jpg" alt="A tall stack of pancakes covered in blueberry compote and whipped cream" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>Berry Pancakes</h3><p>A tall, fluffy stack under warm blueberry compote and a cloud of cream.</p></div>
-        </li>
-        <li class="dish reveal">
-          <img src="assets/menu/shrimp-and-grits.jpg" alt="A bowl of creamy grits topped with shrimp, peppers and green onion" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>Shrimp &amp; Grits</h3><p>Creamy grits loaded with shrimp, peppers and green onion. A Southside classic.</p></div>
-        </li>
-        <li class="dish reveal">
-          <img src="assets/menu/banana-french-toast.jpg" alt="Golden French toast with sliced banana, cream and powdered sugar" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>Banana French Toast</h3><p>Thick-cut and golden, piled with banana, cream and powdered sugar.</p></div>
-        </li>
-        <li class="dish reveal">
-          <img src="assets/menu/hangover-wings.jpg" alt="Saucy chicken wings stacked on toast with green onion" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>Hangover Chicken Wings</h3><p>Sticky, saucy wings stacked on toast. The cure for Saturday night.</p></div>
-        </li>
-        <li class="dish reveal">
-          <img src="assets/menu/avocado-toast.jpg" alt="Avocado toast topped with tomato, red onion, basil and boiled egg" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>Avocado Toast</h3><p>Smashed avocado, bright tomato, red onion, basil and a soft egg.</p></div>
-        </li>
-        <li class="dish reveal">
-          <img src="assets/menu/burger.jpg" alt="A burger on a toasted bun topped with a sunny-side-up egg" loading="lazy" width="640" height="640">
-          <div class="dish-body"><h3>The Burger</h3><p>Toasted bun, all the fixings and a sunny egg on top. Brunch rules.</p></div>
-        </li>
-      </ul>
     </section>
 
-    <section class="section menus" id="menus" aria-labelledby="menus-title">
-      <div class="section-head">
-        <p class="eyebrow">Menus</p>
-        <h2 id="menus-title">Pull up a chair, or bring us to you.</h2>
-      </div>
-      <div class="menu-cards">
-        <a class="menu-card reveal" href="https://peachson47th.com/wp-content/uploads/2026/03/Peachs-Menu-03.26.pdf" target="_blank" rel="noopener">
-          <span class="menu-num">01</span>
-          <h3>Restaurant Menu</h3>
-          <p>Breakfast, brunch and lunch favorites, every day we're open.</p>
-          <span class="menu-link">View menu <span aria-hidden="true">→</span></span>
-        </a>
-        <a class="menu-card reveal" href="https://peachson47th.com/wp-content/uploads/2026/03/Kids-menu-front-scaled.png" target="_blank" rel="noopener">
-          <span class="menu-num">02</span>
-          <h3>Kids Menu</h3>
-          <p>Little plates for little ones, because brunch is a family thing.</p>
-          <span class="menu-link">View menu <span aria-hidden="true">→</span></span>
-        </a>
-        <a class="menu-card reveal" href="https://peachson47th.com/wp-content/uploads/2026/03/Peachs-catering-menu-11.25-2.png" target="_blank" rel="noopener">
-          <span class="menu-num">03</span>
-          <h3>Catering</h3>
-          <p>Bring Peach's to the office, the party or the family reunion.</p>
-          <span class="menu-link">View menu <span aria-hidden="true">→</span></span>
-        </a>
+    <!-- 6. President Obama's Favorites -->
+    <section class="section favorites" id="favorites" aria-labelledby="favorites-title">
+      <svg class="favorites__bigstar" aria-hidden="true" focusable="false"><use href="#i-star"/></svg>
+      <div class="wrap favorites__inner">
+        <header class="favorites__head" data-reveal>
+          <p class="favorites__stars" aria-hidden="true">
+            <svg class="icon"><use href="#i-star"/></svg><svg class="icon"><use href="#i-star"/></svg><svg class="icon"><use href="#i-star"/></svg>
+          </p>
+          <p class="eyebrow eyebrow--butter">Straight off our menu</p>
+          <h2 class="display favorites__title" id="favorites-title">President Obama’s <em class="accent">Favorites</em></h2>
+          <p class="favorites__lede">Two plates earned their own section on the Peach’s menu. Here’s what the fuss is about.</p>
+          <a class="press-pull" href="https://wgntv.com/news/chicago-news/obama-stops-by-peachs-restaurant-in-chicagos-bronzeville-neighborhood/" target="_blank" rel="noopener">
+            <span class="press-pull__meta">WGN-TV · May 2025</span>
+            <span class="press-pull__headline">“Obama stops by Peach’s Restaurant in Chicago’s Bronzeville neighborhood”</span>
+            <span class="press-pull__cta">Read the story <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens WGN-TV in a new tab)</span></span>
+          </a>
+        </header>
+
+        <ol class="favorites__list" role="list">
+          <li class="fav" data-reveal>
+            <span class="fav__num" aria-hidden="true">No. 1</span>
+            <div class="fav__row">
+              <h3 class="fav__name">Peach’s Shrimp &amp; Grits</h3>
+              <p class="fav__price"><span class="visually-hidden">Price: </span>24</p>
+            </div>
+            <p class="fav__desc">Shrimp with garlic cream sauce, pork bacon, mushrooms, tomatoes, scallions on top of cheese or plain grits. Served with garlic Texas toast</p>
+          </li>
+          <li class="fav" data-reveal>
+            <span class="fav__num" aria-hidden="true">No. 2</span>
+            <div class="fav__row">
+              <h3 class="fav__name">Salmon Croquettes &amp; Grits</h3>
+              <p class="fav__price"><span class="visually-hidden">Price: </span>23</p>
+            </div>
+            <p class="fav__desc">Wild caught, fresh baked salmon croquettes served on top of cheese or plain grits</p>
+            <p class="fav__tags"><abbr class="tag tag--dark" title="Dairy free">DF</abbr> <abbr class="tag tag--dark" title="Gluten free">GF</abbr></p>
+          </li>
+        </ol>
       </div>
     </section>
 
-    <section class="section social" aria-labelledby="social-title">
-      <div class="social-inner reveal">
-        <p class="eyebrow">Seen on the feed</p>
-        <h2 id="social-title">Featured by Chicago's food lovers and beyond.</h2>
-        <p>Tag your stack and follow along for specials, new dishes and what's coming out of the kitchen.</p>
-        <div class="hero-actions">
-          <a class="btn" href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener">@peachson47th on Instagram</a>
-          <a class="btn btn-ghost" href="https://peachson47th.com/in-the-news/" target="_blank" rel="noopener">In the news</a>
+    <!-- 7. Full menu -->
+    <section class="section menu" id="menu" aria-labelledby="menu-title">
+      <div class="wrap">
+        <header class="section-head section-head--split" data-reveal>
+          <div>
+            <p class="eyebrow">Updated 2/26</p>
+            <h2 class="display" id="menu-title">The <em class="accent">menu</em></h2>
+          </div>
+          <p class="section-head__lede">Southern breakfast &amp; brunch, Wednesday through Sunday. Filter by dietary need, then browse by section.</p>
+        </header>
+
+        <div class="menu__layout">
+        <div class="menu__controls">
+          <div class="filters" role="group" aria-labelledby="filters-label">
+            <span class="filters__label" id="filters-label">Show</span>
+            <button type="button" class="chip" aria-pressed="true" data-filter="all">All</button>
+            <button type="button" class="chip" aria-pressed="false" data-filter="GF"><span aria-hidden="true">GF</span><span class="visually-hidden">Gluten free</span><span class="chip__long" aria-hidden="true">Gluten free</span></button>
+            <button type="button" class="chip" aria-pressed="false" data-filter="V"><span aria-hidden="true">V</span><span class="visually-hidden">Vegetarian</span><span class="chip__long" aria-hidden="true">Vegetarian</span></button>
+            <button type="button" class="chip" aria-pressed="false" data-filter="DF"><span aria-hidden="true">DF</span><span class="visually-hidden">Dairy free</span><span class="chip__long" aria-hidden="true">Dairy free</span></button>
+          </div>
+
+          <div class="tabs-scroller">
+            <div class="tabs" role="tablist" aria-label="Menu sections" data-menu-tabs></div>
+          </div>
+        </div>
+
+        <div class="menu__panel" role="tabpanel" id="menu-panel" tabindex="0" data-menu-panel>
+          <noscript>
+            <p class="menu__noscript">Our interactive menu needs JavaScript. <a href="menus/peachs-menu.pdf">Download the full menu (PDF)</a>.</p>
+          </noscript>
+        </div>
+        </div>
+        <p class="visually-hidden" role="status" data-menu-status></p>
+
+        <div class="menu__footer">
+          <div class="menu__downloads" data-reveal>
+            <h3 class="menu__footer-title">Take it with you</h3>
+            <ul class="downloads" role="list">
+              <li><a class="download" href="menus/peachs-menu.pdf" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span><strong>Full menu</strong><small>PDF · updated 2/26</small></span></a></li>
+              <li><a class="download" href="menus/peachs-kids-menu.webp" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span><strong>Kids menu</strong><small>Image · updated 3/26</small></span></a></li>
+              <li><a class="download" href="menus/peachs-catering-menu.webp" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><span><strong>Catering menu</strong><small>Image · 11.25</small></span></a></li>
+            </ul>
+          </div>
+          <div class="fineprint" data-reveal>
+            <p><strong>Key:</strong> <abbr class="tag" title="Dairy free">DF</abbr> dairy free · <abbr class="tag" title="Gluten free">GF</abbr> gluten free · <abbr class="tag" title="Vegetarian">V</abbr> vegetarian</p>
+            <p data-fineprint="party"></p>
+            <p data-fineprint="foodSafety"></p>
+          </div>
         </div>
       </div>
     </section>
 
+    <!-- 8. Coffee -->
+    <section class="section coffee" id="coffee" aria-labelledby="coffee-title">
+      <div class="wrap coffee__inner">
+        <figure class="coffee__media" data-reveal>
+          <img src="assets/img/food/coffee-bag.webp" alt="A kraft bag of Peach’s Buffalo Soldier coffee labelled “Best Damn Drip” on a restaurant table" width="900" height="1200" loading="lazy" decoding="async">
+          <figcaption class="coffee__sticker" aria-hidden="true"><span>Best</span><span>Damn</span><span>Drip</span></figcaption>
+        </figure>
+        <div class="coffee__copy" data-reveal>
+          <p class="eyebrow">Peach’s Coffee at Home</p>
+          <h2 class="display coffee__title" id="coffee-title">Best <em class="accent">Damn</em> Drip</h2>
+          <p class="coffee__lede">The coffee we pour every morning, bagged to brew at home. 1/2 lb, whole bean or ground.</p>
+          <ul class="roasts" role="list" aria-label="Roasts">
+            <li class="roast roast--peach">Peach</li>
+            <li class="roast roast--coconut">Coconut</li>
+            <li class="roast roast--rum">Jamaican Rum</li>
+            <li class="roast roast--soldier">Buffalo Soldier</li>
+          </ul>
+          <p class="coffee__price"><strong>$14 in the restaurant</strong> · subject to availability</p>
+          <a class="btn btn--dark" href="https://peachson47th.com/shop/" target="_blank" rel="noopener">Shop Peach’s Coffee<span class="visually-hidden"> (opens the shop in a new tab)</span> <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. Catering -->
+    <section class="section catering" id="catering" aria-labelledby="catering-title">
+      <div class="wrap">
+        <div class="catering__inner">
+          <header class="catering__head" data-reveal>
+            <p class="eyebrow">Catering</p>
+            <h2 class="display catering__title" id="catering-title">Let us cater your <em class="accent">next event.</em></h2>
+            <p class="catering__lede">All servings come in half pans and feed approximately <strong>10–12 people</strong>. Breakfast for the office, brunch for the family, cobbler for everybody.</p>
+            <div class="catering__ctas">
+              <a class="btn btn--primary" href="tel:+17739665801"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>Call 773.966.5801</a>
+              <a class="btn btn--light" href="mailto:ordering@romesjoy.com?subject=Catering%20inquiry%20for%20Peach%E2%80%99s%20on%2047th"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Email ordering@romesjoy.com</a>
+              <a class="btn btn--link-light" href="menus/peachs-catering-menu.webp" target="_blank" rel="noopener">View full catering menu<span class="visually-hidden"> (opens in a new tab)</span> <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
+            </div>
+          </header>
+
+          <div class="catering__menu" data-reveal>
+            <p class="catering__pan" aria-hidden="true"><span>½ pan</span><span>feeds 10–12</span></p>
+            <h3 class="catering__menu-title">Crowd favorites <span>From the catering menu · 11.25</span></h3>
+            <dl class="pan-list">
+              <div class="pan"><dt>Pancakes <span>12 pcs</span></dt><dd>$36</dd></div>
+              <div class="pan"><dt>French Toast <span>6 full pcs in ½ slices</span></dt><dd>$30</dd></div>
+              <div class="pan"><dt>Biscuits <span>12 pcs</span></dt><dd>$38</dd></div>
+              <div class="pan"><dt>Peach Bourbon Compote</dt><dd>$40</dd></div>
+              <div class="pan"><dt>Salmon Croquettes &amp; Creole Sauce <span>12 pcs</span></dt><dd>$76</dd></div>
+              <div class="pan"><dt>Chicken Wings <span>24 pcs</span></dt><dd>$73</dd></div>
+              <div class="pan"><dt>Applewood Smoked Pork Bacon <span>24 pcs</span></dt><dd>$34</dd></div>
+              <div class="pan"><dt>Cheese Grits</dt><dd>$35</dd></div>
+              <div class="pan"><dt>Peach Palmer <span>½ gallon</span></dt><dd>$16</dd></div>
+              <div class="pan"><dt>Peach Coffee <span>96 oz</span></dt><dd>$24.95</dd></div>
+              <div class="pan pan--star"><dt>Peach Cobbler</dt><dd>$60</dd></div>
+            </dl>
+            <p class="catering__fine">A selection; see the full catering menu for everything. Pricing subject to change based on product availability and market rates. Delivery &amp; set-up: $50.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 10. Press -->
+    <section class="section press" id="press" aria-labelledby="press-title">
+      <div class="wrap">
+        <header class="section-head section-head--split" data-reveal>
+          <div>
+            <p class="eyebrow">Press</p>
+            <h2 class="display" id="press-title">In the <em class="accent">news</em></h2>
+          </div>
+          <p class="section-head__lede">From presidents to campaign stops to “best brunch” lists, Peach’s keeps making headlines.</p>
+        </header>
+
+        <div class="tv-callout" data-reveal>
+          <span class="tv-callout__label">As seen on TV</span>
+          <p class="tv-callout__title">Featured on WTTW’s <em>Check, Please!</em></p>
+          <span class="tv-callout__meta">Aired Feb 3, 2017</span>
+        </div>
+
+        <ol class="press-list" id="press-list" role="list">
+          <li class="press-item" data-reveal>
+            <a href="https://vimeo.com/1121268806" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--nbc">NBC 5 &amp; Telemundo Chicago</span>
+              <span class="press-item__date">Sept 2025</span>
+              <span class="press-item__headline">“Chicago Today: Peach’s Restaurant”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://wgntv.com/news/politics/bronzeville-restaurant-serves-up-politics-as-pritzker-mitchell-make-first-campaign-stop/" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--wgn">WGN-TV</span>
+              <span class="press-item__date">July 2025</span>
+              <span class="press-item__headline">“Bronzeville restaurant serves up politics as Pritzker, Mitchell make first campaign stop”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://www.chicagotribune.com/2025/07/02/pritzker-mitchell-bronzeville/" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--tribune">Chicago Tribune</span>
+              <span class="press-item__date">July 2025</span>
+              <span class="press-item__headline">“Gov. JB Pritzker’s running mate is a fellow Chicagoan, but says he will ‘represent all of Illinois’”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://wgntv.com/news/chicago-news/obama-stops-by-peachs-restaurant-in-chicagos-bronzeville-neighborhood/" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--wgn">WGN-TV</span>
+              <span class="press-item__date">May 2025</span>
+              <span class="press-item__headline">“Obama stops by Peach’s Restaurant in Chicago’s Bronzeville neighborhood”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://www.cntraveler.com/restaurants/chicago/peachs-restaurant" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--cnt">Condé Nast Traveler</span>
+              <span class="press-item__date">Review</span>
+              <span class="press-item__headline">“Review: Peach’s Restaurant”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://blog.giftya.com/article/best-spots-for-brunch-in-chicago" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--giftya">GiftYa</span>
+              <span class="press-item__date">April 2024</span>
+              <span class="press-item__headline">“Best Spots for Brunch in Chicago”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://www.thrillist.com/eat/chicago/best-brunch-in-chicago" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--thrillist">Thrillist</span>
+              <span class="press-item__date">April 2023</span>
+              <span class="press-item__headline">“The Absolute Best Brunch Spots in Chicago Right Now”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://www.fox32chicago.com/video/1178112" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--fox">FOX 32 Chicago</span>
+              <span class="press-item__date">Feb 2023</span>
+              <span class="press-item__headline">“Peach’s in Bronzeville gives back to community while growing future leaders”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://blog.resy.com/2022/01/a-chefs-guide-to-eating-on-chicagos-south-side-from-pilsen-to-west-roseland/" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--resy">Resy</span>
+              <span class="press-item__date">Jan 2022</span>
+              <span class="press-item__headline">“A Chef’s Guide to Eating on Chicago’s South Side, From Pilsen to West Roseland”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+          <li class="press-item" data-reveal>
+            <a href="https://www.wbez.org/reset-with-sasha-ann-simons/2020/11/02/chicago-chefs-and-restaurateurs-get-creative-during-covid-19" target="_blank" rel="noopener">
+              <span class="press-item__outlet outlet outlet--wbez">WBEZ Reset</span>
+              <span class="press-item__date">Nov 2020</span>
+              <span class="press-item__headline">“Chicago Chefs And Restaurateurs Get Creative During COVID-19”</span>
+              <svg class="icon press-item__arrow" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span>
+            </a>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 11. Visit -->
     <section class="section visit" id="visit" aria-labelledby="visit-title">
-      <div class="visit-info reveal">
-        <p class="eyebrow">Visit</p>
-        <h2 id="visit-title">Come hungry.</h2>
-        <dl class="facts">
-          <div><dt>Hours</dt><dd>Wednesday – Sunday<br>8:00 am – 2:00 pm</dd></div>
-          <div><dt>Address</dt><dd><a href="https://www.google.com/maps/search/?api=1&amp;query=4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">4652 S. King Drive<br>Chicago, IL 60653</a></dd></div>
-          <div><dt>Phone</dt><dd><a href="tel:+17739665801">773.966.5801</a></dd></div>
-          <div><dt>Service</dt><dd>Dine in, or order online &amp; pick up</dd></div>
-        </dl>
-        <div class="hero-actions">
-          <a class="btn" href="https://www.google.com/maps/dir/?api=1&amp;destination=4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">Get directions</a>
-          <a class="btn btn-ghost" href="tel:+17739665801">Call us</a>
+      <div class="wrap visit__inner">
+        <div class="visit__info" data-reveal>
+          <p class="eyebrow">Visit</p>
+          <h2 class="display visit__title" id="visit-title">Pull up a <em class="accent">chair</em> on King Drive.</h2>
+
+          <div class="visit__grid">
+            <div class="visit__block">
+              <h3 class="visit__label">Address</h3>
+              <address class="visit__address">
+                4652 S. King Drive<br>Chicago, IL 60653<br><span class="visit__hood">Bronzeville</span>
+              </address>
+              <a class="btn btn--dark btn--sm" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg>Get directions<span class="visually-hidden"> (opens Google Maps in a new tab)</span></a>
+              <p class="visit__transit"><svg class="icon" aria-hidden="true"><use href="#i-train"/></svg>Near the CTA Green Line 47th St station</p>
+            </div>
+
+            <div class="visit__block">
+              <h3 class="visit__label" id="hours-label">Hours</h3>
+              <table class="hours" aria-labelledby="hours-label" data-hours>
+                <tbody>
+                  <tr data-day="1"><th scope="row">Monday</th><td>Closed</td></tr>
+                  <tr data-day="2"><th scope="row">Tuesday</th><td>Closed</td></tr>
+                  <tr data-day="3"><th scope="row">Wednesday</th><td>8am – 2pm</td></tr>
+                  <tr data-day="4"><th scope="row">Thursday</th><td>8am – 2pm</td></tr>
+                  <tr data-day="5"><th scope="row">Friday</th><td>8am – 2pm</td></tr>
+                  <tr data-day="6"><th scope="row">Saturday</th><td>8am – 2pm</td></tr>
+                  <tr data-day="0"><th scope="row">Sunday</th><td>8am – 2pm</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="visit__block">
+              <h3 class="visit__label">Call</h3>
+              <p><a class="visit__phone" href="tel:+17739665801">773.966.5801</a></p>
+              <h3 class="visit__label">How to eat</h3>
+              <ul class="services" role="list">
+                <li>Dine in</li>
+                <li><a href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></li>
+                <li>Curbside</li>
+                <li><a href="#catering">Catering</a></li>
+              </ul>
+            </div>
+
+            <div class="visit__block">
+              <h3 class="visit__label">Follow along</h3>
+              <ul class="socials" role="list">
+                <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg><span>Instagram</span></a></li>
+                <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg><span>Facebook</span></a></li>
+                <li><a href="https://twitter.com/peachson47th" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span>X</span></a></li>
+                <li><a href="https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-tripadvisor"/></svg><span>Tripadvisor</span></a></li>
+              </ul>
+              <p class="visit__handle">@peachson47th</p>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="visit-map reveal">
-        <iframe title="Map showing Peach's on 47th at 4652 S. King Drive" src="https://www.google.com/maps?q=4652+S+King+Dr,+Chicago,+IL+60653&amp;output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+
+        <figure class="visit__art" data-reveal>
+          <div class="portrait" role="img" aria-label="Line drawing of the girl from the Peach’s logo, with braided pigtails and bows"></div>
+          <figcaption class="visit__art-caption">
+            <span class="visit__art-big">47th &amp; King</span>
+            <span>Bronzeville, Chicago</span>
+          </figcaption>
+        </figure>
       </div>
     </section>
-
   </main>
 
+  <!-- 12. Footer -->
   <footer class="site-footer">
-    <div class="footer-brand">
-      <span class="brand-word">Peach's <em>on 47th</em></span>
-      <p>Bronzeville brunch since day one.</p>
+    <div class="wrap">
+      <div class="footer__top">
+        <div class="footer__brand">
+          <img class="footer__badge" src="assets/img/brand/badge.png" alt="" width="372" height="406" loading="lazy" decoding="async">
+          <p class="footer__tag">Southern breakfast &amp; brunch<br>in Bronzeville, Chicago.</p>
+        </div>
+        <nav class="footer__nav" aria-label="Footer">
+          <h2 class="footer__heading">Explore</h2>
+          <ul role="list">
+            <li><a href="#menu">Menu</a></li>
+            <li><a href="#favorites">Obama’s Favorites</a></li>
+            <li><a href="#catering">Catering</a></li>
+            <li><a href="#press">Press</a></li>
+            <li><a href="#visit">Visit</a></li>
+            <li><a href="https://peachson47th.com/shop/" target="_blank" rel="noopener">Shop coffee<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+          </ul>
+        </nav>
+        <div class="footer__visit">
+          <h2 class="footer__heading">Visit</h2>
+          <p>4652 S. King Drive<br>Chicago, IL 60653</p>
+          <p>Wed – Sun<br>8am – 2pm</p>
+          <p><a href="tel:+17739665801">773.966.5801</a></p>
+          <p><a class="btn btn--primary btn--sm" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></p>
+        </div>
+        <div class="footer__social">
+          <h2 class="footer__heading">Social</h2>
+          <ul class="socials socials--footer" role="list">
+            <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener" aria-label="Instagram"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
+            <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener" aria-label="Facebook"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
+            <li><a href="https://twitter.com/peachson47th" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></a></li>
+            <li><a href="https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html" target="_blank" rel="noopener" aria-label="Tripadvisor"><svg class="icon" aria-hidden="true"><use href="#i-tripadvisor"/></svg></a></li>
+          </ul>
+        </div>
+      </div>
+
+      <p class="footer__wordmark" role="img" aria-label="Peach’s"><span class="wordmark wordmark--xl" aria-hidden="true"></span></p>
+
+      <div class="footer__bottom">
+        <p>© 2026 Peach’s on 47th.</p>
+        <p class="footer__concept">Website concept preview</p>
+      </div>
     </div>
-    <ul class="footer-links">
-      <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener">Instagram</a></li>
-      <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener">Facebook</a></li>
-      <li><a href="https://twitter.com/peachson47th" target="_blank" rel="noopener">X / Twitter</a></li>
-      <li><a href="https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html" target="_blank" rel="noopener">TripAdvisor</a></li>
-      <li><a href="https://peachson47th.com/shop/" target="_blank" rel="noopener">Shop</a></li>
-      <li><a href="https://peachson47th.com/contact-us/" target="_blank" rel="noopener">Contact</a></li>
-    </ul>
-    <p class="copyright">© <span data-year>2026</span> Peach's on 47th · 4652 S. King Drive, Chicago, IL 60653</p>
   </footer>
-
-  <a class="order-bar" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">
-    <span>Hungry? Order for pickup</span><span aria-hidden="true">→</span>
-  </a>
-
-  <script src="script.js"></script>
 </body>
 </html>

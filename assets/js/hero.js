@@ -78,8 +78,8 @@ const LAST_LAND = DROP_START + (N - 1) * SLOT + FALL;
 const BUTTER_IN = 0.72, BUTTER_LAND = 0.79, BUTTER_SQ = 0.025;
 const SYRUP_IN = 0.84;
 
-const RT = 1.14;                   // half-size (world) covered by the planar top texture
-const DESCENT_RATE = (GAP - 0.318) / SLOT;
+const RT = 1.32;                   // half-size (world) covered by the planar top texture
+const DESCENT_RATE = (GAP - 0.24) / SLOT;
 
 const dropStart = (i) => DROP_START + i * SLOT;
 
@@ -104,16 +104,16 @@ function squashCurve(q) {
  * ---------------------------------------------------------------------------------------- */
 function makePancakeParams(i) {
   const rnd = mulberry32(9001 + i * 7919);
-  const R = 1.0 + (rnd() - 0.5) * 0.09;
-  const T = 0.29 + rnd() * 0.04;
-  const dome = 0.022 + rnd() * 0.02;
+  const R = 1.07 + (rnd() - 0.5) * 0.09;
+  const T = 0.205 + rnd() * 0.03;
+  const dome = 0.01 + rnd() * 0.012;
   const harm = [];
-  for (let k = 2; k <= 9; k++) harm.push({ k, a: (0.02 / Math.pow(k - 1, 0.8)) * (0.45 + rnd()), ph: rnd() * TAU });
+  for (let k = 2; k <= 9; k++) harm.push({ k, a: (0.042 / Math.pow(k - 1, 1.25)) * (0.35 + rnd()), ph: rnd() * TAU });
   // floating pose: tops mostly turned toward the camera, alternating side tilt
   const side = i % 2 === 0 ? 1 : -1;
   const P = {
     i, seed: 1000 + i * 97, R, T, dome,
-    ct: 0.1 + rnd() * 0.025, cb: 0.055,
+    ct: 0.15 + rnd() * 0.03, cb: 0.06,
     harm,
     trx: (8 + rnd() * 14) * DEG,
     trz: side * (5 + rnd() * 10) * DEG,
@@ -262,8 +262,9 @@ function makeTopTextures(P, S = 512) {
       const h0 = hash2(gx, gz, sd + 5);
       const px = (gx + hash2(gx, gz, sd + 6)) * cell, pz = (gz + hash2(gx, gz, sd + 7)) * cell;
       const d = Math.hypot(X - px, Z - pz);
-      if (h0 < 0.42) {
-        const rad = 0.0045 + 0.0075 * hash2(gx, gz, sd + 8);
+      const dens = vnoise(gx * 0.09 + 3.3, gz * 0.09 + 1.7, sd + 21);
+      if (h0 < 0.12 + 0.5 * dens * dens) {
+        const rad = (0.003 + 0.009 * Math.pow(hash2(gx, gz, sd + 8), 1.6)) * (0.7 + 0.7 * dens);
         if (d < rad) dark = Math.max(dark, 1 - (d / rad) * 0.5);
         else if (d < rad * 2.1) halo = Math.max(halo, 1 - (d - rad) / (rad * 1.1));
       } else if (h0 > 0.86) {
@@ -291,20 +292,20 @@ function makeTopTextures(P, S = 512) {
       const lace2 = Math.pow(ridge2, 7);
       // even golden-brown centre, lacy darker network, leopard-spotted paler ring toward the rim
       let b = 0.6 + (m1 - 0.5) * 0.42 + (m2 - 0.5) * 0.3 + 0.16 * lace + 0.1 * lace2;
-      b += 0.06 * (1 - rn);
-      const ring = sstep(0.7, 0.9, rn) * (1 - sstep(0.95, 1.0, rn));
-      const spots = sstep(0.5, 0.75, vnoise(X * 26 + 3, Z * 26 + 9, sd + 12));
-      b -= ring * (0.14 + 0.14 * spots);
+      b += 0.2 * (1 - sstep(0.0, 0.75, rn)) - 0.08;
+      const ring = sstep(0.66, 0.88, rn) * (1 - sstep(0.95, 1.0, rn));
+      const spots = sstep(0.45, 0.75, vnoise(X * 22 + 3, Z * 22 + 9, sd + 12));
+      b -= ring * (0.2 + 0.18 * spots) * (0.7 + 0.6 * lace);
       b += 0.2 * sstep(0.955, 1.01, rn);
       const [dark, halo, speck] = pore(X, Z);
       b -= 0.1 * halo * (1 - sstep(0.8, 0.9, rn));
       b -= 0.3 * speck * (1 - sstep(0.78, 0.88, rn));
       ramp(TOP_STOPS, b, col);
       const pd = dark * (1 - sstep(0.8, 0.9, rn));
-      const k = 1 - 0.5 * pd;
+      const k = 1 - 0.3 * pd;
       const o = (py * S + px) * 4;
       dm[o] = col[0] * k; dm[o + 1] = col[1] * k * 0.97; dm[o + 2] = col[2] * k * 0.92; dm[o + 3] = 255;
-      let h = 0.55 + 0.22 * (m2 - 0.5) + 0.12 * lace - 0.55 * pd + 0.08 * halo + 0.06 * speck;
+      let h = 0.55 + 0.22 * (m2 - 0.5) + 0.12 * lace - 0.4 * pd + 0.08 * halo + 0.06 * speck;
       h = clamp(h) * 255;
       db[o] = h; db[o + 1] = h; db[o + 2] = h; db[o + 3] = 255;
     }
@@ -464,7 +465,7 @@ function buildStudioEnvironment(keyDir, rimDir) {
     disposables.push(m);
   };
   addBox(keyDir, 16, 9, 7, '#FFF0DC', 7);                                   // key softbox
-  addBox(rimDir, 16, 4, 10, '#FFD7A8', 6);                                   // rim strip
+  addBox(rimDir, 16, 4, 10, '#FFD7A8', 8.5);                                   // rim strip
   addBox(new THREE.Vector3(0, 1, 0.15), 15, 10, 10, '#FFF6EC', 2.2);         // overhead
   addBox(new THREE.Vector3(0.7, 0.25, 1), 16, 8, 4, '#FFFFFF', 1.6);         // front-right bounce card
   addBox(new THREE.Vector3(-1, 0.15, -0.4), 16, 6, 5, '#FFE6CC', 1.2);       // left fill
@@ -516,7 +517,7 @@ export async function mountHero(host, { getProgress = () => 0, reducedMotion = f
 
   const camera = new THREE.PerspectiveCamera(22, 1, 0.5, 200);
 
-  const key = new THREE.DirectionalLight(new THREE.Color('#FFE2BF'), 2.9);
+  const key = new THREE.DirectionalLight(new THREE.Color('#FFE2BF'), 3.1);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.bias = -0.0004;
@@ -527,11 +528,11 @@ export async function mountHero(host, { getProgress = () => 0, reducedMotion = f
   scene.add(key, key.target);
   const KEY_DIR = new THREE.Vector3(-4.6, 7.4, 4.4).normalize();
 
-  const rim = new THREE.DirectionalLight(new THREE.Color('#FFC88E'), 3.0);
+  const rim = new THREE.DirectionalLight(new THREE.Color('#FFC07E'), 4.6);
   scene.add(rim, rim.target);
-  const RIM_DIR = new THREE.Vector3(5.2, 3.6, -5.6).normalize();
+  const RIM_DIR = new THREE.Vector3(3.8, 2.6, -6.6).normalize();
 
-  const fill = new THREE.DirectionalLight(new THREE.Color('#FFF1E0'), 0.4);
+  const fill = new THREE.DirectionalLight(new THREE.Color('#FFF1E0'), 0.26);
   scene.add(fill, fill.target);
   const FILL_DIR = new THREE.Vector3(5, 1.6, 7).normalize();
 
@@ -575,15 +576,16 @@ export async function mountHero(host, { getProgress = () => 0, reducedMotion = f
     bump.colorSpace = THREE.NoColorSpace; bump.anisotropy = maxAniso;
     const mat = track(new THREE.MeshPhysicalMaterial({
       color: 0xffffff, map, bumpMap: bump, bumpScale: 1.6,
-      roughness: 0.56, metalness: 0,
-      sheen: 0.2, sheenRoughness: 0.6, sheenColor: new THREE.Color('#FFD7A3'),
+      roughness: 0.5, metalness: 0,
+      sheen: 0.35, sheenRoughness: 0.5, sheenColor: new THREE.Color('#FFD7A3'),
       specularIntensity: 0.5,
     }));
     const uni = {
       uCrumb: { value: crumbTex },
       uHalfT: { value: P.T / 2 },
-      uCrumbCol: { value: new THREE.Color('#E8C890') },
-      uCrustCol: { value: new THREE.Color('#C3823C') },
+      uCrumbCol: { value: new THREE.Color('#EBB972') },
+      uCrustCol: { value: new THREE.Color('#BC7432') },
+      uCaramel: { value: new THREE.Color('#9A5420') },
       uSeedOff: { value: new THREE.Vector2(P.so[0], P.so[1]) },
       uAOTop: { value: 0 },
       uAOBottom: { value: 0 },
@@ -601,6 +603,7 @@ uniform sampler2D uCrumb;
 uniform float uHalfT;
 uniform vec3 uCrumbCol;
 uniform vec3 uCrustCol;
+uniform vec3 uCaramel;
 uniform vec2 uSeedOff;
 uniform float uAOTop;
 uniform float uAOBottom;`)
@@ -619,6 +622,8 @@ float crust = max(smoothstep(0.6, 0.97, e), smoothstep(0.3, 0.03, e));
 vec3 sideCol = mix(uCrumbCol, uCrustCol, clamp(crust * (0.7 + 0.6 * cr.b), 0.0, 1.0));
 sideCol *= 0.9 + 0.2 * cr.r;
 sideCol = mix(sideCol, sideCol * vec3(0.84, 0.78, 0.7), cr.g * (1.0 - 0.8 * crust));
+float carBand = smoothstep(0.62, 0.84, e) * (1.0 - smoothstep(0.9, 1.0, e));
+sideCol = mix(sideCol, uCaramel, carBand * (0.7 + 0.3 * cr.b));
 diffuseColor.rgb *= mix(sideCol, topCol, topness);
 float ao = uAOTop * smoothstep(0.62, 1.0, e) + uAOBottom * smoothstep(0.34, 0.0, e) * (1.0 - topness);
 diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
@@ -649,8 +654,25 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     color: new THREE.Color('#FBF8F3'), roughness: 0.2, metalness: 0,
     clearcoat: 1, clearcoatRoughness: 0.06, specularIntensity: 0.8,
   }));
+  plateMat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPlatePos;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvPlatePos = position;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPlatePos;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+float pr = length(vPlatePos.xz);
+float rimLine = smoothstep(1.668, 1.676, pr) * (1.0 - smoothstep(1.692, 1.7, pr)) * step(0.09, vPlatePos.y);
+diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.93, 0.5, 0.33), rimLine * 0.9);`)
+      // grazing-angle clearcoat picks up the dark floor of the env map and draws a dark hairline on the
+      // outer lip; lift those pixels back toward porcelain white
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+float graze = 1.0 - abs(dot(normalize(normal), normalize(vViewPosition)));
+totalEmissiveRadiance += vec3(0.98, 0.93, 0.88) * pow(graze, 3.0) * 0.55 * smoothstep(1.7, 1.78, length(vPlatePos.xz));`);
+  };
+  plateMat.customProgramCacheKey = () => 'peach-plate-a';
   const plate = new THREE.Mesh(plateGeo, plateMat);
-  plate.castShadow = true; plate.receiveShadow = true;
+  plate.castShadow = false; plate.receiveShadow = true;
   scene.add(plate);
 
   // soft contact shadows (blurred radial textures): under the plate, and on the plate under the stack
@@ -668,7 +690,7 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     scene.add(m);
     return m;
   };
-  const floorBlob = blobMesh(blobTex, '#6E3A1A', 0.55, floorY, 1);
+  const floorBlob = blobMesh(blobTex, '#6E3A1A', 0.66, floorY, 1);
   floorBlob.scale.set(4.35, 4.25, 1);
   floorBlob.position.set(0.08, floorY, -0.05);
   const floorSoft = blobMesh(softTex, '#94522A', 0.3, floorY + 0.0005, 1);
@@ -711,12 +733,12 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
   // drips (world space)
   const DRIPS = [
     // yEnd is a fraction of the stack height; null = runs all the way down and pools on the plate
-    { phi: 0.08, w: 0.095, yEnd: null, start: 0.872 },
-    { phi: 0.7, w: 0.072, yEnd: 0.62, start: 0.884 },
-    { phi: -0.55, w: 0.082, yEnd: 0.36, start: 0.878 },
-    { phi: 1.24, w: 0.064, yEnd: 0.8, start: 0.895 },
-    { phi: -1.28, w: 0.085, yEnd: 0.52, start: 0.889 },
-    { phi: 1.86, w: 0.06, yEnd: 0.84, start: 0.905 },
+    { phi: 0.08, w: 0.118, yEnd: null, start: 0.872 },
+    { phi: 0.7, w: 0.07, yEnd: 0.62, start: 0.884 },
+    { phi: -0.55, w: 0.03, yEnd: 0.3, start: 0.878 },
+    { phi: 1.24, w: 0.058, yEnd: 0.8, start: 0.895 },
+    { phi: -1.28, w: 0.09, yEnd: 0.56, start: 0.889 },
+    { phi: 1.86, w: 0.026, yEnd: 0.46, start: 0.9 },
   ];
   const DR_R = 64, DR_S = 16;
   const dripGeo = track(new THREE.BufferGeometry());
@@ -850,14 +872,14 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
   scene.add(stream);
 
   /* ---------- butter ---------- */
-  let butterGeo = new RoundedBoxGeometry(0.44, 0.2, 0.35, 4, 0.06);
+  let butterGeo = new RoundedBoxGeometry(0.42, 0.155, 0.34, 6, 0.07);
   butterGeo.deleteAttribute('normal'); butterGeo.deleteAttribute('uv');
   const bg2 = mergeVertices(butterGeo); butterGeo.dispose(); butterGeo = track(bg2);
   const butterBase = butterGeo.attributes.position.array.slice();
   butterGeo.attributes.position.setUsage(THREE.DynamicDrawUsage);
   butterGeo.computeVertexNormals();
   const butterMat = track(new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color('#F6D47A'), roughness: 0.3, metalness: 0,
+    color: new THREE.Color('#F5CF62'), roughness: 0.26, metalness: 0,
     sheen: 0.3, sheenColor: new THREE.Color('#FFF0B8'), sheenRoughness: 0.4,
     clearcoat: 0.4, clearcoatRoughness: 0.2, emissive: new THREE.Color('#221600'),
   }));
@@ -865,7 +887,7 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
   butter.castShadow = true; butter.receiveShadow = true;
   butter.rotation.order = 'XZY';
   scene.add(butter);
-  const BUTTER_H = 0.2;
+  const BUTTER_H = 0.155;
 
   /* ---------- blueberries ---------- */
   let berryGeo = new THREE.IcosahedronGeometry(1, 5);
@@ -900,14 +922,10 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
   // a = world angle (0 = toward camera, +PI/2 = right)
   const BERRIES = [
     { top: true, r: 0.56, a: 0.42 },
-    { top: true, r: 0.66, a: 0.9 },
-    { top: true, r: 0.5, a: -0.55 },
+    { top: true, r: 0.52, a: -0.6 },
     { top: true, r: 0.6, a: 2.55 },
-    { top: true, r: 0.55, a: -2.3 },
-    { top: false, r: 1.25, a: 0.6 },
-    { top: false, r: 1.29, a: 0.93 },
-    { top: false, r: 1.24, a: -0.66 },
-    { top: false, r: 1.31, a: 1.5 },
+    { top: false, r: 1.28, a: -0.7 },
+    { top: false, r: 1.31, a: -0.98 },
   ];
   {
     const rnd = mulberry32(4242);
@@ -926,10 +944,115 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
   BERRIES.forEach((b, i) => berries.setColorAt(i, new THREE.Color(b.tint, b.tint, b.tint)));
   scene.add(berries);
 
+  /* ---------- melted-butter puddle (child of the top pancake, around the pat) ---------- */
+  const meltGeo = track(makeBlobGeometry(10, 64));
+  const meltMat = track(new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color('#EDBB4A'), roughness: 0.1, metalness: 0,
+    clearcoat: 1, clearcoatRoughness: 0.04, specularIntensity: 1,
+    emissive: new THREE.Color('#2A1A00'),
+  }));
+  const meltPool = new THREE.Mesh(meltGeo, meltMat);
+  meltPool.frustumCulled = false; meltPool.receiveShadow = true;
+  pancakeMeshes[N - 1].add(meltPool);
+
+  /* ---------- fresh peach slices (one instanced draw call) ---------- */
+  let peachGeo;
+  {
+    const Ro = 0.4, a0 = 62 * DEG;
+    const ex = Ro * Math.cos(a0), ey = Ro * Math.sin(a0), xm = 0.2;
+    const cx = (ex * ex + ey * ey - xm * xm) / (2 * (ex - xm)), ri = xm - cx;
+    const ai = Math.atan2(ey, ex - cx);
+    const sh = new THREE.Shape();
+    sh.absarc(0, 0, Ro, -a0, a0, false);
+    sh.absarc(cx, 0, ri, ai, -ai, true);
+    const g = new THREE.ExtrudeGeometry(sh, { depth: 0.045, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 4, curveSegments: 28 });
+    g.deleteAttribute('normal'); g.deleteAttribute('uv');
+    peachGeo = mergeVertices(g); g.dispose();
+    const p = peachGeo.attributes.position, n = p.count;
+    const colors = new Float32Array(n * 3);
+    const cSkin = new THREE.Color('#D2361E'), cSkin2 = new THREE.Color('#F27A2E'), cFlesh = new THREE.Color('#FBAA34');
+    const cFleshIn = new THREE.Color('#F7952C'), cBlushIn = new THREE.Color('#F0702E'), cPit = new THREE.Color('#E0582A'), tmp = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const r = Math.hypot(x, y);
+      const skin = sstep(Ro - 0.006, Ro + 0.012, r);
+      const fib = fbm(Math.atan2(y, x) * 14, r * 30, 89, 2);
+      tmp.copy(cFleshIn).lerp(cFlesh, sstep(xm + 0.01, Ro - 0.12, r) * (0.8 + 0.3 * fib));
+      tmp.lerp(cBlushIn, sstep(Ro - 0.06, Ro - 0.005, r) * 0.45);
+      tmp.lerp(cPit, (1 - sstep(xm - 0.03, xm + 0.03, x)) * 0.35);
+      const blush = fbm(y * 5 + 2, z * 9 + x * 3, 88, 3);
+      tmp.lerp(cSkin2.clone().lerp(cSkin, sstep(0.3, 0.6, blush)), skin);
+      colors[i * 3] = tmp.r; colors[i * 3 + 1] = tmp.g; colors[i * 3 + 2] = tmp.b;
+    }
+    peachGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    peachGeo.translate(-0.3, 0, -0.0225);     // centre the crescent on its own origin
+    peachGeo.rotateX(-Math.PI / 2);          // lie flat: cut face up, skin edge along +x
+    peachGeo.computeVertexNormals();
+    track(peachGeo);
+  }
+  const peachMat = track(new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, vertexColors: true, roughness: 0.38, metalness: 0,
+    clearcoat: 0.85, clearcoatRoughness: 0.12, sheen: 0.4, sheenColor: new THREE.Color('#FFD2A0'), sheenRoughness: 0.5,
+    specularIntensity: 0.7,
+  }));
+  // world polar spots on the plate (a = 0 toward camera, +PI/2 to the right); yaw = extra spin
+  const PEACHES = [
+    { r: 1.38, a: 0.6, yaw: -0.55, start: 0.855 },
+    { r: 1.42, a: 1.14, yaw: -0.75, start: 0.872 },
+    { r: 1.36, a: 1.7, yaw: -0.5, start: 0.889 },
+  ];
+  {
+    const rnd = mulberry32(5150);
+    PEACHES.forEach((b) => {
+      b.q0 = new THREE.Quaternion().setFromEuler(new THREE.Euler((rnd() - 0.5) * 2.4, rnd() * TAU, (rnd() - 0.5) * 2.4));
+    });
+  }
+  const PEACH_FALL = 0.042;
+  const peaches = new THREE.InstancedMesh(peachGeo, peachMat, PEACHES.length);
+  peaches.castShadow = true; peaches.receiveShadow = true;
+  peaches.frustumCulled = false;
+  scene.add(peaches);
+  const peachQ = new THREE.Quaternion(), peachE = new THREE.Euler(0, 0, 0, 'YXZ');
+
+  /* ---------- warm sugar-dust / bokeh motes (one draw call, right side only) ---------- */
+  const DUST_N = 46;
+  const dustGeo = track(new THREE.BufferGeometry());
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST_N * 3), 3).setUsage(THREE.DynamicDrawUsage));
+  const dustTex = track(new THREE.CanvasTexture(makeRadialTexture([[0, 1], [0.35, 0.75], [0.7, 0.22], [1, 0]], 64)));
+  const dustMat = track(new THREE.PointsMaterial({
+    color: new THREE.Color('#FFE2B8'), alphaMap: dustTex, transparent: true, opacity: 0.2,
+    size: 0.34, sizeAttenuation: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  }));
+  const dust = new THREE.Points(dustGeo, dustMat);
+  dust.frustumCulled = false; dust.renderOrder = 5;
+  scene.add(dust);
+  const DUST = [];
+  {
+    const rnd = mulberry32(31337);
+    for (let i = 0; i < DUST_N; i++) DUST.push({ x: 0.4 + rnd() * 3.4, y: rnd(), z: -2.2 + rnd() * 3.6, sp: 0.04 + rnd() * 0.08, ph: rnd() * TAU, amp: 0.05 + rnd() * 0.1 });
+  }
+
   /* ------------------------------------------------------------------------------------------
    * Per-frame state (pure functions of p, t)
    * ---------------------------------------------------------------------------------------- */
   const tmpV = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpM = new THREE.Matrix4(), tmpS = new THREE.Vector3();
+
+  // when pancake j lands, the already-landed ones below give a little (decaying with depth)
+  function sympathy(i, p) {
+    let s = 0;
+    for (let j = i + 1; j < N; j++) {
+      const lj = dropStart(j) + FALL;
+      if (p <= lj || p >= lj + SQUASH) continue;
+      s += 0.45 * Math.pow(0.65, j - i - 1) * squashCurve((p - lj) / SQUASH);
+    }
+    return s;
+  }
+  // total height lost by the pancakes underneath i
+  function sinkBelow(i, p) {
+    let d = 0;
+    for (let k = 0; k < i; k++) d += pk[k].T * 0.1 * sympathy(k, p);
+    return d;
+  }
 
   function posePancake(i, p, t, idle, mesh) {
     const P = pk[i], L = P.land;
@@ -948,9 +1071,9 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     if (p < land) {
       yc = lerp(yFloat, L.y, easeInQuad(k)) + bob;
     } else {
-      const sq = squashCurve(clamp((p - land) / SQUASH));
+      const sq = squashCurve(clamp((p - land) / SQUASH)) + sympathy(i, p);
       sy = 1 - 0.1 * sq; sxz = 1 + 0.045 * sq;
-      yc = L.bottom + P.T * 0.5 * sy;
+      yc = L.bottom - sinkBelow(i, p) + P.T * 0.5 * sy;
     }
     mesh.position.set(lerp(P.fx, L.x, hk) + driftX, yc, lerp(P.fz, L.z, hk));
     mesh.rotation.set(lerp(L.rx, P.trx, tiltK) + wobX, L.rotY + P.spinIn * (1 - hk) + spin, lerp(L.rz, P.trz, tiltK) + wobZ);
@@ -1009,7 +1132,7 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
       const along = (s - s0) / fullLen;
       const groove = lerp(path.gr[pi], path.gr[pi + 1], k);
       let a = D.w * (1.15 - 0.5 * along) * (1 + 1.1 * Math.exp(-Math.max(0, s - D.sCorner + 0.03) / 0.09));
-      a *= 1 + clamp(groove / 0.05) * 0.3;
+      a *= 1 + clamp(groove / 0.05) * 0.15;
       const x = sEnd - s;
       const neck = 1 - 0.28 * Math.exp(-(((x - 2.3 * Rb) / (0.9 * Rb)) ** 2));
       a *= neck;
@@ -1037,7 +1160,7 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     }
   }
 
-  function updateSyrup(p) {
+  function updateSyrup(p, t) {
     const on = p >= SYRUP_IN;
     cap.visible = on && capThickC(p) > 0.0005;
     drips.visible = on && p >= Math.min(...DRIPS.map((d) => d.start));
@@ -1080,18 +1203,24 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
       const yHead = lerp(yHigh, yImp, easeInQuad(head));
       const yTail = lerp(yHigh, yImp, easeInQuad(tail));
       const pos = streamGeo.attributes.position.array;
+      const tb = 0.034 * tail;                         // falling bead at the end of the stream
       for (let r = 0; r < ST_R; r++) {
         const u = r / (ST_R - 1);
-        const y = lerp(yTail, yHead, u);
+        const y = lerp(yTail, yHead, Math.pow(u, 1.35));
         const hAbove = y - yImp;
-        let rad = 0.028 + 0.022 * clamp(hAbove / 5);
+        let rad = 0.018 + 0.03 * clamp(hAbove / 4);
         rad *= 1 + 0.9 * Math.exp(-Math.max(0, hAbove) / 0.05) * head;
+        rad *= 1 + 0.12 * Math.sin(hAbove * 7 - t * 5 + p * 60);
         const toHead = (y - yHead), toTail = (yTail - y);
-        rad *= Math.sqrt(clamp(toHead / 0.04)) * Math.sqrt(clamp(toTail / 0.25));
+        rad *= Math.sqrt(clamp(toHead / 0.04)) * Math.sqrt(clamp(toTail / (0.25 + 1.2 * tail)));
+        if (tail > 0 && toTail < 2 * tb) { const q = (toTail - tb) / tb; rad = Math.max(rad, tb * Math.sqrt(Math.max(0, 1 - q * q))); }
+        // gentle sway: the free-falling thread bends, anchored where it meets the stack
+        const sw = clamp(hAbove / 1.2) * (0.05 + 0.03 * tail);
+        const ox = sw * Math.sin(hAbove * 1.3 + t * 1.1 + p * 25), oz = sw * 0.6 * Math.cos(hAbove * 1.1 + t * 0.9 + p * 19);
         for (let sg = 0; sg < ST_S; sg++) {
           const a = (sg / ST_S) * TAU;
           const vi = r * ST_S + sg;
-          pos[vi * 3] = sx + Math.sin(a) * rad; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = sz + Math.cos(a) * rad;
+          pos[vi * 3] = sx + ox + Math.sin(a) * rad; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = sz + oz + Math.cos(a) * rad;
         }
       }
       streamGeo.attributes.position.needsUpdate = true;
@@ -1114,10 +1243,12 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     for (let i = 0; i < pos.length; i += 3) {
       const x = butterBase[i], y = butterBase[i + 1], z = butterBase[i + 2];
       const yn = (y + hy) / BUTTER_H;
-      const spread = 1 + melt * (0.2 * (1 - yn) * (1 - yn) + 0.05);
-      const rxz = Math.hypot(x / 0.22, z / 0.175);
-      let ny = -hy + (y + hy) * (1 - 0.3 * melt);
-      ny -= melt * 0.035 * Math.pow(clamp(rxz), 4) * yn;
+      const spread = 1 + melt * (0.14 * (1 - yn) * (1 - yn) + 0.03);
+      const rxz = Math.hypot(x / 0.21, z / 0.17);
+      let ny = -hy + (y + hy) * (1 - 0.2 * melt);
+      // softened pat: the top slumps toward the edges even before it melts
+      ny -= (0.022 + 0.03 * melt) * Math.pow(clamp(rxz), 2.2) * yn;
+      ny += 0.008 * Math.sin(x * 17 + 1.1) * Math.sin(z * 13 + 0.4) * yn * yn;
       pos[i] = x * spread; pos[i + 1] = ny; pos[i + 2] = z * spread;
     }
     butterGeo.attributes.position.needsUpdate = true;
@@ -1161,12 +1292,67 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     berries.visible = any;
   }
 
+  function updateMelt(p) {
+    const melt = sstep(BUTTER_LAND + 0.02, 1.0, p);
+    meltPool.visible = melt > 0.01;
+    if (!meltPool.visible) return;
+    const bl = butterLocal, R0 = 0.17 + 0.17 * Math.sqrt(melt);
+    fillBlob(meltGeo, bl.x, bl.z, (phi) => R0 * (1 + 0.14 * Math.sin(3 * phi + 0.9) + 0.08 * Math.sin(5 * phi + 2.4)),
+      0.006 + 0.006 * melt, (x, z) => {
+        const rw = Math.hypot(x, z), ph = Math.atan2(x, z);
+        return topSurfaceLocal(topP, rw, ph) + capHeightAt(rw, ph, p) * 0.98;
+      }, 0.05);
+  }
+
+  function updatePeaches(p) {
+    let any = false;
+    PEACHES.forEach((b, i) => {
+      const k = clamp((p - b.start) / PEACH_FALL);
+      const vis = p >= b.start;
+      const x = b.r * Math.sin(b.a), z = b.r * Math.cos(b.a);
+      // lie tangentially, skin edge facing out; tilt up a touch where the plate begins to rise
+      const tilt = 0.06 + 0.5 * clamp((b.r + 0.2 - 1.34) / 0.3) * 0.3;
+      peachE.set(0, b.a - Math.PI / 2 + b.yaw, 0, 'YXZ');
+      peachQ.setFromEuler(peachE);
+      tmpQ.setFromAxisAngle(tmpV.set(Math.cos(b.a), 0, -Math.sin(b.a)), -tilt);
+      peachQ.premultiply(tmpQ);
+      const yRest = plateTopY(b.r) + 0.05;
+      let y = lerp(yRest + 2.2, yRest, easeInQuad(k));
+      if (p > b.start + PEACH_FALL) {
+        const q = clamp((p - b.start - PEACH_FALL) / 0.02);
+        y = yRest + 0.035 * Math.abs(Math.sin(q * Math.PI * 1.5)) * (1 - q) * (1 - q);
+      }
+      tmpQ.copy(b.q0).slerp(peachQ, sstep(0.0, 0.95, k));
+      tmpS.setScalar(vis ? 1 : 0.00001);
+      tmpV.set(x, vis ? y : -10, z);
+      tmpM.compose(tmpV, tmpQ, tmpS);
+      peaches.setMatrixAt(i, tmpM);
+      any = any || vis;
+    });
+    peaches.instanceMatrix.needsUpdate = true;
+    peaches.visible = any;
+  }
+
+  // sugar dust: drifts slowly with t; fades in a little once the stack is built
+  function updateDust(p, t) {
+    const pos = dustGeo.attributes.position.array;
+    const top = frameTop(p) + 0.6;
+    DUST.forEach((d, i) => {
+      const y = 0.15 + ((d.y + t * d.sp * 0.25 + p * 0.35) % 1) * (top - 0.75);
+      pos[i * 3] = d.x + d.amp * Math.sin(t * 0.4 + d.ph);
+      pos[i * 3 + 1] = y;
+      pos[i * 3 + 2] = d.z + d.amp * Math.cos(t * 0.33 + d.ph);
+    });
+    dustGeo.attributes.position.needsUpdate = true;
+    dustMat.opacity = 0.14 + 0.1 * sstep(0.6, 1.0, p);
+  }
+
   /* ---------- framing ---------- */
   const REGIONS = {
     d0: { x0: 0.47, x1: 0.9, y0: 0.08, y1: 0.92 },
     d1: { x0: 0.48, x1: 0.9, y0: 0.15, y1: 0.9 },
     m0: { x0: 0.07, x1: 0.93, y0: 0.4, y1: 0.95 },
-    m1: { x0: 0.05, x1: 0.95, y0: 0.42, y1: 0.94 },
+    m1: { x0: 0.062, x1: 0.938, y0: 0.33, y1: 0.95 },
   };
   const fitPts = Array.from({ length: 40 }, () => new THREE.Vector3());
   const camTarget = new THREE.Vector3();
@@ -1192,7 +1378,7 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     for (let i = 0; i < 4; i++) { const a = (i / 4) * TAU + 0.4; fitPts[n++].set(Math.sin(a) * 1.0, floorY, Math.cos(a) * 1.0); }
     for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; fitPts[n++].set(Math.sin(a) * 1.18, top, Math.cos(a) * 1.18); }
     for (let i = 0; i < 8; i++) { const a = (i / 8) * TAU; fitPts[n++].set(Math.sin(a) * 1.3, 0.1 + (top - 0.1) * 0.55, Math.cos(a) * 1.3); }
-    const elev = lerp(8, 27, sstep(0.04, 0.9, p)) * DEG;
+    const elev = lerp(4, mobile ? 21 : 27, sstep(0.02, 0.92, p)) * DEG;
     camera.fov = mobile ? 26 : 22;
     camera.aspect = aspect;
     camera.clearViewOffset();
@@ -1245,13 +1431,16 @@ diffuseColor.rgb *= 1.0 - 0.42 * clamp(ao, 0.0, 1.0);
     // the lowest airborne pancake darkens the plate as it approaches
     const near0 = sstep(dropStart(0), dropStart(0) + FALL, p);
     plateSoft.material.opacity = lerp(0.1, 0.2, near0) * (1 - 0.5 * landed0);
-    plateAO.material.opacity = 0.42 * landed0;
+    plateAO.material.opacity = 0.54 * landed0;
     plateAO.visible = landed0 > 0;
     plateAO.scale.set(2.62, 2.62, 1);
     plateAO.position.set(pk[0].land.x, PLATE_TOP + 0.0012, pk[0].land.z);
     updateButter(p);
-    updateSyrup(p);
+    updateSyrup(p, t);
     updateBerries(p);
+    updateMelt(p);
+    updatePeaches(p);
+    updateDust(p, t);
     frameCamera(p, W, H);
   }
 

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hero C · Peach Bourbon Pop</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    /* Recommended hero background for variant C (Peach Bourbon Pop):
+       vivid peach, lighter behind the subject, deeper toward the edges. */
+    --hero-bg: radial-gradient(115% 100% at 68% 46%, #FBBD92 0%, #F9AE7F 34%, #F69C6B 66%, #F48C5A 100%);
+    --hero-bg-mobile: radial-gradient(150% 90% at 50% 66%, #FBBD92 0%, #F9AE7F 36%, #F69C6B 68%, #F48C5A 100%);
+    --ink: #3A1606;
+    --ink-soft: #5C2810;
+    --accent: #7A1E05;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: #F48C5A;
+    color: var(--ink);
+    font-family: Georgia, "Iowan Old Style", "Palatino Linotype", "Times New Roman", serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  #hero { position: relative; height: 260vh; }
+  .hero-sticky {
+    position: sticky; top: 0; height: 100vh; overflow: hidden;
+    background: var(--hero-bg);
+  }
+  .hero-stage { position: absolute; inset: 0; }
+  .hero-stage img.fallback {
+    position: absolute; right: 6%; top: 50%; width: min(44vw, 560px); transform: translateY(-50%);
+    border-radius: 50%; box-shadow: 0 30px 60px -30px rgba(90, 30, 5, .5);
+  }
+  .hero-copy {
+    position: absolute; z-index: 2; left: clamp(24px, 6vw, 96px); top: 50%;
+    transform: translateY(-50%); width: min(38vw, 600px); pointer-events: none;
+  }
+  .eyebrow {
+    font: 700 13px/1.2 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    letter-spacing: .18em; text-transform: uppercase; color: var(--accent); margin: 0 0 18px;
+  }
+  h1 {
+    margin: 0; font-weight: 400; letter-spacing: -0.02em;
+    font-size: clamp(2.5rem, 5.6vw, 5.6rem); line-height: .98;
+  }
+  h1 em { font-style: italic; color: var(--accent); }
+  .scroll-cue {
+    margin-top: 28px; font: 600 14px/1.4 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink-soft); display: flex; align-items: center; gap: 10px;
+  }
+  .scroll-cue::before { content: ""; width: 36px; height: 1px; background: currentColor; }
+  .after { min-height: 80vh; padding: 12vh 6vw; background: #FFF4EA; }
+  .after p { max-width: 36em; font-size: 1.15rem; line-height: 1.6; color: var(--ink-soft); }
+  @media (max-aspect-ratio: 11/10) {
+    .hero-sticky { background: var(--hero-bg-mobile); }
+    .hero-copy {
+      left: 16px; right: 16px; top: max(7vh, 40px); transform: none; width: auto; text-align: center;
+    }
+    .eyebrow { margin-bottom: 12px; font-size: 12px; }
+    h1 { font-size: clamp(2.2rem, 10.5vw, 3.6rem); }
+    .scroll-cue { justify-content: center; margin-top: 16px; }
+    .scroll-cue::before { display: none; }
+    .hero-stage img.fallback { left: 50%; right: auto; top: auto; bottom: 6vh; width: 82vw; transform: translateX(-50%); }
+  }
+</style>
+</head>
+<body>
+  <section id="hero" data-hero-track data-hero-required style="height:260vh">
+    <div class="hero-sticky">
+      <div class="hero-stage" id="hero-stage"></div>
+      <div class="hero-copy">
+        <p class="eyebrow">Peach's on 47th &middot; Bronzeville</p>
+        <h1>Breakfast, stacked high <em>on 47th.</em></h1>
+        <p class="scroll-cue">Scroll</p>
+      </div>
+    </div>
+  </section>
+  <section class="after">
+    <p>Lab page for hero variant C (Peach Bourbon Pop). Scroll back up to scrub the animation. Query params: <code>?p=0..1&amp;t=seconds</code> freezes a frame, <code>?reduced=1</code> renders the final state.</p>
+  </section>
+
+<script type="module">
+  import { mountHero } from '../assets/js/hero-c.js';
+
+  const q = new URLSearchParams(location.search);
+  const track = document.querySelector('[data-hero-track]');
+  const stage = document.getElementById('hero-stage');
+  const clamp01 = (x) => Math.min(1, Math.max(0, x));
+
+  const getProgress = () => {
+    const span = track.offsetHeight - innerHeight;
+    return span > 0 ? clamp01((scrollY - track.offsetTop) / span) : 0;
+  };
+
+  let frozen = null;
+  if (q.has('p')) {
+    const p = clamp01(parseFloat(q.get('p')) || 0);
+    const t = q.has('t') ? (parseFloat(q.get('t')) || 0) : 2;
+    frozen = { p, t };
+  }
+  const reducedMotion = q.get('reduced') === '1' ||
+    (!q.has('p') && !q.has('reduced') && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  try {
+    window.hero = await mountHero(stage, { getProgress, reducedMotion, frozen });
+  } catch (err) {
+    const img = document.createElement('img');
+    img.className = 'fallback';
+    img.alt = 'A tall stack of pancakes at Peach’s on 47th';
+    img.src = '../assets/img/food/berry-pancakes.webp';
+    stage.appendChild(img);
+    window.__heroReady = true;
+    if (err && err.message !== 'webgl-unavailable') console.error(err);
+  }
+</script>
+</body>
+</html>

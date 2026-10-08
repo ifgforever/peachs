@@ -1865,7 +1865,7 @@ section[id], [id="menu-panel"] { scroll-margin-top: calc(var(--header-h) + 8px);
   margin: clamp(48px, 7vw, 96px) 0 clamp(20px, 3vw, 36px);
   color: var(--peach);
 }
-.wordmark--xl { width: 100%; }
+.wordmark--xl { width: 100%; max-width: 760px; } /* raster source is 724px wide; swap in a vector logo to go full-bleed */
 .footer__bottom {
   display: flex;
   flex-wrap: wrap;

@@ -68,7 +68,7 @@ async function initHero() {
   const stageEl = $('.hero__stage', hero);
   try {
     const { mountHero } = await import('./hero.js');
-    await mountHero(stageEl, { getProgress, reducedMotion: reduced });
+    window.__hero = await mountHero(stageEl, { getProgress, reducedMotion: reduced }); // handle kept for demo recording
   } catch (e) {
     hero.classList.add('hero--fallback');
     console.info('Hero fallback:', e && e.message);

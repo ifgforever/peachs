@@ -254,11 +254,11 @@ function zestTexture(seed, size = 256) {
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     const n = fbm(n1, x / size * 8, y / size * 8, 3, 8, 8) - 0.5;
     const i = (y * size + x) * 3;
-    F[i] = 249 + n * 6; F[i + 1] = 231 + n * 8; F[i + 2] = 164 + n * 14;
+    F[i] = 249 + n * 6; F[i + 1] = 229 + n * 8; F[i + 2] = 146 + n * 14;
   }
   const dims = [size, size];
-  for (let k = 0; k < 320; k++) {
-    const cx = rnd() * size, cy = rnd() * size, rad = 0.5 + Math.pow(rnd(), 2) * 1.3;
+  for (let k = 0; k < 420; k++) {
+    const cx = rnd() * size, cy = rnd() * size, rad = 0.7 + Math.pow(rnd(), 2) * 1.6;
     const green = rnd() < 0.15;
     const col = green ? [206, 192, 52] : [244, 196, 34];
     stamp(F, dims, cx, cy, rad, (i, d) => {
@@ -639,7 +639,7 @@ const DRIPS = [ // world angle (0 = toward camera), max length below the rim, wi
 ];
 const IMPACT = { ang: 0.42, dist: 0.5 };
 const SLICES = [ // hover (angle, radius, y at p=0, y at p=0.72), final (angle on plate), settle start
-  { seed: 71, ha: -1.12, hr: 1.95, y0: 1.5, y1: 1.15, fa: -0.98, settle: 0.83, rot: [0.5, 0.25, 0.95] },
+  { seed: 71, ha: -1.12, hr: 1.95, y0: 1.5, y1: 1.15, fa: -0.98, settle: 0.84, rot: [0.5, 0.25, 0.95] },
   { seed: 83, ha: 1.08, hr: 2.0, y0: 3.05, y1: 1.85, fa: 0.66, settle: 0.865, rot: [-0.35, -0.3, -0.8] },
   { seed: 97, ha: -0.55, hr: 2.15, y0: 4.55, y1: 2.7, fa: 1.95, settle: 0.9, rot: [0.3, 0.35, 1.05] },
 ];
@@ -1370,7 +1370,7 @@ export async function mountHero(host, { getProgress = () => 0, reducedMotion = f
     const projH = hh * Math.cos(el) + (PLATE_R + 0.05) * Math.sin(el) * 0.9;
     const tanV = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     let fracH, fracW, cx, cy;
-    if (mobile) { fracH = 0.55; fracW = 0.86; cx = 0.5; cy = 0.69; }
+    if (mobile) { fracH = 0.55; fracW = lerp(0.86, 0.93, camT); cx = 0.5; cy = lerp(0.69, 0.68, camT); }
     else { fracH = lerp(0.82, 0.64, camT); fracW = 0.42; cx = 0.685; cy = lerp(0.5, 0.53, camT); }
     const d = Math.max(projH / (fracH * tanV), ext.halfW / (fracW * tanV * aspect)) * 1.05;
     const ty = (ext.top + ext.bottom) / 2;

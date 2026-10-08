@@ -22,7 +22,7 @@
   --line-strong: rgba(42, 22, 12, 0.32);
 
   /* Hero art direction hooks (overridden later by the final hero design). */
-  --hero-bg: radial-gradient(circle at 68% 55%, #FFF3E6 0%, #F7C59F 70%, #F2A877 100%);
+  --hero-bg: radial-gradient(120% 95% at 68% 52%, #FFF3E6 0%, #FDE6CF 38%, #F9D3B2 68%, #F7C59F 100%);
   --hero-ink: var(--espresso);
   --hero-accent: #8A3A0E;    /* italic accent on the hero gradient (4.4:1 at its darkest edge) */
   --header-ink: var(--hero-ink);

@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<title>Peach's In-Store Loop</title>
+<!-- In-store screen loop, 1920x1080. Rendered to MP4 by signage/render.mjs; open ?scene=<id>&t=<seconds> to preview a frame. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;display=block">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --cream: #FFF4E8;
+    --peach: #F9AE7F;
+    --peach-soft: #FDDCC5;
+    --orange: #E8742A;
+    --orange-ink: #A84A16;
+    --espresso: #2A160C;
+    --espresso-2: #3A2015;
+    --butter: #FCD36A;
+    --ink-soft: #6E5444;
+    --hero-bg: radial-gradient(120% 95% at 68% 52%, #FFF3E6 0%, #FDE6CF 38%, #F9D3B2 68%, #F7C59F 100%);
+    --hero-accent: #8A3A0E;
+    --f-display: 'Bebas Neue', Impact, sans-serif;
+    --f-serif: 'Fraunces', Georgia, serif;
+    --f-sans: 'DM Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--cream); color: var(--espresso); font-family: var(--f-sans); }
+  .scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+  .scene.is-on { display: block; }
+  .veil { position: absolute; inset: 0; background: var(--cream); pointer-events: none; z-index: 50; }
+  [data-in] { opacity: 0; will-change: transform, opacity; }
+
+  .eyebrow { font-family: var(--f-sans); font-weight: 700; font-size: 30px; letter-spacing: 0.22em; text-transform: uppercase; }
+  .display { font-family: var(--f-display); font-weight: 400; line-height: 0.9; letter-spacing: 0.01em; }
+  .accent { font-family: var(--f-serif); font-style: italic; font-weight: 500; letter-spacing: -0.01em; }
+  .wordmark {
+    display: block; aspect-ratio: 724 / 189; background-color: currentColor;
+    --wm: url('../assets/img/brand/wordmark.png');
+    -webkit-mask-image: var(--wm), var(--wm), var(--wm), var(--wm);
+    -webkit-mask-size: contain; -webkit-mask-repeat: no-repeat; -webkit-mask-position: left center;
+  }
+  .photo { position: absolute; overflow: hidden; border-radius: 36px; box-shadow: 0 40px 80px -30px rgba(42, 22, 12, 0.55); }
+  .photo img { width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: 50% 55%; }
+  .corner-mark { position: absolute; left: 120px; top: 84px; width: 230px; }
+  .facts { position: absolute; left: 120px; bottom: 72px; font-size: 30px; font-weight: 600; display: flex; gap: 22px; }
+
+  /* 1. Pancake stack */
+  #s-stack { background: var(--hero-bg); }
+  #s-stack .stage { position: absolute; right: -40px; top: 0; width: 1180px; height: 1080px; }
+  #s-stack .copy { position: absolute; left: 120px; top: 170px; width: 820px; }
+  #s-stack .eyebrow { color: var(--orange-ink); }
+  #s-stack h1 { margin-top: 28px; font-size: 176px; }
+  #s-stack h1 span { display: block; }
+  #s-stack h1 .accent { color: var(--hero-accent); font-size: 150px; line-height: 1.02; }
+  #s-stack .sub { margin-top: 36px; font-size: 38px; line-height: 1.35; max-width: 700px; color: var(--espresso-2); }
+
+
+  /* 2. Obama's words (his Instagram caption, May 23, 2025) */
+  #s-obama { background: var(--espresso); color: var(--cream); }
+  #s-obama .eyebrow { position: absolute; left: 120px; top: 150px; color: var(--butter); }
+  #s-obama blockquote { position: absolute; left: 120px; top: 230px; width: 1640px; font-family: var(--f-serif); font-weight: 400; font-size: 64px; line-height: 1.28; letter-spacing: -0.01em; }
+  #s-obama blockquote em { color: var(--butter); font-style: italic; }
+  #s-obama .who { position: absolute; left: 120px; bottom: 120px; display: flex; align-items: center; gap: 26px; }
+  #s-obama .who .rule { width: 90px; height: 3px; background: var(--butter); }
+  #s-obama .who b { display: block; font-family: var(--f-display); font-weight: 400; font-size: 70px; line-height: 1; letter-spacing: 0.02em; }
+  #s-obama .who span { display: block; margin-top: 8px; font-size: 28px; color: rgba(255, 244, 232, 0.72); }
+
+  /* 3. Chef Cliff Rome (facts from obama.org and the Obama post) */
+  #s-cliff { background: var(--hero-bg); }
+  #s-cliff .art { position: absolute; right: 90px; bottom: 60px; width: 640px; mix-blend-mode: multiply; opacity: 0.85; }
+  #s-cliff .copy { position: absolute; left: 120px; top: 130px; width: 1120px; }
+  #s-cliff .eyebrow { color: var(--orange-ink); }
+  #s-cliff h2 { margin-top: 20px; font-size: 176px; }
+  #s-cliff h2 .accent { color: var(--hero-accent); font-size: 150px; }
+  #s-cliff ul { list-style: none; padding: 0; margin-top: 46px; display: grid; gap: 26px; }
+  #s-cliff li { display: flex; gap: 26px; align-items: baseline; font-size: 40px; line-height: 1.3; color: var(--espresso-2); }
+  #s-cliff li::before { content: ''; flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--orange); transform: translateY(-4px); }
+  #s-cliff li b { color: var(--espresso); }
+  #s-cliff .src { position: absolute; left: 120px; bottom: 64px; font-size: 24px; color: var(--ink-soft); }
+
+  /* 4. Obama's favorites */
+  #s-fav { background: var(--espresso); color: var(--cream); }
+  #s-fav .bigstar { position: absolute; right: -220px; bottom: -260px; width: 900px; height: 900px; fill: rgba(252, 211, 106, 0.06); }
+  #s-fav .copy { position: absolute; left: 120px; top: 150px; width: 980px; }
+  #s-fav .stars { display: flex; gap: 14px; }
+  #s-fav .stars svg { width: 46px; height: 46px; fill: var(--butter); }
+  #s-fav .eyebrow { margin-top: 30px; color: var(--butter); }
+  #s-fav h2 { margin-top: 18px; font-size: 150px; }
+  #s-fav h2 .accent { display: block; color: var(--butter); font-size: 132px; line-height: 1.05; }
+  #s-fav ol { list-style: none; padding: 0; margin-top: 54px; display: grid; gap: 34px; }
+  #s-fav li { border-top: 2px solid rgba(255, 244, 232, 0.2); padding-top: 26px; }
+  #s-fav .row { display: flex; justify-content: space-between; align-items: baseline; gap: 30px; }
+  #s-fav .num { font-family: var(--f-serif); font-style: italic; font-size: 30px; color: var(--peach); }
+  #s-fav .name { font-family: var(--f-display); font-size: 74px; line-height: 1; margin-top: 4px; }
+  #s-fav .price { font-family: var(--f-display); font-size: 74px; color: var(--butter); }
+  #s-fav .press { position: absolute; left: 120px; bottom: 76px; font-size: 28px; color: rgba(255, 244, 232, 0.78); }
+  #s-fav .press b { color: var(--butter); font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; font-size: 24px; margin-right: 14px; }
+  #s-fav .photo { right: 120px; top: 150px; width: 640px; height: 780px; }
+
+  /* 3. Signature plates */
+  #s-plates { background: var(--cream); }
+  #s-plates .dish { position: absolute; inset: 0; }
+  #s-plates .photo { left: 120px; top: 150px; width: 780px; height: 780px; }
+  #s-plates .copy { position: absolute; left: 1010px; top: 230px; width: 790px; }
+  #s-plates .eyebrow { color: var(--orange-ink); }
+  #s-plates .n { font-family: var(--f-serif); font-style: italic; font-size: 120px; color: var(--peach); line-height: 1; margin-top: 18px; }
+  #s-plates h2 { font-size: 138px; margin-top: 8px; }
+  #s-plates .price { margin-top: 26px; font-family: var(--f-display); font-size: 70px; color: var(--orange-ink); }
+  #s-plates .price small { font-family: var(--f-sans); font-size: 28px; color: var(--ink-soft); margin-left: 14px; letter-spacing: 0; }
+  #s-plates .desc { margin-top: 22px; font-size: 36px; line-height: 1.4; color: var(--espresso-2); }
+
+  /* 4. Coffee */
+  #s-coffee { background: var(--peach); }
+  #s-coffee .photo { right: 160px; top: 110px; width: 645px; height: 860px; border-radius: 28px; }
+  #s-coffee .copy { position: absolute; left: 120px; top: 250px; width: 980px; }
+  #s-coffee .eyebrow { color: var(--espresso-2); }
+  #s-coffee h2 { font-size: 200px; margin-top: 20px; }
+  #s-coffee h2 .accent { color: #fff; font-size: 180px; }
+  #s-coffee .sub { margin-top: 34px; font-size: 40px; line-height: 1.35; max-width: 820px; }
+  #s-coffee .tag { display: inline-block; margin-top: 44px; background: var(--espresso); color: var(--cream); font-weight: 700; font-size: 38px; padding: 20px 36px; border-radius: 999px; }
+
+  /* 5. Catering */
+  #s-cater { background: var(--espresso); color: var(--cream); }
+  #s-cater .copy { position: absolute; left: 120px; top: 190px; width: 940px; }
+  #s-cater .eyebrow { color: var(--peach); }
+  #s-cater h2 { font-size: 146px; margin-top: 22px; }
+  #s-cater h2 .accent { display: block; color: var(--peach); font-size: 130px; line-height: 1.1; }
+  #s-cater .sub { margin-top: 34px; font-size: 38px; line-height: 1.4; color: rgba(255, 244, 232, 0.85); }
+  #s-cater .contact { margin-top: 48px; font-size: 40px; font-weight: 700; line-height: 1.6; }
+  #s-cater .contact span { color: var(--butter); }
+  #s-cater .menu { position: absolute; right: 120px; top: 190px; width: 700px; background: var(--cream); color: var(--espresso); border-radius: 36px; padding: 56px 60px; }
+  #s-cater .pan { display: inline-block; background: var(--butter); font-weight: 700; font-size: 26px; letter-spacing: 0.12em; text-transform: uppercase; padding: 12px 22px; border-radius: 999px; }
+  #s-cater dl { margin-top: 34px; }
+  #s-cater dl div { display: flex; justify-content: space-between; gap: 20px; font-size: 34px; padding: 15px 0; border-bottom: 2px dotted rgba(42, 22, 12, 0.25); }
+  #s-cater dt { font-weight: 600; }
+  #s-cater dd { font-family: var(--f-display); font-size: 42px; color: var(--orange-ink); }
+  #s-cater .fine { margin-top: 24px; font-size: 22px; color: var(--ink-soft); }
+
+  /* 6. Outro */
+  #s-outro { background: var(--hero-bg); text-align: center; }
+  #s-outro .wordmark { width: 860px; margin: 290px auto 0; color: var(--espresso); -webkit-mask-position: center; }
+  #s-outro .tag { margin-top: 30px; font-family: var(--f-serif); font-style: italic; font-size: 56px; color: var(--hero-accent); }
+  #s-outro .facts { position: static; justify-content: center; margin-top: 70px; font-size: 38px; }
+  #s-outro .ig { margin-top: 26px; font-size: 38px; font-weight: 700; color: var(--orange-ink); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><symbol id="star" viewBox="0 0 24 24"><path d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z"/></symbol></svg>
+
+<section class="scene" id="s-stack" data-dur="13">
+  <div class="stage"></div>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Bronzeville · Chicago</p>
+    <h1 class="display">
+      <span data-in="0.7">Breakfast,</span>
+      <span class="accent" data-in="1.0">stacked high</span>
+      <span data-in="1.3">on 47th.</span>
+    </h1>
+    <p class="sub" data-in="2.0">Home of 7-Up pancakes, peach bourbon French toast and shrimp &amp; grits, done the Southern way.</p>
+  </div>
+  <p class="facts" data-in="2.6"><span>Wed – Sun</span><span>·</span><span>8am – 2pm</span><span>·</span><span>4652 S. King Drive</span></p>
+</section>
+
+<section class="scene" id="s-obama" data-dur="13">
+  <p class="eyebrow" data-in="0.4">In his words</p>
+  <blockquote>
+    <p data-in="0.8">“Before Cliff Rome became a world-famous chef, he was learning family recipes and cooking with his grandmother on the South Side of Chicago.</p>
+    <p data-in="3.0">Next year, he’ll help lead food services at the Obama Presidential Center.</p>
+    <p data-in="5.0">So I couldn’t leave Chicago without making a stop at <em>Peach’s Restaurant.</em>”</p>
+  </blockquote>
+  <div class="who" data-in="6.4"><span class="rule"></span><div><b>President Barack Obama</b><span>on Instagram · May 23, 2025</span></div></div>
+</section>
+
+<section class="scene" id="s-cliff" data-dur="13">
+  <img class="art" src="../assets/img/brand/peach-portrait.png" alt="" data-in="0.3">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">The chef behind Peach’s</p>
+    <h2 class="display" data-in="0.7">Chef Cliff <span class="accent">Rome</span></h2>
+    <ul>
+      <li data-in="1.8"><span>A <b>Chicago native</b> who learned family recipes cooking with his grandmother on the South Side.</span></li>
+      <li data-in="3.2"><span>Founder of <b>Rome’s Joy Companies</b>: Peach’s Restaurant, Rome’s Joy Catering and the Parkway Ballroom.</span></li>
+      <li data-in="4.6"><span>Leads food service at <b>Tafari’s Kitchen</b> and across the <b>Obama Presidential Center</b>.</span></li>
+    </ul>
+  </div>
+  <p class="src" data-in="5.6">Sources: obama.org · @barackobama on Instagram</p>
+</section>
+
+<section class="scene" id="s-fav" data-dur="12">
+  <svg class="bigstar"><use href="#star"/></svg>
+  <div class="copy">
+    <p class="stars" data-in="0.4"><svg><use href="#star"/></svg><svg><use href="#star"/></svg><svg><use href="#star"/></svg></p>
+    <p class="eyebrow" data-in="0.6">Straight off our menu</p>
+    <h2 class="display" data-in="0.9">President Obama’s <span class="accent">Favorites</span></h2>
+    <ol>
+      <li data-in="2.0"><span class="num">No. 1</span><div class="row"><span class="name">Peach’s Shrimp &amp; Grits</span><span class="price">24</span></div></li>
+      <li data-in="2.6"><span class="num">No. 2</span><div class="row"><span class="name">Salmon Croquettes &amp; Grits</span><span class="price">23</span></div></li>
+    </ol>
+  </div>
+  <p class="press" data-in="3.4"><b>WGN-TV</b>“Obama stops by Peach’s Restaurant in Chicago’s Bronzeville neighborhood”</p>
+  <div class="photo" data-in="0.2" data-zoom><img src="../assets/img/food/shrimp-and-grits.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-plates" data-dur="18" data-step="4.5">
+  <div class="dish">
+    <div class="photo" data-in="0.1" data-zoom><img src="../assets/img/food/berry-pancakes.webp" alt=""></div>
+    <div class="copy">
+      <p class="eyebrow" data-in="0.3">Signature plates</p>
+      <p class="n" data-in="0.45">01</p>
+      <h2 class="display" data-in="0.6">Pancakes</h2>
+      <p class="price" data-in="0.8">6 / 9 / 12 <small>side / short / full stack</small></p>
+      <p class="desc" data-in="1.0">Piled high with blueberry lemon topping. Or go banana rum, or peach compote.</p>
+    </div>
+  </div>
+  <div class="dish">
+    <div class="photo" data-in="0.1" data-zoom><img src="../assets/img/food/banana-rum-french-toast.webp" alt=""></div>
+    <div class="copy">
+      <p class="eyebrow" data-in="0.3">Signature plates</p>
+      <p class="n" data-in="0.45">02</p>
+      <h2 class="display" data-in="0.6">Banana Rum French Toast</h2>
+      <p class="price" data-in="0.8">14 <small>6 wedges</small></p>
+      <p class="desc" data-in="1.0">Six wedges of French toast under our banana rum topping.</p>
+    </div>
+  </div>
+  <div class="dish">
+    <div class="photo" data-in="0.1" data-zoom><img src="../assets/img/food/hangover-wings.webp" alt=""></div>
+    <div class="copy">
+      <p class="eyebrow" data-in="0.3">Signature plates</p>
+      <p class="n" data-in="0.45">03</p>
+      <h2 class="display" data-in="0.6">Hangover Chicken Wings</h2>
+      <p class="price" data-in="0.8">17 <small>with fries</small></p>
+      <p class="desc" data-in="1.0">Four fried wings tossed in our signature sweet &amp; spicy hangover sauce.</p>
+    </div>
+  </div>
+  <div class="dish">
+    <div class="photo" data-in="0.1" data-zoom><img src="../assets/img/food/avocado-toast.webp" alt=""></div>
+    <div class="copy">
+      <p class="eyebrow" data-in="0.3">Signature plates</p>
+      <p class="n" data-in="0.45">04</p>
+      <h2 class="display" data-in="0.6">Avocado Toast</h2>
+      <p class="price" data-in="0.8">11 <small>add an egg 3.50</small></p>
+      <p class="desc" data-in="1.0">Avocado, cherry tomatoes, micro greens, feta &amp; balsamic glaze on toast.</p>
+    </div>
+  </div>
+</section>
+
+<section class="scene" id="s-coffee" data-dur="9">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Peach’s Coffee at Home</p>
+    <h2 class="display" data-in="0.7">Best <span class="accent">Damn</span> Drip</h2>
+    <p class="sub" data-in="1.3">The coffee we pour every morning, bagged to brew at home. ½ lb, whole bean or ground.</p>
+    <p class="tag" data-in="1.9">$14 · ask your server</p>
+  </div>
+  <div class="photo" data-in="0.2" data-zoom><img src="../assets/img/food/coffee-bag.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-cater" data-dur="10">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Catering</p>
+    <h2 class="display" data-in="0.7">Let us cater your <span class="accent">next event.</span></h2>
+    <p class="sub" data-in="1.3">Half pans feed about 10–12 people. Breakfast for the office, brunch for the family, cobbler for everybody.</p>
+    <p class="contact" data-in="1.9">Call <span>773.966.5801</span><br>ordering@romesjoy.com</p>
+  </div>
+  <div class="menu" data-in="1.0">
+    <p class="pan">½ pan · feeds 10–12</p>
+    <dl>
+      <div><dt>Pancakes · 12 pcs</dt><dd>$36</dd></div>
+      <div><dt>French Toast</dt><dd>$30</dd></div>
+      <div><dt>Salmon Croquettes · 12 pcs</dt><dd>$76</dd></div>
+      <div><dt>Chicken Wings · 24 pcs</dt><dd>$73</dd></div>
+      <div><dt>Cheese Grits</dt><dd>$35</dd></div>
+      <div><dt>Peach Cobbler</dt><dd>$60</dd></div>
+    </dl>
+    <p class="fine">A selection. Ask for the full catering menu.</p>
+  </div>
+</section>
+
+<section class="scene" id="s-outro" data-dur="7">
+  <span class="wordmark" data-in="0.3"></span>
+  <p class="tag" data-in="0.8">Southern breakfast &amp; brunch in Bronzeville</p>
+  <p class="facts" data-in="1.3"><span>Wed – Sun</span><span>·</span><span>8am – 2pm</span><span>·</span><span>4652 S. King Drive</span></p>
+  <p class="ig" data-in="1.7">@peachson47th</p>
+</section>
+
+<div class="veil" id="veil"></div>
+
+<script type="module">
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const FADE = 0.6;
+
+  const scenes = [...document.querySelectorAll('.scene')].map((el) => ({ id: el.id.slice(2), el, dur: Number(el.dataset.dur) }));
+  const veil = document.getElementById('veil');
+  let hero = null;
+
+  function reveal(root, t, dur) {
+    for (const el of root.querySelectorAll('[data-in]')) {
+      const k = easeOut(clamp((t - Number(el.dataset.in)) / 0.9));
+      const zoom = el.hasAttribute('data-zoom') ? el.querySelector('img') : null;
+      el.style.opacity = k;
+      el.style.transform = `translateY(${(1 - k) * 46}px)`;
+      if (zoom) zoom.style.transform = `scale(${1.04 + 0.07 * clamp(t / dur)})`;
+    }
+  }
+
+  function seek(id, t) {
+    const s = scenes.find((x) => x.id === id);
+    for (const x of scenes) x.el.classList.toggle('is-on', x === s);
+    veil.style.opacity = Math.max(1 - clamp(t / FADE), clamp((t - (s.dur - FADE)) / FADE));
+
+    if (id === 'plates') {
+      const step = Number(s.el.dataset.step);
+      s.el.querySelectorAll('.dish').forEach((d, i) => {
+        const lt = t - i * step;
+        const out = i < 3 ? clamp((lt - step + 0.35) / 0.35) : 0;
+        d.style.opacity = lt < 0 ? 0 : 1 - out;
+        if (lt >= 0) reveal(d, lt, step + 0.5);
+      });
+    } else {
+      reveal(s.el, t, s.dur);
+    }
+
+    if (id === 'stack' && hero) {
+      // stack builds over ~10s, then holds while the syrup settles
+      hero.renderAt(easeInOut(clamp((t - 0.3) / 10.2)), t);
+    }
+  }
+
+  async function init() {
+    await document.fonts.ready;
+    await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+    try {
+      const { mountHero } = await import('../assets/js/hero.js');
+      document.getElementById('s-stack').classList.add('is-on');
+      hero = await mountHero(document.querySelector('#s-stack .stage'), { frozen: { p: 0, t: 0 } });
+    } catch (e) {
+      console.error('hero failed', e);
+    }
+    window.SCENES = scenes.map(({ id, dur }) => ({ id, dur }));
+    window.seek = seek;
+    const q = new URLSearchParams(location.search);
+    seek(q.get('scene') || 'stack', Number(q.get('t') || 4));
+    window.__ready = true;
+  }
+  init();
+</script>
+</body>
+</html>

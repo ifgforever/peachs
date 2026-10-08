@@ -69,6 +69,7 @@ async function initHero() {
   try {
     const { mountHero } = await import('./hero.js');
     window.__hero = await mountHero(stageEl, { getProgress, reducedMotion: reduced }); // handle kept for demo recording
+    if (reduced) addPlayButton(mountHero, stageEl);
   } catch (e) {
     hero.classList.add('hero--fallback');
     console.info('Hero fallback:', e && e.message);
@@ -78,6 +79,24 @@ async function initHero() {
   }
 }
 initHero();
+
+// Visitors with "Reduce Motion" on see the finished stack; this lets them opt in to the animation.
+function addPlayButton(mountHero, stageEl) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'hero__play';
+  btn.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5v11l9.5-5.5z"/></svg>Play the animation';
+  btn.addEventListener('click', async () => {
+    btn.remove();
+    window.__hero?.destroy();
+    hero.classList.add('hero--motion');
+    measure();
+    window.scrollTo({ top: heroTop, behavior: 'auto' });
+    window.__hero = await mountHero(stageEl, { getProgress, reducedMotion: false });
+    measure();
+  });
+  $('.hero__sticky', hero).appendChild(btn);
+}
 
 /* -------------------------------------------------------------------------
    Open / closed status (America/Chicago), hours table "today"

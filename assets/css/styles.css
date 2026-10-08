@@ -1898,9 +1898,10 @@ section[id], [id="menu-panel"] { scroll-margin-top: calc(var(--header-h) + 8px);
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .hero { height: 100vh; height: 100svh; }
-  .hero__cue { display: none; }
-  .hero__copy { transform: none; opacity: 1; }
+  /* Static final stack unless the visitor opts in with the play button (.hero--motion). */
+  .hero:not(.hero--motion) { height: 100vh; height: 100svh; }
+  .hero:not(.hero--motion) .hero__cue { display: none; }
+  .hero:not(.hero--motion) .hero__copy { transform: none; opacity: 1; }
   .marquee__track { animation: none; width: auto; }
   .marquee__list { flex-wrap: wrap; justify-content: center; padding-inline: 56px; }
   .marquee__list[aria-hidden="true"] { display: none; }
@@ -1908,6 +1909,20 @@ section[id], [id="menu-panel"] { scroll-margin-top: calc(var(--header-h) + 8px);
   .btn:hover { transform: none; }
   .plate:hover .plate__media img { transform: none; }
 }
+
+/* Opt-in play button, shown only to prefers-reduced-motion visitors. */
+.hero__play {
+  position: absolute; z-index: 3; left: 50%; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); white-space: nowrap;
+  transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 12px 20px; border: 0; border-radius: 999px;
+  background: var(--espresso); color: var(--cream);
+  font: 600 0.95rem/1 "DM Sans", system-ui, sans-serif; cursor: pointer;
+  box-shadow: 0 10px 30px rgb(42 22 12 / 0.25);
+}
+.hero__play:focus-visible { outline: 3px solid var(--burnt-orange, #E8742A); outline-offset: 3px; }
+.hero__play svg { width: 14px; height: 14px; fill: currentColor; }
+.hero--fallback .hero__play, .hero--motion .hero__play { display: none; }
 
 @media print {
   .topbar, .site-header, .hero, .marquee, .menu__controls { display: none; }

@@ -1,4 +1,22 @@
-# Peach's on 47th: website concept
+# Rome's Joy Companies: website concepts
+
+Redesign concepts for every company in Chef Cliff Rome's group, built as a pitch. Open `index.html` (the preview page) to see a card for each site. Click a card to open the concept, or use the "Current site" link to compare with the live website.
+
+| Folder | Company | Live site today |
+|---|---|---|
+| `romesjoy/` | Rome's Joy Companies (parent) | https://romesjoy.com/ |
+| `peachs.html` | Peach's on 47th | https://peachson47th.com/ |
+| `catering/` | Rome's Joy Catering | https://romesjoy.com/catering/ |
+| `parkway-social/` | Parkway Social | https://parkwaysocialchicago.com/ |
+| `mise-en-place/` | Mise En Place | https://miseenplacechicago.org/ |
+| `blanc/` | Blanc Art Gallery | https://blancchicago.com/ |
+| `rjc-sausage/` | R.J.C. Sausage Company | none (first website) |
+
+Each folder has its own `README.md` (what's better, what the client still needs to supply) and `content-inventory.md` (every fact used, with its source and the items to confirm). Every page is set to `noindex` so the concepts never compete with the real sites in Google.
+
+---
+
+## Peach's on 47th
 
 A redesign concept for [peachson47th.com](https://peachson47th.com/), built as a pitch for the owner. The hero is a scroll-driven 3D animation: pancakes hang suspended in mid-air, then drop one by one into a stack, followed by butter and syrup.
 
@@ -23,7 +41,7 @@ Any static web server works. From this folder:
 npx http-server -p 8080
 ```
 
-Then open http://localhost:8080. Opening `index.html` by double-clicking does **not** work: browsers block the JavaScript modules on `file://` pages.
+Then open http://localhost:8080 for the preview page. Opening `peachs.html` by double-clicking does **not** work: browsers block the JavaScript modules on `file://` pages.
 
 ## Get a shareable link for the client meeting
 
@@ -53,7 +71,9 @@ The concept preview has `noindex` set so it never competes with the real site in
 ## Project layout
 
 ```
-index.html               the whole site (one page)
+index.html               preview page linking every concept
+peachs.html              the Peach's concept (one page)
+preview/                 screenshot thumbnails for the preview page
 assets/css/styles.css    styles
 assets/js/main.js        nav, menu tabs and filters, open-now badge, hero scroll wiring
 assets/js/menu-data.js   menu content (edit prices here)

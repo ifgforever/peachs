@@ -1,0 +1,6 @@
+.git
+.github
+.wrangler
+wrangler.jsonc
+.assetsignore
+signage/render.mjs

@@ -399,3 +399,6 @@ html:not(.js) .menu-panel[hidden] { display: block !important; border-top: 1px s
 }
 .gallery__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 24px; margin-bottom: 18px; }
 .gallery__head p { font-weight: 700; color: var(--muted); font-size: 0.95rem; }
+
+/* Cormorant defaults to old-style figures; use lining figures for numbers. */
+.hero__facts strong, .dish__price, .step__num, .occasion__num { font-variant-numeric: lining-nums; }

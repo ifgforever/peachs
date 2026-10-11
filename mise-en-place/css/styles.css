@@ -55,7 +55,7 @@ button { font: inherit; color: inherit; }
 main:focus { outline: none; }
 
 h1, h2, h3 { font-family: var(--f-display); font-weight: 700; line-height: 1.02; letter-spacing: 0.005em; text-wrap: balance; }
-h1 { font-size: clamp(2.6rem, 7.2vw, 5rem); text-transform: uppercase; }
+h1 { font-size: clamp(2.4rem, 7.2vw, 5rem); overflow-wrap: break-word; text-transform: uppercase; }
 h2 { font-size: clamp(2.1rem, 5vw, 3.4rem); text-transform: uppercase; }
 h3 { font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
 
@@ -187,6 +187,7 @@ h3 { font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; text-transform:
 .hero__lead { margin-top: 20px; font-size: clamp(1.1rem, 1.8vw, 1.25rem); color: var(--ink-soft); max-width: 36em; }
 .hero__ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
 .hero__note { margin-top: 22px; font-size: 0.9rem; color: var(--ink-soft); }
+.hero__inner > * { min-width: 0; }
 .hero__media { position: relative; }
 .hero__media img {
   width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius);

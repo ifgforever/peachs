@@ -322,13 +322,11 @@ main:focus { outline: none; }
 .inquiry__fine a { color: var(--bronze); }
 
 /* ---------- Gallery ---------- */
-.masonry { columns: 2 160px; column-gap: 12px; }
-@media (min-width: 760px) { .masonry { columns: 3; column-gap: 16px; } }
-@media (min-width: 1100px) { .masonry { columns: 4; } }
-.masonry li { break-inside: avoid; margin-bottom: 12px; }
-@media (min-width: 760px) { .masonry li { margin-bottom: 16px; } }
+.masonry { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+@media (min-width: 760px) { .masonry { grid-template-columns: repeat(3, 1fr); gap: 16px; } }
+@media (min-width: 1100px) { .masonry { grid-template-columns: repeat(4, 1fr); } }
 .shot { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: var(--radius-sm); overflow: hidden; }
-.shot img { width: 100%; transition: transform .5s var(--ease); }
+.shot img { width: 100%; aspect-ratio: 4 / 5; object-fit: cover; transition: transform .5s var(--ease); }
 .shot:hover img { transform: scale(1.03); }
 
 .lightbox {

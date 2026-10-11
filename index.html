@@ -48,7 +48,7 @@
     a { color: inherit; }
     .wrap { max-width: 1240px; margin: 0 auto; padding: 0 var(--gutter); }
 
-    header.intro { padding: clamp(48px, 8vw, 104px) 0 clamp(32px, 5vw, 56px); }
+    header.intro { padding-block: clamp(48px, 8vw, 104px) clamp(32px, 5vw, 56px); }
     .eyebrow {
       font-size: .8125rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
       color: var(--accent-ink); margin: 0 0 16px;
@@ -110,7 +110,7 @@
     .card.soon:hover { transform: none; }
     .soon .thumb { display: grid; place-items: center; color: var(--muted); font-family: var(--f-serif); font-style: italic; font-size: 1.25rem; background: transparent; }
 
-    footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: .875rem; }
+    footer { border-top: 1px solid var(--line); padding-block: 28px 40px; color: var(--muted); font-size: .875rem; }
     footer p { margin: 0 0 6px; }
     @media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
   </style>

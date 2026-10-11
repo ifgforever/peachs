@@ -2,9 +2,9 @@
    Rome's Joy Catering: concept site styles
    Palette from the RJC black-and-white logo, warmed with a gold accent.
    Text pairs checked for WCAG AA (contrast ratio):
-   ink on paper 16.7:1 · muted on paper 7.0:1 · gold-ink on paper 6.1:1
-   paper on ink 16.7:1 · gold on ink 8.6:1 · paper-dim on ink 10.9:1
-   ink on gold 8.6:1 (buttons) · ink on peach 10.4:1
+   ink on paper 16.6:1 · muted on paper 6.6:1 (5.9:1 on paper-2) · gold-ink on paper 5.7:1
+   gold-ink on paper-2 5.1:1 · gold-ink on gold-soft 5.0:1 · paper on ink 16.6:1
+   gold on ink 8.2:1 · paper-dim on ink 11.0:1 · ink on gold 8.2:1 (buttons) · ink on peach 11.7:1
    ========================================================================== */
 
 :root {

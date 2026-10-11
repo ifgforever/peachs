@@ -150,7 +150,7 @@ main:focus { outline: none; }
   .nav__toggle-bars span { display: block; height: 2px; background: currentColor; border-radius: 2px; transition: transform .25s var(--ease); }
   .nav__toggle[aria-expanded="true"] .nav__toggle-bars span:first-child { transform: translateY(4px) rotate(45deg); }
   .nav__toggle[aria-expanded="true"] .nav__toggle-bars span:last-child { transform: translateY(-4px) rotate(-45deg); }
-  .nav__list {
+  .site-header .nav__list {
     display: none; position: absolute; left: 0; right: 0; top: 100%;
     flex-direction: column; gap: 0; padding: 8px var(--gutter) 20px;
     background: var(--cream); border-bottom: 1px solid var(--line); box-shadow: 0 18px 30px rgba(28, 29, 25, .12);

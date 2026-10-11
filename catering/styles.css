@@ -387,3 +387,15 @@ html:not(.js) .menu-panel[hidden] { display: block !important; border-top: 1px s
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   .btn:hover { transform: none; }
 }
+
+/* ---------- Instagram links ---------- */
+.icon { width: 1.15em; height: 1.15em; flex: none; }
+.nav-ig { display: inline-flex; align-items: center; gap: 8px; }
+.footer-ig { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; }
+.footer-ig:hover { text-decoration: underline; }
+@media (min-width: 860px) {
+  .nav-ig { min-width: 44px; min-height: 44px; justify-content: center; }
+  .nav-ig__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+.gallery__head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 24px; margin-bottom: 18px; }
+.gallery__head p { font-weight: 700; color: var(--muted); font-size: 0.95rem; }

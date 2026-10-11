@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<meta name="robots" content="noindex">
+<title>Rome's Joy Family Loop</title>
+<!-- Screen loop for every Rome's Joy company, 1920x1080. Rendered to MP4 by `node signage/render.mjs family`;
+     open ?scene=<id>&t=<seconds> to preview a frame. Each company scene uses that company's own colors and fonts. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&amp;family=Manrope:wght@400..800&amp;family=Bebas+Neue&amp;family=Fraunces:ital,opsz,wght@0,9..144,500;1,9..144,500&amp;family=DM+Serif+Display:ital@0;1&amp;family=Jost:wght@400..700&amp;family=Barlow+Condensed:wght@500;600;700&amp;family=Public+Sans:wght@400..700&amp;family=Instrument+Serif:ital@0;1&amp;family=Inter:wght@400..700&amp;family=Rye&amp;family=Archivo:wght@400..800&amp;display=block">
+<style>
+  :root {
+    /* Rome's Joy (from romesjoy/css/styles.css) */
+    --ink: #16130F;
+    --ink-2: #241F19;
+    --ivory: #F6F0E4;
+    --ivory-dim: #CFC6B6;
+    --paper: #FFFBF3;
+    --brass: #D4A55F;
+    --brass-ink: #7C561C;
+    --forest: #14302A;
+    --forest-2: #1C3F37;
+    --muted: #5B5143;
+    --veil: #FFF4E8;           /* same fade color as the Peach's loop, so the two files can play back to back */
+    --f-display: 'Cormorant Garamond', Georgia, serif;
+    --f-sans: 'Manrope', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); color: var(--ink); font-family: var(--f-sans); }
+  .scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+  .scene.is-on { display: block; }
+  .veil { position: absolute; inset: 0; background: var(--veil); pointer-events: none; z-index: 50; }
+  [data-in] { opacity: 0; will-change: transform, opacity; }
+  ul, ol { list-style: none; padding: 0; }
+
+  .eyebrow { font-family: var(--f-sans); font-weight: 700; font-size: 28px; letter-spacing: 0.22em; text-transform: uppercase; }
+  .serif { font-family: var(--f-display); font-weight: 600; line-height: 0.98; letter-spacing: -0.01em; }
+  .serif em { font-style: italic; font-weight: 500; }
+  .photo { position: absolute; overflow: hidden; border-radius: 28px; box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.55); }
+  .photo img { width: 100%; height: 100%; object-fit: cover; display: block; transform-origin: 50% 55%; }
+  .mask-logo { display: block; background-color: currentColor; -webkit-mask: var(--src) no-repeat left center / contain; }
+  .rjc-mark { --src: url('../romesjoy/img/rjc-logo.png'); aspect-ratio: 392 / 220; }
+  .nolig { font-variant-ligatures: none; font-feature-settings: 'calt' 0, 'liga' 0, 'dlig' 0; }
+  .src { position: absolute; left: 120px; bottom: 100px; font-size: 21px; opacity: 0.7; }
+
+  /* Bar along the bottom of each company scene: shows where this company sits in the family */
+  .fambar { position: absolute; left: 120px; right: 120px; bottom: 44px; display: flex; align-items: center; gap: 20px; padding-top: 18px; border-top: 2px solid currentColor; border-color: color-mix(in srgb, currentColor 22%, transparent); font-family: var(--f-sans); font-weight: 700; font-size: 20px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .fambar b { margin-right: auto; font-weight: 800; }
+  .fambar span { opacity: 0.42; }
+  .fambar span.is-on { opacity: 1; text-decoration: underline; text-decoration-thickness: 3px; text-underline-offset: 8px; }
+  .fambar i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.35; }
+
+  /* ---------- 1. Open ---------- */
+  #s-open { background: radial-gradient(90% 120% at 85% 40%, #2C251C 0%, var(--ink) 62%); color: var(--ivory); }
+  #s-open .rjc-mark { position: absolute; left: 120px; top: 92px; width: 190px; color: var(--brass); }
+  #s-open .copy { position: absolute; left: 120px; top: 260px; width: 900px; }
+  #s-open .eyebrow { color: var(--brass); }
+  #s-open h1 { margin-top: 26px; font-size: 104px; }
+  #s-open h1 span { display: block; }
+  #s-open h1 em { color: var(--brass); }
+  #s-open .sub { margin-top: 38px; font-size: 34px; line-height: 1.42; color: var(--ivory-dim); max-width: 860px; }
+  #s-open .p1 { right: 110px; top: 96px; width: 620px; height: 434px; }
+  #s-open .p2 { right: 400px; top: 570px; width: 470px; height: 313px; transform: rotate(-2deg); }
+  #s-open .p3 { right: 100px; top: 590px; width: 330px; height: 339px; }
+
+  /* ---------- 2. Chef ---------- */
+  #s-chef { background: var(--paper); color: var(--ink); }
+  #s-chef .copy { position: absolute; left: 120px; top: 110px; width: 980px; }
+  #s-chef .eyebrow { color: var(--brass-ink); }
+  #s-chef h2 { margin-top: 18px; font-size: 156px; }
+  #s-chef h2 em { color: var(--brass-ink); }
+  #s-chef .lede { margin-top: 26px; font-size: 36px; line-height: 1.38; color: var(--ink-2); max-width: 900px; }
+  #s-chef ol { margin-top: 44px; display: grid; gap: 22px; }
+  #s-chef li { display: grid; grid-template-columns: 220px 1fr; align-items: baseline; gap: 24px; padding-top: 20px; border-top: 2px solid rgba(22, 19, 15, 0.12); }
+  #s-chef li b { font-family: var(--f-display); font-style: italic; font-weight: 600; font-size: 46px; color: var(--brass-ink); line-height: 1; }
+  #s-chef li span { font-size: 31px; line-height: 1.3; color: var(--ink-2); }
+  #s-chef .photo { right: 110px; top: 120px; width: 640px; height: 518px; }
+  #s-chef .stat { position: absolute; right: 110px; top: 690px; width: 640px; background: var(--forest); color: var(--ivory); border-radius: 28px; padding: 34px 44px; display: flex; align-items: center; gap: 30px; }
+  #s-chef .stat b { font-family: var(--f-display); font-weight: 600; font-size: 132px; line-height: 0.8; color: var(--brass); }
+  #s-chef .stat span { font-size: 32px; line-height: 1.3; }
+  #s-chef .src { bottom: 52px; color: var(--muted); opacity: 1; }
+
+  /* ---------- 3. Obama Presidential Center ---------- */
+  #s-opc { background: radial-gradient(100% 120% at 80% 30%, var(--forest-2) 0%, var(--forest) 60%); color: var(--ivory); }
+  #s-opc .copy { position: absolute; left: 120px; top: 150px; width: 900px; }
+  #s-opc .eyebrow { color: var(--brass); }
+  #s-opc h2 { margin-top: 24px; font-size: 124px; }
+  #s-opc h2 em { color: var(--brass); }
+  #s-opc .sub { margin-top: 38px; font-size: 36px; line-height: 1.4; color: var(--ivory-dim); }
+  #s-opc .sub b { color: var(--ivory); }
+  #s-opc .press { position: absolute; left: 120px; bottom: 90px; width: 900px; font-size: 26px; line-height: 1.55; color: var(--ivory-dim); }
+  #s-opc .press b { display: block; color: var(--brass); font-size: 22px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 6px; }
+  #s-opc .clip { position: absolute; background: #fff; padding: 10px; border-radius: 10px; box-shadow: 0 36px 70px -24px rgba(0, 0, 0, 0.6); }
+  #s-opc .clip img { display: block; width: 100%; height: auto; border-radius: 4px; }
+  #s-opc .c1 { left: 1080px; top: 110px; width: 520px; transform: rotate(-4deg); }
+  #s-opc .c2 { left: 1330px; top: 300px; width: 500px; transform: rotate(3deg); }
+  #s-opc .c3 { left: 1110px; top: 520px; width: 360px; transform: rotate(-2deg); }
+  #s-opc .c4 { left: 1440px; top: 640px; width: 390px; transform: rotate(4deg); }
+
+  /* ---------- 4. The family ---------- */
+  #s-family { background: var(--ivory); color: var(--ink); }
+  #s-family .head { position: absolute; left: 120px; top: 96px; }
+  #s-family .eyebrow { color: var(--brass-ink); }
+  #s-family h2 { margin-top: 14px; font-size: 140px; }
+  #s-family h2 em { color: var(--brass-ink); }
+  #s-family .grid { position: absolute; left: 120px; right: 120px; top: 380px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; }
+  #s-family .co { background: #fff; border-radius: 24px; padding: 32px; display: flex; gap: 30px; align-items: center; height: 280px; border-top: 10px solid var(--c); box-shadow: 0 24px 50px -30px rgba(22, 19, 15, 0.35); }
+  #s-family .logo { flex: none; width: 150px; height: 150px; display: grid; place-items: center; }
+  #s-family .logo img { max-width: 150px; max-height: 150px; }
+  #s-family h3 { font-family: var(--f-display); font-weight: 700; font-size: 46px; line-height: 1; }
+  #s-family p { margin-top: 12px; font-size: 25px; line-height: 1.35; color: var(--muted); }
+  .pw-logo { width: 150px; height: 150px; background: #111; color: #fff; display: grid; place-content: center; font-family: 'Jost', sans-serif; font-weight: 700; font-size: 34px; line-height: 0.85; letter-spacing: -0.02em; }
+  .pw-logo span { display: flex; align-items: center; gap: 4px; margin-left: -3px; }
+  .pw-logo span::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .blanc-logo { display: flex; align-items: flex-end; gap: 8px; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 30px; line-height: 0.8; letter-spacing: -0.02em; color: #111; }
+  .blanc-logo::before { content: ''; width: 54px; height: 54px; border: 5px solid currentColor; }
+
+  /* ---------- 5. Peach's ---------- */
+  #s-peachs { background: radial-gradient(120% 95% at 68% 52%, #FFF3E6 0%, #FDE6CF 38%, #F9D3B2 68%, #F7C59F 100%); color: #2A160C; }
+  #s-peachs .wordmark { position: absolute; left: 120px; top: 80px; width: 330px; aspect-ratio: 724 / 189; --src: url('../assets/img/brand/wordmark.png'); }
+  #s-peachs .head { position: absolute; left: 120px; top: 190px; width: 1680px; }
+  #s-peachs .eyebrow { color: #A84A16; }
+  #s-peachs h2 { margin-top: 12px; font-family: 'Bebas Neue', Impact, sans-serif; font-weight: 400; font-size: 112px; line-height: 0.95; }
+  #s-peachs h2 em { display: block; font-family: 'Fraunces', Georgia, serif; font-style: italic; font-weight: 500; font-size: 88px; line-height: 1.1; color: #8A3A0E; letter-spacing: -0.01em; }
+  #s-peachs .cards { position: absolute; left: 120px; right: 120px; top: 478px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px; }
+  #s-peachs .card { background: #FFF4E8; border-radius: 28px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(42, 22, 12, 0.5); height: 448px; position: relative; }
+  #s-peachs .card .pic { height: 244px; background: #FDDCC5; overflow: hidden; display: grid; place-items: center; }
+  #s-peachs .card .pic img { width: 100%; height: 100%; object-fit: cover; }
+  #s-peachs .card .pic img.badge { width: auto; height: 210px; object-fit: contain; }
+  #s-peachs .card .txt { padding: 26px 32px; }
+  #s-peachs .card h3 { font-family: 'Bebas Neue', Impact, sans-serif; font-weight: 400; font-size: 58px; line-height: 1; }
+  #s-peachs .card p { margin-top: 10px; font-family: 'DM Sans', var(--f-sans); font-size: 25px; line-height: 1.35; color: #3A2015; }
+  #s-peachs .here { position: absolute; top: 22px; left: 22px; background: #E8742A; color: #fff; font-weight: 800; font-size: 22px; letter-spacing: 0.14em; text-transform: uppercase; padding: 10px 18px; border-radius: 999px; }
+
+  /* ---------- 6. Catering ---------- */
+  #s-catering { background: #16130F; color: #F7F2EA; }
+  #s-catering .rjc-mark { position: absolute; left: 120px; top: 96px; width: 150px; color: #D4A64A; }
+  #s-catering .copy { position: absolute; left: 120px; top: 240px; width: 860px; }
+  #s-catering .eyebrow { color: #D4A64A; }
+  #s-catering h2 { margin-top: 20px; font-size: 128px; }
+  #s-catering h2 em { color: #D4A64A; }
+  #s-catering .sub { margin-top: 30px; font-size: 33px; line-height: 1.42; color: #CFC6B8; }
+  #s-catering .contact { margin-top: 36px; font-size: 36px; font-weight: 700; line-height: 1.45; }
+  #s-catering .contact span { color: #D4A64A; }
+  #s-catering .p1 { right: 120px; top: 110px; width: 660px; height: 478px; }
+  #s-catering .p2 { right: 500px; top: 520px; width: 360px; height: 408px; transform: rotate(-2deg); }
+  #s-catering .p3 { right: 150px; top: 640px; width: 320px; height: 320px; transform: rotate(2deg); }
+
+  /* ---------- 7. Parkway Social ---------- */
+  #s-parkway { background: #2F3726; color: #F4EEE3; font-family: 'Jost', sans-serif; }
+  #s-parkway .pw-word { position: absolute; left: 120px; top: 80px; font-weight: 700; font-size: 54px; line-height: 0.82; letter-spacing: -0.02em; }
+  #s-parkway .pw-word span { display: flex; align-items: center; gap: 7px; margin-left: -4px; }
+  #s-parkway .pw-word span::before { content: ''; width: 13px; height: 13px; border-radius: 50%; background: currentColor; }
+  #s-parkway .copy { position: absolute; left: 120px; top: 290px; width: 900px; }
+  #s-parkway .eyebrow { font-family: 'Jost', sans-serif; font-weight: 600; color: #D2AE72; }
+  #s-parkway h2 { margin-top: 18px; font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; font-size: 86px; line-height: 1.04; }
+  #s-parkway h2 em { color: #D2AE72; }
+  #s-parkway .sub { margin-top: 26px; font-size: 31px; line-height: 1.42; color: #DDE2D0; }
+  #s-parkway .chips { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 16px; }
+  #s-parkway .chips li { border: 2px solid #D2AE72; border-radius: 999px; padding: 12px 24px; font-weight: 600; font-size: 26px; }
+  #s-parkway .chips b { color: #D2AE72; }
+  #s-parkway .chips li.handle { border-color: transparent; color: #D2AE72; padding-left: 8px; }
+  #s-parkway .perk { display: inline-block; margin-top: 30px; background: #D2AE72; color: #1C1D19; border-radius: 16px; padding: 16px 28px; font-weight: 600; font-size: 29px; }
+  #s-parkway .p1 { right: 120px; top: 90px; width: 470px; height: 705px; }
+  #s-parkway .p2 { right: 470px; top: 520px; width: 420px; height: 315px; transform: rotate(-2deg); }
+
+  /* ---------- 8. GuestBook quote (Chef Rome's own words) ---------- */
+  #s-quote { background: #111; color: var(--ivory); }
+  #s-quote .eyebrow { position: absolute; left: 120px; top: 120px; color: var(--brass); }
+  #s-quote blockquote { position: absolute; left: 120px; top: 196px; width: 1080px; font-family: var(--f-display); font-weight: 500; font-size: 56px; line-height: 1.24; }
+  #s-quote blockquote p + p { margin-top: 26px; }
+  #s-quote blockquote em { color: var(--brass); }
+  #s-quote .who { position: absolute; left: 120px; bottom: 96px; display: flex; align-items: center; gap: 26px; }
+  #s-quote .who .rule { width: 90px; height: 3px; background: var(--brass); }
+  #s-quote .who b { display: block; font-family: var(--f-display); font-weight: 600; font-size: 60px; line-height: 1; }
+  #s-quote .who span { display: block; margin-top: 8px; font-size: 26px; color: var(--ivory-dim); }
+  #s-quote .gb { position: absolute; right: 120px; top: 230px; width: 520px; transform: rotate(3deg); background: #fff; padding: 12px; border-radius: 8px; box-shadow: 0 40px 80px -30px rgba(0, 0, 0, 0.8); }
+  #s-quote .gb img { display: block; width: 100%; }
+  #s-quote .gb figcaption { color: #111; font-family: 'Inter', sans-serif; font-size: 20px; padding: 14px 6px 4px; }
+
+  /* ---------- 9. Blanc ---------- */
+  #s-blanc { background: #fff; color: #111; font-family: 'Inter', sans-serif; }
+  #s-blanc .blanc-logo { position: absolute; left: 120px; top: 92px; font-size: 52px; gap: 14px; }
+  #s-blanc .blanc-logo::before { width: 86px; height: 86px; border-width: 6px; }
+  #s-blanc .copy { position: absolute; left: 120px; top: 270px; width: 800px; }
+  #s-blanc .eyebrow { font-family: 'Inter', sans-serif; font-weight: 600; color: #A3271B; }
+  #s-blanc h2 { margin-top: 18px; font-family: 'Instrument Serif', Georgia, serif; font-weight: 400; font-size: 136px; line-height: 0.95; letter-spacing: -0.01em; }
+  #s-blanc h2 em { color: #A3271B; }
+  #s-blanc .mission { margin-top: 32px; font-size: 29px; line-height: 1.45; color: #333; }
+  #s-blanc .dwdg { margin-top: 26px; font-size: 29px; line-height: 1.45; color: #333; }
+  #s-blanc .dwdg b, #s-blanc .mission b { color: #111; }
+  #s-blanc .visit { margin-top: 30px; font-size: 29px; font-weight: 600; }
+  #s-blanc .visit span { color: #A3271B; }
+  #s-blanc .poster { right: 120px; top: 110px; width: 820px; height: 462px; border-radius: 6px; }
+  #s-blanc .show { position: absolute; right: 120px; top: 610px; width: 820px; }
+  #s-blanc .show p:first-child { font-size: 24px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: #A3271B; }
+  #s-blanc .show h3 { margin-top: 10px; font-family: 'Instrument Serif', Georgia, serif; font-style: italic; font-weight: 400; font-size: 64px; line-height: 1; }
+  #s-blanc .show p { margin-top: 12px; font-size: 28px; color: #333; }
+  #s-blanc .show .when { display: inline-block; margin-top: 18px; border: 2px solid #111; padding: 10px 20px; font-weight: 600; font-size: 26px; }
+
+  /* ---------- 10. R.J.C. Sausage ---------- */
+  #s-rjc { background: #F6EFE3; color: #16120F; font-family: 'Archivo', sans-serif; }
+  #s-rjc .awning { position: absolute; left: 0; right: 0; top: 0; height: 54px; background: repeating-linear-gradient(90deg, #16120F 0 34px, #F6EFE3 34px 68px); }
+  #s-rjc .logo { position: absolute; left: 120px; top: 120px; width: 200px; border-radius: 16px; box-shadow: 0 16px 30px -18px rgba(22, 18, 15, 0.6); }
+  #s-rjc .copy { position: absolute; left: 120px; top: 360px; width: 900px; }
+  #s-rjc .eyebrow { font-family: 'Archivo', sans-serif; font-weight: 800; color: #A3301B; }
+  #s-rjc h2 { margin-top: 18px; font-family: 'Rye', Georgia, serif; font-weight: 400; font-size: 92px; line-height: 1.04; }
+  #s-rjc .sub { margin-top: 26px; font-size: 32px; line-height: 1.42; color: #2A221C; }
+  #s-rjc .badges { margin-top: 30px; display: flex; flex-wrap: wrap; gap: 14px; }
+  #s-rjc .badges li { border: 2px solid #16120F; border-radius: 999px; padding: 10px 24px; font-weight: 700; font-size: 26px; }
+  #s-rjc .badges li.halal { background: #17402F; border-color: #17402F; color: #fff; }
+  #s-rjc .whole { margin-top: 30px; font-size: 28px; font-weight: 600; color: #2A221C; }
+  #s-rjc .whole span { color: #A3301B; }
+  #s-rjc .chain { position: absolute; right: 60px; top: 340px; width: 860px; filter: drop-shadow(0 14px 16px rgba(22, 18, 15, 0.28)); }
+  #s-rjc .patty { position: absolute; right: 170px; top: 120px; width: 250px; filter: drop-shadow(0 12px 14px rgba(22, 18, 15, 0.28)); }
+
+  /* ---------- 11. Mise En Place ---------- */
+  #s-mise { background: #F5F1E6; color: #171512; font-family: 'Public Sans', sans-serif; }
+  #s-mise .logo { position: absolute; left: 110px; top: 66px; width: 150px; }
+  #s-mise .copy { position: absolute; left: 120px; top: 226px; width: 860px; }
+  #s-mise .eyebrow { font-family: 'Public Sans', sans-serif; color: #B23A1A; }
+  #s-mise h2 { margin-top: 12px; font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 700; font-size: 108px; line-height: 0.95; text-transform: uppercase; }
+  #s-mise h2 span { color: #B23A1A; }
+  #s-mise .sub { margin-top: 22px; font-size: 29px; line-height: 1.42; color: #26231D; }
+  #s-mise .tiers { margin-top: 26px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  #s-mise .tiers li { background: #fff; border-radius: 14px; padding: 18px 20px; border-top: 6px solid #B23A1A; }
+  #s-mise .tiers b { display: block; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 36px; text-transform: uppercase; line-height: 1; }
+  #s-mise .tiers span { display: block; margin-top: 6px; font-size: 21px; line-height: 1.3; color: #57513F; }
+  #s-mise .kit { margin-top: 22px; font-size: 26px; line-height: 1.4; color: #26231D; }
+  #s-mise .give { margin-top: 18px; font-size: 27px; font-weight: 700; color: #B23A1A; }
+  #s-mise .p1 { right: 110px; top: 90px; width: 760px; height: 512px; border-radius: 14px; }
+  #s-mise .p2 { right: 300px; top: 560px; width: 560px; height: 373px; border-radius: 14px; transform: rotate(-2deg); }
+
+  /* ---------- 12. Community ---------- */
+  #s-community { background: radial-gradient(100% 120% at 20% 0%, var(--forest-2) 0%, var(--forest) 60%); color: var(--ivory); }
+  #s-community .head { position: absolute; left: 120px; top: 86px; width: 1680px; }
+  #s-community .eyebrow { color: var(--brass); }
+  #s-community h2 { margin-top: 16px; font-size: 104px; }
+  #s-community h2 em { color: var(--brass); }
+  #s-community .sub { margin-top: 24px; font-size: 32px; line-height: 1.4; color: var(--ivory-dim); max-width: 1500px; }
+  #s-community .cards { position: absolute; left: 120px; right: 120px; top: 510px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 28px; }
+  #s-community .card { background: rgba(246, 240, 228, 0.07); border: 2px solid rgba(246, 240, 228, 0.14); border-radius: 22px; padding: 30px 36px; display: grid; grid-template-columns: 70px 1fr; gap: 6px 22px; }
+  #s-community .card i { grid-row: span 2; font-family: var(--f-display); font-style: italic; font-weight: 600; font-size: 60px; color: var(--brass); line-height: 0.9; }
+  #s-community .card b { font-family: var(--f-display); font-weight: 700; font-size: 46px; line-height: 1; }
+  #s-community .card span { font-size: 26px; line-height: 1.38; color: var(--ivory-dim); }
+
+  /* ---------- 13. Partners ---------- */
+  #s-partners { background: var(--ink); color: var(--ivory); }
+  #s-partners .head { position: absolute; left: 120px; top: 96px; }
+  #s-partners .eyebrow { color: var(--brass); }
+  #s-partners h2 { margin-top: 16px; font-size: 118px; }
+  #s-partners h2 em { color: var(--brass); }
+  #s-partners .label { position: absolute; left: 120px; font-weight: 700; font-size: 22px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ivory-dim); }
+  #s-partners .l1 { top: 400px; }
+  #s-partners .l2 { top: 762px; }
+  #s-partners .row { position: absolute; left: 0; right: 0; height: 92px; overflow: hidden; }
+  #s-partners .r1 { top: 446px; }
+  #s-partners .r2 { top: 556px; }
+  #s-partners .r3 { top: 808px; }
+  #s-partners .track { display: flex; gap: 18px; width: max-content; will-change: transform; }
+  #s-partners .track span { flex: none; border: 2px solid rgba(246, 240, 228, 0.35); border-radius: 999px; padding: 18px 34px; font-weight: 600; font-size: 34px; white-space: nowrap; }
+  #s-partners .r3 .track span { background: var(--brass); border-color: var(--brass); color: var(--ink); font-weight: 700; }
+  #s-partners .certs { position: absolute; left: 120px; bottom: 56px; font-size: 24px; color: var(--ivory-dim); }
+  #s-partners .certs b { color: var(--brass); letter-spacing: 0.16em; text-transform: uppercase; font-size: 21px; margin-right: 14px; }
+
+  /* ---------- 14. Outro ---------- */
+  #s-outro { background: radial-gradient(90% 120% at 80% 50%, #2C251C 0%, var(--ink) 62%); color: var(--ivory); }
+  #s-outro .rjc-mark { position: absolute; left: 120px; top: 110px; width: 260px; color: var(--brass); }
+  #s-outro .copy { position: absolute; left: 120px; top: 300px; width: 1060px; }
+  #s-outro h2 { font-size: 140px; }
+  #s-outro h2 em { color: var(--brass); }
+  #s-outro .tag { margin-top: 20px; font-size: 34px; color: var(--ivory-dim); }
+  #s-outro .handles { margin-top: 50px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px 50px; }
+  #s-outro .handles li { font-size: 30px; line-height: 1.25; }
+  #s-outro .handles small { display: block; font-size: 20px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ivory-dim); font-weight: 700; }
+  #s-outro .handles b { color: var(--brass); font-weight: 700; }
+  #s-outro .partner { position: absolute; left: 120px; bottom: 96px; font-size: 32px; font-weight: 700; }
+  #s-outro .partner span { color: var(--brass); }
+  #s-outro .qr { position: absolute; right: 150px; top: 200px; width: 500px; background: var(--ivory); color: var(--ink); border-radius: 32px; padding: 50px 50px 40px; text-align: center; }
+  #s-outro .qr svg { display: block; width: 400px; height: 400px; }
+  #s-outro .qr b { display: block; margin-top: 28px; font-family: var(--f-display); font-weight: 700; font-size: 50px; line-height: 1; }
+  #s-outro .qr span { display: block; margin-top: 10px; font-size: 28px; font-weight: 700; color: var(--brass-ink); }
+</style>
+</head>
+<body>
+<!-- Sausage link and patty drawings, from the R.J.C. Sausage concept (rjc-sausage/index.html) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="g-casing" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F3C792"/><stop offset=".45" stop-color="#D98F4E"/><stop offset="1" stop-color="#A65A27"/></linearGradient>
+    <radialGradient id="g-patty" cx=".4" cy=".35" r=".75"><stop offset="0" stop-color="#EDB57A"/><stop offset=".6" stop-color="#C97A3D"/><stop offset="1" stop-color="#94501F"/></radialGradient>
+    <symbol id="link" viewBox="0 0 132 48">
+      <path d="M6 24c-4-1.6-4-4.4 0-6l6 3z" fill="#8C4A1E"/>
+      <path d="M126 24c4 1.6 4 4.4 0 6l-6-3z" fill="#8C4A1E"/>
+      <rect x="10" y="4" width="112" height="40" rx="20" fill="url(#g-casing)" stroke="#16120F" stroke-width="2.5"/>
+      <path d="M26 13c20-4 58-4 80 0" stroke="#FFF1DC" stroke-width="4" stroke-linecap="round" fill="none" opacity=".75"/>
+      <g stroke="#5A2C0F" stroke-width="4" stroke-linecap="round" opacity=".7"><path d="M40 20l10 14"/><path d="M62 18l10 16"/><path d="M84 18l10 15"/></g>
+    </symbol>
+    <symbol id="patty" viewBox="0 0 100 100">
+      <ellipse cx="50" cy="56" rx="44" ry="36" fill="#16120F" opacity=".18"/>
+      <circle cx="50" cy="48" r="42" fill="url(#g-patty)" stroke="#16120F" stroke-width="2.5"/>
+      <g stroke="#5A2C0F" stroke-width="5" stroke-linecap="round" opacity=".65"><path d="M24 34l22 30"/><path d="M42 24l26 36"/><path d="M62 22l18 26"/></g>
+      <path d="M26 30c6-8 16-13 26-14" stroke="#FFF1DC" stroke-width="4" stroke-linecap="round" fill="none" opacity=".6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<section class="scene" id="s-open" data-dur="9">
+  <span class="mask-logo rjc-mark" data-in="0.2"></span>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">You’re at Peach’s · Meet the family</p>
+    <h1 class="serif">
+      <span data-in="0.7">One chef.</span>
+      <span data-in="1.0">One neighborhood.</span>
+      <em data-in="1.3" style="display:block">A whole community.</em>
+    </h1>
+    <p class="sub" data-in="2.2">Since 2000, Chef Cliff Rome has been building restaurants, jobs, art and gathering places in Bronzeville. Together, they are Rome’s Joy Companies.</p>
+  </div>
+  <div class="photo p1" data-in="0.3" data-zoom><img src="../romesjoy/img/community.webp" alt=""></div>
+  <div class="photo p2" data-in="0.6" data-zoom><img src="../mise-en-place/img/graduates-group.webp" alt=""></div>
+  <div class="photo p3" data-in="0.9" data-zoom><img src="../romesjoy/img/peachs-47th.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-chef" data-dur="13">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">The chef behind it all</p>
+    <h2 class="serif" data-in="0.7">Chef Cliff <em>Rome</em></h2>
+    <p class="lede" data-in="1.2">An Englewood native who learned to cook beside his grandmother on the South Side.</p>
+    <ol>
+      <li data-in="2.2"><b>Early on</b><span>Cooked at Spago and studied culinary arts in Paris</span></li>
+      <li data-in="3.2"><b>1998–2003</b><span>One of five chefs at the Cannes Film Festival’s American Pavilion</span></li>
+      <li data-in="4.2"><b>2000</b><span>Founded Rome’s Joy Companies</span></li>
+      <li data-in="5.2"><b>Today</b><span>Leads food service at the Obama Presidential Center</span></li>
+    </ol>
+  </div>
+  <div class="photo" data-in="0.3" data-zoom><img src="../romesjoy/img/chef-rome-garden.webp" alt=""></div>
+  <div class="stat" data-in="1.6"><b>30+</b><span>years in food service, and on the advisory board of Washburne Culinary School</span></div>
+  <p class="src" data-in="6.0">Sources: romesjoy.com · miseenplacechicago.org · @barackobama on Instagram</p>
+</section>
+
+<section class="scene" id="s-opc" data-dur="12">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Obama Presidential Center</p>
+    <h2 class="serif" data-in="0.7">From King Drive to the <em>Obama Presidential Center.</em></h2>
+    <p class="sub" data-in="1.6">Chef Rome’s team and Bon Appétit Management Company joined forces as <b>BAMJoy</b> to lead food service at the Center.</p>
+  </div>
+  <p class="press" data-in="3.0"><b>As covered by</b>Chicago Sun-Times · Block Club Chicago · Eater Chicago · Crain’s Chicago Business · FOX 32 · ABC7 Chicago</p>
+  <figure class="clip c1" data-in="0.9"><img src="../romesjoy/img/press-crains.webp" alt=""></figure>
+  <figure class="clip c2" data-in="1.3"><img src="../romesjoy/img/press-sun-times.webp" alt=""></figure>
+  <figure class="clip c3" data-in="1.7"><img src="../romesjoy/img/press-block-club.webp" alt=""></figure>
+  <figure class="clip c4" data-in="2.1"><img src="../romesjoy/img/press-eater.webp" alt=""></figure>
+</section>
+
+<section class="scene" id="s-family" data-dur="11">
+  <div class="head">
+    <p class="eyebrow" data-in="0.4">Rome’s Joy Companies</p>
+    <h2 class="serif" data-in="0.7">Meet the <em>family.</em></h2>
+  </div>
+  <div class="grid">
+    <div class="co" style="--c:#E8742A" data-in="1.2"><div class="logo"><img src="../romesjoy/img/logo-peachs.png" alt=""></div><div><h3>Peach’s</h3><p>Southern breakfast &amp; brunch, in three locations</p></div></div>
+    <div class="co" style="--c:#D4A64A" data-in="1.5"><div class="logo"><img src="../romesjoy/img/rjc-logo.png" alt="" style="width:150px"></div><div><h3>Rome’s Joy Catering</h3><p>Full-service catering &amp; event planning</p></div></div>
+    <div class="co" style="--c:#55613F" data-in="1.8"><div class="logo"><div class="pw-logo">parkway<span>social</span></div></div><div><h3>Parkway Social</h3><p>Coworking &amp; events in the historic Parkway Ballroom</p></div></div>
+    <div class="co" style="--c:#A3271B" data-in="2.1"><div class="logo"><span class="blanc-logo">blanc</span></div><div><h3>Blanc Gallery</h3><p>Fine art and a culture of conversation</p></div></div>
+    <div class="co" style="--c:#16120F" data-in="2.4"><div class="logo"><img src="../rjc-sausage/img/rjc-logo.webp" alt=""></div><div><h3>R.J.C. Sausage Co.</h3><p>Chicken sausage, made in Bronzeville</p></div></div>
+    <div class="co" style="--c:#B23A1A" data-in="2.7"><div class="logo"><img src="../mise-en-place/img/logo.webp" alt=""></div><div><h3>Mise En Place</h3><p>Culinary &amp; hospitality job training</p></div></div>
+  </div>
+</section>
+
+<section class="scene" id="s-peachs" data-dur="10" data-co="peachs">
+  <span class="mask-logo wordmark" data-in="0.2"></span>
+  <div class="head">
+    <p class="eyebrow" data-in="0.4">Peach’s Restaurant</p>
+    <h2 data-in="0.7">You’re at Peach’s on 47th. <em>Find us on campus, too.</em></h2>
+  </div>
+  <div class="cards">
+    <div class="card" data-in="1.4"><div class="pic"><img src="../romesjoy/img/peachs-47th.webp" alt="" style="object-position:50% 30%"></div><span class="here">You are here</span><div class="txt"><h3>Peach’s on 47th</h3><p>4652 S. King Drive, Bronzeville</p></div></div>
+    <div class="card" data-in="1.8"><div class="pic"><img src="../romesjoy/img/peachs-university.webp" alt=""></div><div class="txt"><h3>Peach’s at University</h3><p>Crerar Library, University of Chicago<br>5730 S. Ellis Avenue</p></div></div>
+    <div class="card" data-in="2.2"><div class="pic"><img class="badge" src="../assets/img/brand/badge.png" alt=""></div><div class="txt"><h3>Peach’s at Law</h3><p>Grab &amp; go in the D’Angelo Law Building<br>1121 E. 60th Street</p></div></div>
+  </div>
+</section>
+
+<section class="scene" id="s-catering" data-dur="10" data-co="catering">
+  <span class="mask-logo rjc-mark" data-in="0.2"></span>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Rome’s Joy Catering</p>
+    <h2 class="serif" data-in="0.7">Catering, <em>start to finish.</em></h2>
+    <p class="sub" data-in="1.4">Full-service catering and event planning, from boxed lunches to full pans that feed up to 20. Led by Executive Chef Trillis Rollins.</p>
+    <p class="contact" data-in="2.0"><span>773.373.4320</span> · ordering@romesjoy.com<br><span>@rjc.events</span></p>
+  </div>
+  <div class="photo p1" data-in="0.3" data-zoom><img src="../romesjoy/img/catering-spread.webp" alt=""></div>
+  <div class="photo p2" data-in="0.7" data-zoom><img src="../romesjoy/img/catering-plate.webp" alt=""></div>
+  <div class="photo p3" data-in="1.0" data-zoom><img src="../catering/img/salad-boxes.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-parkway" data-dur="12" data-co="parkway">
+  <div class="pw-word" data-in="0.2">parkway<span>social</span></div>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Parkway Social · 4455 S. King Drive</p>
+    <h2 data-in="0.7">The historic Parkway Ballroom, <em>reimagined.</em></h2>
+    <p class="sub" data-in="1.4">Once the stage for Duke Ellington, Count Basie and Louis Armstrong. Now a coworking lounge, social club and event space.</p>
+    <ul class="chips">
+      <li data-in="2.2">Membership <b>$150 / month</b></li>
+      <li data-in="2.5">Day pass <b>$25</b></li>
+      <li class="handle" data-in="2.8">@parkway.social</li>
+    </ul>
+    <p class="perk" data-in="3.4">Members save 15% on Peach’s meals over $30</p>
+  </div>
+  <div class="photo p1" data-in="0.3" data-zoom><img src="../parkway-social/img/bar.webp" alt=""></div>
+  <div class="photo p2" data-in="0.8" data-zoom><img src="../parkway-social/img/parlor-room.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-quote" data-dur="14">
+  <p class="eyebrow" data-in="0.4">In his words</p>
+  <blockquote>
+    <p data-in="0.8">“In 1939, a Black entrepreneur opened the Parkway Ballroom to celebrate Black creativity, enterprise and community.</p>
+    <p data-in="3.4">The Parkway Ballroom was a source of <em>elegance and dignity</em> amid segregation and hate.</p>
+    <p data-in="6.0">… we offer GuestBook to evoke a nostalgic reverence for what was and to honor the brilliance of today’s black entrepreneurs and artists.”</p>
+  </blockquote>
+  <div class="who" data-in="7.6"><span class="rule"></span><div><b>Chef Cliff Rome</b><span>GuestBook, an exhibition at Blanc Gallery, 2024</span></div></div>
+  <figure class="gb" data-in="0.5"><img src="../blanc/img/guestbook.webp" alt=""><figcaption>GuestBook opened at Blanc on February 16, 2024</figcaption></figure>
+</section>
+
+<section class="scene" id="s-blanc" data-dur="12" data-co="blanc">
+  <span class="blanc-logo" data-in="0.2">blanc</span>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Blanc Gallery · 4445 S. King Drive</p>
+    <h2 data-in="0.7">A culture of <em>conversation.</em></h2>
+    <p class="mission" data-in="1.4"><b>Our mission:</b> to engage African Americans and all Chicagoans through the arts, and to ignite a dialogue on issues of spiritual, political and social significance.</p>
+    <p class="dwdg" data-in="2.2"><b>Do Well / Do Good:</b> each exhibition cycle, Blanc partners with two local nonprofits to raise awareness and funds.</p>
+    <p class="visit" data-in="2.8">Open Sat &amp; Sun, 11am–3pm · <span>@blancgallerychicago</span></p>
+  </div>
+  <div class="photo poster" data-in="0.4" data-zoom><img src="../blanc/img/whatshall.webp" alt=""></div>
+  <div class="show" data-in="1.8">
+    <p>This fall at Blanc</p>
+    <h3>What Shall I Do With My Dead?</h3>
+    <p>Raja’Nee Hamilton and Jalen Hamilton</p>
+    <p class="when" data-until="2026-10-24">Free opening reception · Sat, Oct 24 · 5–8pm</p>
+  </div>
+</section>
+
+<section class="scene" id="s-rjc" data-dur="10" data-co="rjc">
+  <div class="awning"></div>
+  <img class="logo" src="../rjc-sausage/img/rjc-logo.webp" alt="" data-in="0.2">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">R.J.C. Sausage Co. · Bronzeville</p>
+    <h2 data-in="0.7">Chicken sausage &amp; patties</h2>
+    <p class="sub" data-in="1.3">Made by Rome’s Joy Companies: all-natural chicken in a gluten-free, non-pork casing.</p>
+    <ul class="badges">
+      <li class="halal" data-in="1.9">Halal Zabiha certified</li>
+      <li data-in="2.2">USDA inspected</li>
+      <li data-in="2.5">No pork</li>
+    </ul>
+    <p class="whole" data-in="3.0">Restaurants, grocers &amp; campuses: <span>ordering@romesjoy.com</span></p>
+  </div>
+  <svg class="chain" viewBox="0 0 600 220" data-in="0.5">
+    <use href="#link" width="132" height="48" transform="translate(-10 120) rotate(-14)"/>
+    <use href="#link" width="132" height="48" transform="translate(112 112) rotate(6)"/>
+    <use href="#link" width="132" height="48" transform="translate(236 136) rotate(-2)"/>
+    <use href="#link" width="132" height="48" transform="translate(360 126) rotate(-10)"/>
+    <use href="#link" width="132" height="48" transform="translate(482 92) rotate(-24)"/>
+  </svg>
+  <svg class="patty" viewBox="0 0 100 100" data-in="0.8"><use href="#patty"/></svg>
+</section>
+
+<section class="scene" id="s-mise" data-dur="13" data-co="mise">
+  <img class="logo" src="../mise-en-place/img/logo.webp" alt="" data-in="0.2">
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4">Mise En Place Chicago</p>
+    <h2 data-in="0.7">Training the next <span>generation.</span></h2>
+    <p class="sub" data-in="1.3">Started by Chef Rome and Eileen Rhodes, Mise En Place prepares Chicagoans ages 16 to 36 for careers in hospitality.</p>
+    <ol class="tiers">
+      <li data-in="2.0"><b>1 · Classroom</b><span>Food safety, terminology, job readiness</span></li>
+      <li data-in="2.3"><b>2 · Kitchen</b><span>Knife skills, prep, kitchen safety</span></li>
+      <li data-in="2.6"><b>3 · Real events</b><span>Working catered events, building menus</span></li>
+    </ol>
+    <p class="kit" data-in="3.2">Every student gets a chef jacket, a knife kit and a ServSafe food handler certificate.</p>
+    <p class="give" data-in="3.8">Support a student: miseenplacechicago.org · Tax-deductible</p>
+  </div>
+  <div class="photo p1" data-in="0.3" data-zoom><img src="../mise-en-place/img/kitchen-line.webp" alt=""></div>
+  <div class="photo p2" data-in="0.8" data-zoom><img src="../mise-en-place/img/graduates-group.webp" alt=""></div>
+</section>
+
+<section class="scene" id="s-community" data-dur="13">
+  <div class="head">
+    <p class="eyebrow" data-in="0.4">More than a business</p>
+    <h2 class="serif" data-in="0.7">Building <em>community,</em><br>one person at a time.</h2>
+    <p class="sub" data-in="1.3">Through job training and the arts, Chef Rome has created opportunities across Chicagoland, especially for young people of color.</p>
+  </div>
+  <div class="cards">
+    <div class="card" data-in="2.0"><i>1</i><b>Mise En Place</b><span>Culinary and hospitality job training for ages 16 to 36, run as a <span class="nolig">501(c)(3)</span> nonprofit program.</span></div>
+    <div class="card" data-in="2.4"><i>2</i><b>Clean Habits</b><span>Custodial training that opens career paths beyond the kitchen.</span></div>
+    <div class="card" data-in="2.8"><i>3</i><b>Rome’s Joy Institute</b><span>Education and workforce development, recognized by the Illinois Board of Higher Education.</span></div>
+    <div class="card" data-in="3.2"><i>4</i><b>Do Well / Do Good</b><span>Each exhibition cycle at Blanc Gallery lifts up two local nonprofits.</span></div>
+  </div>
+</section>
+
+<section class="scene" id="s-partners" data-dur="11">
+  <div class="head">
+    <p class="eyebrow" data-in="0.4">Partners in the work</p>
+    <h2 class="serif" data-in="0.7">Working alongside <em>Chicago.</em></h2>
+  </div>
+  <p class="label l1" data-in="1.1">Community partners</p>
+  <div class="row r1" data-in="1.3"><div class="track" data-speed="70"><span>Careers Through Culinary Arts (C-CAP)</span><span>After School Matters</span><span>Ada S. McKinley</span><span>Chicago Cook Workforce</span><span>Chicago Public Schools</span><span>Healthy Schools Campaign</span><span>YMCA</span><span>Centers for New Horizons</span></div></div>
+  <div class="row r2" data-in="1.5"><div class="track" data-speed="-60"><span>Education to Careers</span><span>Alternative School Network</span><span>Growing Home</span><span>Grow Greater Englewood</span><span>Chicago Gourmet</span><span>Chicago Chefs Cook</span><span>Washburne Culinary School</span></div></div>
+  <p class="label l2" data-in="1.9">Where our trainees land jobs</p>
+  <div class="row r3" data-in="2.1"><div class="track" data-speed="80"><span>University of Chicago</span><span>University of Illinois Chicago</span><span>Northwestern University</span><span>Bon Appétit</span><span>Sodexo Magic</span><span>Chartwells</span><span>Culinare</span></div></div>
+  <p class="certs" data-in="2.8"><b>Certified</b>Minority Business Enterprise · Illinois Business Enterprise Program · ACDBE, U.S. Department of Transportation</p>
+</section>
+
+<section class="scene" id="s-outro" data-dur="11">
+  <span class="mask-logo rjc-mark" data-in="0.2"></span>
+  <div class="copy">
+    <h2 class="serif" data-in="0.5">Rome’s Joy <em>Companies</em></h2>
+    <p class="tag" data-in="0.9">Est. 2000 · Bronzeville, Chicago</p>
+    <ul class="handles">
+      <li data-in="1.4"><small>Peach’s</small><b>@peachson47th</b></li>
+      <li data-in="1.6"><small>Parkway Social</small><b>@parkway.social</b></li>
+      <li data-in="1.8"><small>Blanc Gallery</small><b>@blancgallerychicago</b></li>
+      <li data-in="2.0"><small>Rome’s Joy Catering</small><b>@rjc.events</b></li>
+    </ul>
+  </div>
+  <p class="partner" data-in="2.5">Partner with us · <span>773.373.4320</span> · romesjoy.com</p>
+  <div class="qr" data-in="1.0">
+    <!-- QR code for https://romesjoy.com/ (error correction M, 25 modules), made with python-qrcode -->
+    <svg viewBox="-2 -2 29 29" shape-rendering="crispEdges"><rect x="-2" y="-2" width="29" height="29" fill="#F6F0E4"/><path fill="#16130F" d="M0 0h7v1h-7zM10 0h1v1h-1zM14 0h2v1h-2zM18 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM10 1h4v1h-4zM15 1h2v1h-2zM18 1h1v1h-1zM24 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h1v1h-1zM14 2h2v1h-2zM18 2h1v1h-1zM20 2h3v1h-3zM24 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM9 3h3v1h-3zM14 3h1v1h-1zM18 3h1v1h-1zM20 3h3v1h-3zM24 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM10 4h3v1h-3zM14 4h2v1h-2zM18 4h1v1h-1zM20 4h3v1h-3zM24 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM8 5h1v1h-1zM15 5h2v1h-2zM18 5h1v1h-1zM24 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM12 6h1v1h-1zM14 6h1v1h-1zM16 6h1v1h-1zM18 6h7v1h-7zM9 7h3v1h-3zM14 7h3v1h-3zM0 8h1v1h-1zM3 8h1v1h-1zM5 8h2v1h-2zM8 8h1v1h-1zM10 8h1v1h-1zM12 8h4v1h-4zM17 8h1v1h-1zM19 8h1v1h-1zM2 9h1v1h-1zM4 9h2v1h-2zM7 9h2v1h-2zM10 9h2v1h-2zM16 9h3v1h-3zM24 9h1v1h-1zM0 10h1v1h-1zM5 10h2v1h-2zM9 10h1v1h-1zM11 10h3v1h-3zM16 10h2v1h-2zM19 10h1v1h-1zM23 10h2v1h-2zM0 11h2v1h-2zM7 11h2v1h-2zM13 11h1v1h-1zM16 11h5v1h-5zM0 12h1v1h-1zM3 12h5v1h-5zM9 12h1v1h-1zM11 12h9v1h-9zM21 12h1v1h-1zM23 12h2v1h-2zM2 13h2v1h-2zM8 13h1v1h-1zM11 13h3v1h-3zM17 13h3v1h-3zM21 13h2v1h-2zM24 13h1v1h-1zM0 14h1v1h-1zM2 14h1v1h-1zM6 14h5v1h-5zM12 14h3v1h-3zM16 14h1v1h-1zM19 14h2v1h-2zM22 14h1v1h-1zM24 14h1v1h-1zM1 15h3v1h-3zM5 15h1v1h-1zM9 15h1v1h-1zM12 15h3v1h-3zM20 15h1v1h-1zM23 15h1v1h-1zM0 16h2v1h-2zM3 16h2v1h-2zM6 16h2v1h-2zM9 16h1v1h-1zM11 16h1v1h-1zM13 16h10v1h-10zM8 17h1v1h-1zM14 17h3v1h-3zM20 17h2v1h-2zM24 17h1v1h-1zM0 18h7v1h-7zM10 18h1v1h-1zM13 18h1v1h-1zM15 18h2v1h-2zM18 18h1v1h-1zM20 18h2v1h-2zM23 18h2v1h-2zM0 19h1v1h-1zM6 19h1v1h-1zM8 19h4v1h-4zM13 19h1v1h-1zM16 19h1v1h-1zM20 19h3v1h-3zM0 20h1v1h-1zM2 20h3v1h-3zM6 20h1v1h-1zM9 20h4v1h-4zM14 20h1v1h-1zM16 20h6v1h-6zM24 20h1v1h-1zM0 21h1v1h-1zM2 21h3v1h-3zM6 21h1v1h-1zM8 21h2v1h-2zM11 21h3v1h-3zM16 21h1v1h-1zM19 21h4v1h-4zM0 22h1v1h-1zM2 22h3v1h-3zM6 22h1v1h-1zM9 22h1v1h-1zM11 22h4v1h-4zM19 22h2v1h-2zM22 22h1v1h-1zM24 22h1v1h-1zM0 23h1v1h-1zM6 23h1v1h-1zM11 23h3v1h-3zM16 23h2v1h-2zM21 23h1v1h-1zM0 24h7v1h-7zM8 24h1v1h-1zM10 24h2v1h-2zM14 24h6v1h-6zM23 24h2v1h-2z"/></svg>
+    <b>Meet the family</b>
+    <span>Scan for romesjoy.com</span>
+  </div>
+</section>
+
+<div class="veil" id="veil"></div>
+
+<script>
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const FADE = 0.6;
+  const COMPANIES = [['peachs', 'Peach’s'], ['catering', 'Catering'], ['parkway', 'Parkway Social'], ['blanc', 'Blanc'], ['rjc', 'R.J.C. Sausage'], ['mise', 'Mise En Place']];
+
+  // Every company scene gets the same family bar, with its own name underlined.
+  for (const el of document.querySelectorAll('[data-co]')) {
+    const bar = document.createElement('div');
+    bar.className = 'fambar';
+    bar.dataset.in = '1.0';
+    bar.innerHTML = '<b>A Rome’s Joy company</b>' + COMPANIES.map(([id, name]) => `<span class="${id === el.dataset.co ? 'is-on' : ''}">${name}</span>`).join('<i></i>');
+    el.append(bar);
+  }
+
+  // Lines tied to a date (e.g. an opening reception) drop out of renders made after that day.
+  for (const el of document.querySelectorAll('[data-until]')) {
+    if (Date.now() > new Date(el.dataset.until + 'T23:59:59-05:00').getTime()) el.remove();
+  }
+
+  // Marquee rows: duplicate the names once so the strip can scroll without a gap.
+  for (const tr of document.querySelectorAll('.track')) tr.innerHTML += tr.innerHTML;
+
+  const scenes = [...document.querySelectorAll('.scene')].map((el) => ({ id: el.id.slice(2), el, dur: Number(el.dataset.dur) }));
+  const veil = document.getElementById('veil');
+
+  function reveal(root, t, dur) {
+    for (const el of root.querySelectorAll('[data-in]')) {
+      const k = easeOut(clamp((t - Number(el.dataset.in)) / 0.9));
+      const zoom = el.hasAttribute('data-zoom') ? el.querySelector('img') : null;
+      const base = el.dataset.base ?? (el.dataset.base = getComputedStyle(el).transform === 'none' ? '' : getComputedStyle(el).transform);
+      el.style.opacity = k;
+      el.style.transform = `translateY(${(1 - k) * 46}px) ${base}`;
+      if (zoom) zoom.style.transform = `scale(${1.04 + 0.07 * clamp(t / dur)})`;
+    }
+  }
+
+  function seek(id, t) {
+    const s = scenes.find((x) => x.id === id);
+    for (const x of scenes) x.el.classList.toggle('is-on', x === s);
+    veil.style.opacity = Math.max(1 - clamp(t / FADE), clamp((t - (s.dur - FADE)) / FADE));
+    reveal(s.el, t, s.dur);
+
+    for (const tr of s.el.querySelectorAll('.track')) {
+      const half = tr.scrollWidth / 2;
+      const v = Number(tr.dataset.speed);
+      const x = (((v * t) % half) + half) % half;
+      tr.style.transform = `translateX(${-x}px)`;
+    }
+    if (id === 'rjc') {
+      // Each link rocks a little around its own center (link symbol is 132x48).
+      s.el.querySelectorAll('.chain use').forEach((u, i) => {
+        u.dataset.t ??= u.getAttribute('transform');
+        u.setAttribute('transform', `${u.dataset.t} rotate(${(Math.sin(t * 1.6 + i) * 2.5).toFixed(3)} 66 24)`);
+      });
+      s.el.querySelector('.patty').style.rotate = `${12 + Math.sin(t * 0.9) * 4}deg`;
+    }
+  }
+
+  const FONTS = [
+    '600 40px "Cormorant Garamond"', 'italic 500 40px "Cormorant Garamond"', 'italic 600 40px "Cormorant Garamond"', '700 40px "Cormorant Garamond"',
+    '400 20px Manrope', '600 20px Manrope', '700 20px Manrope', '800 20px Manrope',
+    '40px "Bebas Neue"', 'italic 500 40px Fraunces',
+    '40px "DM Serif Display"', 'italic 40px "DM Serif Display"', '600 20px Jost', '700 20px Jost', '400 20px Jost',
+    '700 40px "Barlow Condensed"', '400 20px "Public Sans"', '700 20px "Public Sans"',
+    '40px "Instrument Serif"', 'italic 40px "Instrument Serif"', '400 20px Inter', '600 20px Inter',
+    '40px Rye', '400 20px Archivo', '600 20px Archivo', '700 20px Archivo', '800 20px Archivo',
+  ];
+
+  async function init() {
+    await Promise.all(FONTS.map((f) => document.fonts.load(f)));
+    await document.fonts.ready;
+    await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
+    window.SCENES = scenes.map(({ id, dur }) => ({ id, dur }));
+    window.seek = seek;
+    const q = new URLSearchParams(location.search);
+    seek(q.get('scene') || 'open', Number(q.get('t') || 8));
+    window.__ready = true;
+  }
+  init();
+</script>
+</body>
+</html>

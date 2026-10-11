@@ -1,53 +1,44 @@
-// Renders loop.html to an MP4 for BrightSign players (1920x1080, 30fps, H.264 High, no audio).
-// Usage: python3 -m http.server 8765 (from the repo root), then: node signage/render.mjs [sceneId ...]
-// Each scene becomes signage/build/NN-<id>.mp4; they are then joined into signage/peachs-instore-loop.mp4.
-import { createRequire } from 'module';
-import { spawn, execFileSync } from 'child_process';
-import { mkdirSync, writeFileSync } from 'fs';
+// Renders a loop page to an MP4 for BrightSign players (1920x1080, 30fps, H.264 High, no audio).
+// Usage: python3 -m http.server 8765 (from the repo root), then:
+//   node signage/render.mjs [loop] [sceneId ...]
+// loop is "peachs" (loop.html, the default) or "family" (family.html, every Rome's Joy company).
+// Each scene becomes signage/build/<loop>/NN-<id>.mp4; they are then joined into the loop's MP4.
+import { execFileSync } from 'child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { openLoop, recordScene } from './lib/capture.mjs';
 
-const require = createRequire(import.meta.url);
-const { chromium } = require(process.env.PLAYWRIGHT || '/opt/node-tools/node_modules/playwright');
+const LOOPS = {
+  peachs: { page: 'loop.html', out: 'peachs-instore-loop.mp4' },
+  family: { page: 'family.html', out: 'romesjoy-family-loop.mp4' },
+};
+
 const here = dirname(fileURLToPath(import.meta.url));
-const build = join(here, 'build');
-const FPS = 30;
-const URL = process.env.LOOP_URL || 'http://localhost:8765/signage/loop.html';
-const only = process.argv.slice(2);
+const args = process.argv.slice(2);
+const name = LOOPS[args[0]] ? args.shift() : 'peachs';
+const loop = LOOPS[name];
+const only = args;
+const build = join(here, 'build', name);
 mkdirSync(build, { recursive: true });
 
-const encode = (out) => spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'png', '-i', '-',
-  '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1',
-  '-r', String(FPS), '-movflags', '+faststart', '-an', out], { stdio: ['pipe', 'inherit', 'inherit'] });
-
-const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
-const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
-page.on('pageerror', (e) => console.error('pageerror', e.message));
-await page.goto(URL, { waitUntil: 'load' });
-await page.waitForFunction(() => window.__ready, null, { timeout: 120000 });
-const scenes = await page.evaluate(() => window.SCENES);
-
+const { browser, page, scenes } = await openLoop(loop.page);
 const parts = [];
 for (const [i, s] of scenes.entries()) {
   const out = join(build, `${String(i + 1).padStart(2, '0')}-${s.id}.mp4`);
   parts.push(out);
   if (only.length && !only.includes(s.id)) continue;
-  const ff = encode(out);
-  const done = new Promise((res, rej) => ff.on('close', (c) => (c ? rej(new Error('ffmpeg ' + c)) : res())));
-  const frames = Math.round(s.dur * FPS);
-  for (let f = 0; f < frames; f++) {
-    await page.evaluate(([id, t]) => window.seek(id, t), [s.id, f / FPS]);
-    const buf = await page.screenshot({ type: 'png' });
-    if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
-  }
-  ff.stdin.end();
-  await done;
-  console.log('rendered', out);
+  await recordScene(page, s, out);
 }
 await browser.close();
 
+const missing = parts.filter((p) => !existsSync(p));
+if (missing.length) {
+  console.error(`Not joining: these scenes have never been rendered. Run "node signage/render.mjs ${name}" once with no scene names.\n` + missing.join('\n'));
+  process.exit(1);
+}
 const list = join(build, 'concat.txt');
 writeFileSync(list, parts.map((p) => `file '${p}'`).join('\n') + '\n');
-const final = join(here, 'peachs-instore-loop.mp4');
+const final = join(here, loop.out);
 execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', final]);
 console.log('wrote', final);

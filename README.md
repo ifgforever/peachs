@@ -81,6 +81,7 @@ assets/js/hero.js        the 3D pancake-stack hero (Three.js r169 from a CDN)
 assets/img/              food photos and brand marks
 menus/                   original menu PDF and images
 docs/                    content inventory and source notes
+signage/                 videos for the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, and the entrance screen (see signage/README.md)
 ```
 
 No build step and no frameworks. To change a price, edit `assets/js/menu-data.js`.

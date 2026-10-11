@@ -1,0 +1,21 @@
+{
+  "_about": "What plays on the entrance screen, in order, then repeats. 'page' items are scenes from a loop page; 'clip' items are videos in signage/source/ with sound, each shown after its own title card. See signage/README.md.",
+  "sequence": [
+    { "page": "loop.html", "scene": "stack" },
+    {
+      "clip": "source/obama-visits-peachs.mp4",
+      "eyebrow": "Obama Foundation",
+      "title": "President Obama stops by",
+      "accent": "Peach’s",
+      "credit": "Video courtesy of the Obama Foundation"
+    },
+    { "page": "loop.html", "scene": "fav" },
+    {
+      "clip": "source/meet-chef-cliff-rome.mp4",
+      "eyebrow": "Obama Foundation",
+      "title": "What’s cooking at the Obama Center?",
+      "accent": "Meet Chef Cliff Rome",
+      "credit": "Video courtesy of the Obama Foundation"
+    }
+  ]
+}

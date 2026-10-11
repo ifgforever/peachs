@@ -52,7 +52,7 @@
         status.classList.add('is-open');
         text.textContent = 'Open now · until 5 pm today';
       } else {
-        text.textContent = 'Closed now · open Mon–Fri, 8:30 am–5 pm';
+        text.textContent = 'Closed now · opens weekdays 8:30 am';
       }
     } catch (err) { /* keep the static hours text */ }
   }

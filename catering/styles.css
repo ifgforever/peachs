@@ -402,3 +402,4 @@ html:not(.js) .menu-panel[hidden] { display: block !important; border-top: 1px s
 
 /* Cormorant defaults to old-style figures; use lining figures for numbers. */
 .hero__facts strong, .dish__price, .step__num, .occasion__num { font-variant-numeric: lining-nums; }
+@media (max-width: 859px) { .site-nav a.nav-ig { display: flex; align-items: center; gap: 10px; } }

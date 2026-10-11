@@ -2,9 +2,9 @@
    Rome's Joy Companies: concept hub styles
    Black-and-ivory from the RJC wordmark, brass for warmth, deep green for the
    Obama Center news band. Text pairs checked for WCAG AA (normal text >= 4.5:1):
-   ink on ivory 17.0:1 · muted on ivory 7.0:1 · brass-ink on ivory 5.9:1
-   ivory on forest 13.0:1 · brass on forest 6.1:1 · brass on ink 7.5:1
-   ivory-dim on ink 11.2:1 · ivory on ink 17.0:1
+   ink on ivory 16.3:1 · muted on ivory 6.9:1 · brass-ink on ivory 5.8:1
+   ivory on forest 12.5:1 · brass on forest 6.3:1 · brass on forest-2 5.2:1
+   brass on ink 8.2:1 · ivory-dim on ink 10.9:1 · ivory-dim on forest-2 6.8:1
    ========================================================================== */
 
 :root {
@@ -13,7 +13,7 @@
   --ivory: #F6F0E4;
   --ivory-dim: #CFC6B6;
   --paper: #FFFBF3;
-  --brass: #C8964A;          /* decorative + text on dark only */
+  --brass: #D4A55F;          /* decorative + text on dark only */
   --brass-ink: #7C561C;      /* brass for text on light backgrounds */
   --forest: #14302A;
   --forest-2: #1C3F37;
@@ -231,7 +231,7 @@ section[id] { scroll-margin-top: calc(var(--header-h) + 8px); }
 .news { background: var(--forest); color: var(--ivory); padding: var(--section-y) 0; position: relative; overflow: hidden; }
 .news::before {
   content: ""; position: absolute; inset: auto -10% -40% auto; width: 60vw; aspect-ratio: 1;
-  border-radius: 50%; background: radial-gradient(closest-side, rgba(200, 150, 74, .16), transparent);
+  border-radius: 50%; background: radial-gradient(closest-side, rgba(212, 165, 95, .16), transparent);
   pointer-events: none;
 }
 .news .wrap { position: relative; }

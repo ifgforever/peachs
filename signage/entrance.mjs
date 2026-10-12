@@ -2,7 +2,8 @@
 // and the clip itself. Widescreen clips play full screen; any other shape (a phone video, say) sits in a branded frame.
 // Clip audio is leveled to the same loudness (-16 LUFS); everything else is silent.
 // Usage: python3 -m http.server 8765 (from the repo root), then: node signage/entrance.mjs
-// Options: --config <file> (default signage/entrance.json), --out <file> (default signage/peachs-entrance-loop.mp4)
+// Options: --config <file> (default signage/entrance.json), --out <file> (default signage/peachs-entrance-loop.mp4),
+//          --web <file> (default signage/peachs-entrance-loop-web.mp4, the smaller copy for the website)
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +14,7 @@ const argv = process.argv.slice(2);
 const opt = (name, def) => (argv.includes(name) ? resolve(argv[argv.indexOf(name) + 1]) : def);
 const configPath = opt('--config', join(here, 'entrance.json'));
 const out = opt('--out', join(here, 'peachs-entrance-loop.mp4'));
+const web = opt('--web', join(here, 'peachs-entrance-loop-web.mp4'));
 const work = join(here, 'build', 'entrance');
 mkdirSync(work, { recursive: true });
 
@@ -145,3 +147,10 @@ const FINAL = X264.map((a, i, all) => (all[i - 1] === '-crf' ? '23' : a));
 await run('ffmpeg', [...args, '-filter_complex', filters.join(';'), '-map', '[v]', '-map', '[a]', ...FINAL, ...AUDIO, '-movflags', '+faststart', out]);
 const total = segs.reduce((t, s) => t + s.dur, 0);
 console.log(`wrote ${out} (${Math.floor(total / 60)}:${String(Math.round(total % 60)).padStart(2, '0')})`);
+
+// 6. A 720p copy for the website. Cloudflare serves files up to 25 MiB, and this lands around 10 MB
+// (SSIM 0.99 against the full file scaled to 720p).
+await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-vf', 'scale=1280:720:flags=lanczos',
+  '-c:v', 'libx264', '-preset', 'slow', '-crf', '27', '-maxrate', '2500k', '-bufsize', '5000k', '-pix_fmt', 'yuv420p',
+  '-profile:v', 'high', '-level', '4.0', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-movflags', '+faststart', web]);
+console.log(`wrote ${web} (web copy)`);

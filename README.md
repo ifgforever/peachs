@@ -2,7 +2,7 @@
 
 Everything made for Chef Cliff Rome's group, built as a pitch. `index.html` is the landing page that packages it all:
 
-- **TV loops**: the three in-store videos for Peach's (see `signage/README.md`). The two silent loops play right on the page; the entrance video, which uses the Obama Foundation's footage, is kept out of the repo and shared directly.
+- **TV loops**: the three in-store videos for Peach's (see `signage/README.md`). All three play right on the page. The entrance video's full-quality file for the TV is shared directly, and a smaller copy is on the site.
 - **Parkway Ballroom playlist** (`playlist/`): 38 songs by musicians who played the ballroom, each with dated evidence.
 - **Merch** (`merch/`): ten Peach's designs, a six-piece starter line and four tee concepts, rendered from the Peach's Merch Line and Peach's Shirt Concepts canvases.
 - **Screen network idea** (`screen-network/`): the "free TV for your business" flyer, pitched as a way to market Rome's Joy with other neighborhood businesses.

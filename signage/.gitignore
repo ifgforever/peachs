@@ -1,5 +1,5 @@
 build/
-# The entrance video and its source clips belong to the Obama Foundation. They are cleared to play in the
-# restaurant, not to publish, and this repo is public, so they stay out of git.
+# The source clips and the full-quality entrance video stay out of git. The 1080p entrance file is over
+# Cloudflare's 25 MiB per-file limit; the smaller web copy (peachs-entrance-loop-web.mp4) is committed instead.
 source/
 peachs-entrance-loop.mp4

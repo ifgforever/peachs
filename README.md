@@ -83,7 +83,7 @@ The concept preview has `noindex` set so it never competes with the real site in
 ```
 index.html               preview page linking every concept
 peachs.html              the Peach's concept (one page)
-preview/                 screenshot thumbnails for the preview page
+preview/                 screenshot thumbnails for the preview page, and og.jpg (the link-preview image)
 assets/css/styles.css    styles
 assets/js/main.js        nav, menu tabs and filters, open-now badge, hero scroll wiring
 assets/js/menu-data.js   menu content (edit prices here)
@@ -95,6 +95,8 @@ signage/                 videos for the restaurant's TVs: the Peach's loop, the 
 playlist/                the Parkway Ballroom playlist page
 merch/                   Peach's merch page and the rendered designs (img/)
 screen-network/          the free-TV flyer (PDF) and its preview image
+worker/index.js          answers byte-range requests for the .mp4 files so they play in Safari (Cloudflare's static
+                         assets always send the whole file); runs only for video paths, see wrangler.jsonc
 ```
 
-No build step and no frameworks. To change a price, edit `assets/js/menu-data.js`.
+No build step and no frameworks; the only server code is the small video Worker. To change a price, edit `assets/js/menu-data.js`.

@@ -41,10 +41,14 @@ export default {
       return new Response(null, { status: 206, headers: out });
     }
     const body = new FixedLengthStream(length);
-    ctx.waitUntil(copySlice(full.body, body.writable, r.start, r.end));
+    ctx.waitUntil(copySlice(full.body, body.writable, r.start, r.end, size));
     return new Response(body.readable, { status: 206, headers: out });
   },
 };
+
+// Streams are read in 1 MiB blocks. A plain reader.read() returns 4 KiB at a time, and looping over a 25 MB video
+// that way costs far more CPU than a Worker request is allowed.
+const BLOCK = 1 << 20;
 
 // The asset response inside a Worker carries no Content-Length, so measure the file once by reading a copy to the
 // end, and remember the size per ETag (the ETag is a hash of the file, so a changed file is measured again).
@@ -54,12 +58,14 @@ async function sizeOf(res, fetchCopy) {
   if (Number.isSafeInteger(len)) return len;
   const etag = res.headers.get('ETag');
   if (etag && sizes.has(etag)) return sizes.get(etag);
-  const reader = (await fetchCopy()).body.getReader();
+  const reader = (await fetchCopy()).body.getReader({ mode: 'byob' });
   let n = 0;
+  let view = new Uint8Array(BLOCK);
   for (;;) {
-    const { done, value } = await reader.read();
+    const { done, value } = await reader.readAtLeast(BLOCK, view);
+    n += value?.byteLength ?? 0;
     if (done) break;
-    n += value.byteLength;
+    view = new Uint8Array(value.buffer);   // reuse the block; nothing else holds it
   }
   if (etag) sizes.set(etag, n);
   return n;
@@ -82,26 +88,37 @@ function parseRange(header, size) {
   return { start, end };
 }
 
-// Copies bytes start..end (inclusive) of a stream into a writable, then stops reading.
-async function copySlice(source, writable, start, end) {
-  const reader = source.getReader();
+// Streams bytes start..end (inclusive) of a stream into a writable. JavaScript only handles the blocks before
+// `start` (to skip them) and the block where the range begins. When the range runs to the end of the file, as it
+// does whenever a browser plays or seeks, the runtime pipes the rest without JavaScript in the loop. Only a range
+// that stops short of the end (Safari's 2-byte probe, for one) is finished block by block.
+async function copySlice(source, writable, start, end, size) {
+  const toEnd = end === size - 1;
+  if (start === 0 && toEnd) return source.pipeTo(writable).catch(() => {});
+  const reader = source.getReader({ mode: 'byob' });
   const writer = writable.getWriter();
   let pos = 0;
   try {
     while (pos <= end) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      // A fresh block each time: a block handed to writer.write() may still be queued when the next read starts.
+      const { done, value } = await reader.readAtLeast(BLOCK, new Uint8Array(BLOCK));
+      const got = value?.byteLength ?? 0;
       const a = Math.max(start - pos, 0);
-      const b = Math.min(end + 1 - pos, value.byteLength);
+      const b = Math.min(end + 1 - pos, got);
       if (a < b) await writer.write(value.subarray(a, b));
-      pos += value.byteLength;
+      pos += got;
+      if (toEnd && pos > start && !done) {
+        reader.releaseLock();
+        writer.releaseLock();
+        return source.pipeTo(writable).catch(() => {});
+      }
+      if (done) break;
     }
     await writer.close();
   } catch (err) {
     await writer.abort(err).catch(() => {});
-  } finally {
-    reader.cancel().catch(() => {});
   }
+  reader.cancel().catch(() => {});
 }
 
 function withAcceptRanges(res, method) {

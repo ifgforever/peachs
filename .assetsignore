@@ -6,3 +6,6 @@ wrangler.jsonc
 signage/*.mjs
 signage/lib
 signage/entrance.json
+merch/build.py
+merch/template.html
+merch/ideas.json

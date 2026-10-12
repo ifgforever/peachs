@@ -1,6 +1,13 @@
-# Rome's Joy Companies: website concepts
+# Rome's Joy Companies: website concepts, TV loops, playlist and merch
 
-Redesign concepts for every company in Chef Cliff Rome's group, built as a pitch. Open `index.html` (the preview page) to see a card for each site. Click a card to open the concept, or use the "Current site" link to compare with the live website.
+Everything made for Chef Cliff Rome's group, built as a pitch. `index.html` is the landing page that packages it all:
+
+- **TV loops**: the three in-store videos for Peach's (see `signage/README.md`). The two silent loops play right on the page; the entrance video, which uses the Obama Foundation's footage, is kept out of the repo and shared directly.
+- **Parkway Ballroom playlist** (`playlist/`): 38 songs by musicians who played the ballroom, each with dated evidence.
+- **Merch ideas** (`merch/`): picks for every company with flat mockups. Edit `merch/ideas.json`, then run `python3 merch/build.py`.
+- **Websites**: a concept site for each company. Click a card to open it, or use the "Current site" link to compare with the live website.
+
+Live preview: https://peachs.tvinstallchicago.workers.dev/ (Cloudflare redeploys it whenever changes are merged into the main branch).
 
 | Folder | Company | Live site today |
 |---|---|---|
@@ -45,6 +52,8 @@ Then open http://localhost:8080 for the preview page. Opening `peachs.html` by d
 
 ## Get a shareable link for the client meeting
 
+This is already set up on Cloudflare: https://peachs.tvinstallchicago.workers.dev/ shows the main branch. The options below are alternatives.
+
 **Option A: GitHub Pages (free, about 2 minutes)**
 1. Merge the pull request into `main`.
 2. On GitHub, go to the repo's **Settings → Pages**.
@@ -82,6 +91,8 @@ assets/img/              food photos and brand marks
 menus/                   original menu PDF and images
 docs/                    content inventory and source notes
 signage/                 videos for the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, and the entrance screen (see signage/README.md)
+playlist/                the Parkway Ballroom playlist page
+merch/                   merch ideas page (built from ideas.json by build.py) and mockup styles
 ```
 
 No build step and no frameworks. To change a price, edit `assets/js/menu-data.js`.

@@ -1,0 +1,95 @@
+/* Flat product mockups for the merch ideas. Each .mock is a square stage holding an SVG silhouette of the object
+   and a print area placed in percent of the stage, so the same markup scales from a small teaser to a full card.
+   Brand colors come from each company's concept site. */
+.mock {
+  --obj: #FFF4E8; --ink: #2A160C; --accent: #A84A16; --stage: #F3E9DD;
+  --f-a: 'Bebas Neue', Impact, sans-serif; --f-b: 'Fraunces', Georgia, serif;
+  position: relative; aspect-ratio: 1; background: var(--stage); overflow: hidden; container-type: inline-size;
+}
+.mock svg.obj { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mock svg.obj .fill { fill: var(--obj); stroke: rgba(0, 0, 0, .18); stroke-width: 1.2; }
+.mock svg.obj .line { fill: none; stroke: rgba(0, 0, 0, .22); stroke-width: 1.2; }
+.mock svg.obj .strap { fill: none; stroke: var(--obj); stroke-width: 7; stroke-linecap: round; }
+.mock svg.obj .strap-edge { fill: none; stroke: rgba(0, 0, 0, .18); stroke-width: 9; stroke-linecap: round; }
+.mock .print {
+  position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.2cqw;
+  color: var(--ink); text-align: center; line-height: 1.05;
+}
+.mock .print .l1 { font-family: var(--f-a); font-size: 7.4cqw; letter-spacing: .01em; }
+.mock .print .l2 { font-family: var(--f-b); font-size: 5.4cqw; font-style: italic; color: var(--accent); }
+.mock .print .l3, .mock .print .l4 { font-family: var(--f-b); font-size: 3.2cqw; letter-spacing: .08em; text-transform: uppercase; }
+.mock .print .mark { flex: none; }
+
+/* Print areas, per object */
+.mock[data-obj="tote"] .print { left: 30%; right: 30%; top: 46%; bottom: 14%; }
+.mock[data-obj="tee"] .print { left: 35%; right: 35%; top: 30%; bottom: 36%; }
+.mock[data-obj="mug"] .print { left: 27%; right: 37%; top: 37%; bottom: 25%; }
+.mock[data-obj="coffee-bag"] .print { left: 31%; right: 31%; top: 34%; bottom: 18%; }
+.mock[data-obj="jar"], .mock[data-obj="candle"] { }
+.mock[data-obj="jar"] .print, .mock[data-obj="candle"] .print { left: 31%; right: 31%; top: 46%; bottom: 20%; }
+.mock[data-obj="apron"] .print { left: 34%; right: 34%; top: 38%; bottom: 30%; }
+.mock[data-obj="poster"] .print { left: 25%; right: 25%; top: 14%; bottom: 14%; }
+.mock[data-obj="pin"] .print { left: 27%; right: 27%; top: 27%; bottom: 27%; }
+.mock[data-obj="cap"] .print { left: 34%; right: 34%; top: 33%; bottom: 47%; }
+.mock[data-obj="box"] .print { left: 22%; right: 22%; top: 40%; bottom: 20%; }
+.mock[data-obj="card"] .print { left: 20%; right: 20%; top: 30%; bottom: 30%; }
+.mock[data-obj="bandana"] .print { left: 26%; right: 26%; top: 26%; bottom: 26%; }
+.mock[data-obj="tumbler"] .print { left: 37%; right: 37%; top: 34%; bottom: 22%; }
+.mock[data-obj="other"] .print { left: 25%; right: 25%; top: 25%; bottom: 25%; }
+.mock[data-obj="pin"] .print .l1 { font-size: 6cqw; }
+.mock[data-obj="cap"] .print .l1 { font-size: 5cqw; }
+.mock[data-obj="cap"] .print .l3, .mock[data-obj="cap"] .print .l4 { display: none; }
+.mock[data-obj="tumbler"] .print .l1, .mock[data-obj="mug"] .print .l1 { font-size: 6cqw; }
+
+/* Brand themes: object color, ink, accent and type pair */
+.mock.b-peachs { --stage: #F6E6D6; --obj: #FFF4E8; --ink: #2A160C; --accent: #A84A16; --f-a: 'Bebas Neue', Impact, sans-serif; --f-b: 'Fraunces', Georgia, serif; }
+.mock.b-peachs.dark { --obj: #3A2015; --ink: #FFF4E8; --accent: #F9AE7F; }
+.mock.b-peachs.warm { --obj: #F9AE7F; --ink: #2A160C; --accent: #FFF4E8; }
+.mock.b-parkway { --stage: #E6E8DD; --obj: #2F3726; --ink: #F4EEE3; --accent: #D2AE72; --f-a: 'DM Serif Display', Georgia, serif; --f-b: 'Jost', system-ui, sans-serif; }
+.mock.b-parkway.light { --obj: #F4EEE3; --ink: #2F3726; --accent: #8A5A26; }
+.mock.b-parkway .print .l2 { font-style: normal; font-weight: 600; }
+.mock.b-blanc { --stage: #EDEDEB; --obj: #FFFFFF; --ink: #111111; --accent: #A3271B; --f-a: 'Instrument Serif', Georgia, serif; --f-b: 'Inter', system-ui, sans-serif; }
+.mock.b-blanc.dark { --obj: #151515; --ink: #FFFFFF; --accent: #E2685C; }
+.mock.b-blanc .print .l1 { font-size: 8cqw; letter-spacing: 0; }
+.mock.b-blanc .print .l2 { font-style: normal; }
+.mock.b-rjc { --stage: #EFE4D2; --obj: #F6EFE3; --ink: #16120F; --accent: #A3301B; --f-a: 'Rye', Georgia, serif; --f-b: 'Archivo', system-ui, sans-serif; }
+.mock.b-rjc.dark { --obj: #16120F; --ink: #F6EFE3; --accent: #E9B23A; }
+.mock.b-rjc .print .l1 { font-size: 5.6cqw; }
+.mock.b-rjc .print .l2 { font-style: normal; font-weight: 700; }
+.mock.b-mise { --stage: #ECE8DC; --obj: #F5F1E6; --ink: #171512; --accent: #B23A1A; --f-a: 'Barlow Condensed', 'Arial Narrow', sans-serif; --f-b: 'Public Sans', system-ui, sans-serif; }
+.mock.b-mise.dark { --obj: #1E1C19; --ink: #F5F1E6; --accent: #E8714C; }
+.mock.b-mise .print .l1 { font-weight: 700; text-transform: uppercase; }
+.mock.b-mise .print .l2 { font-style: normal; font-weight: 700; }
+.mock.b-romesjoy { --stage: #E9E2D6; --obj: #16130F; --ink: #F6F0E4; --accent: #D4A55F; --f-a: 'Cormorant Garamond', Georgia, serif; --f-b: 'Manrope', system-ui, sans-serif; }
+.mock.b-romesjoy.light { --obj: #F6F0E4; --ink: #16130F; --accent: #7C561C; }
+.mock.b-romesjoy .print .l1 { font-weight: 600; font-size: 7cqw; }
+.mock.b-romesjoy .print .l2 { font-family: var(--f-a); font-weight: 500; }
+
+/* Brand marks */
+.mark-mask { display: block; background: currentColor; -webkit-mask: var(--src) no-repeat center / contain; mask: var(--src) no-repeat center / contain; }
+.mark-peachs-wordmark { --src: url('../assets/img/brand/wordmark.png'); width: 26cqw; aspect-ratio: 724 / 189; }
+.mark-romesjoy { --src: url('../romesjoy/img/rjc-logo.png'); width: 16cqw; aspect-ratio: 392 / 220; color: var(--accent); }
+.mark-img { display: block; width: 16cqw; height: auto; }
+.dark .mark-portrait, .mock.b-parkway:not(.light) .mark-portrait, .mock.b-romesjoy:not(.light) .mark-portrait { filter: invert(1); }
+.mark-portrait { width: 19cqw; mix-blend-mode: multiply; }
+.dark .mark-portrait { mix-blend-mode: screen; }
+.mark-parkway { font-family: 'Jost', system-ui, sans-serif; font-weight: 700; font-size: 5.2cqw; line-height: .82; letter-spacing: -.02em; text-align: left; }
+.mark-parkway span { display: flex; align-items: center; gap: .14em; margin-left: -.05em; }
+.mark-parkway span::before { content: ''; width: .24em; height: .24em; border-radius: 50%; background: currentColor; }
+.mark-blanc { display: flex; align-items: flex-end; gap: .25em; font-family: 'Inter', system-ui, sans-serif; font-weight: 600; font-size: 4.4cqw; line-height: .8; letter-spacing: -.02em; }
+.mark-blanc::before { content: ''; width: 1.6em; height: 1.6em; border: .16em solid currentColor; }
+.mark-rjc { width: 26cqw; height: 3.4cqw; background: repeating-linear-gradient(90deg, var(--ink) 0 1.7cqw, transparent 1.7cqw 3.4cqw); border-radius: .6cqw; }
+.mark-mise { width: 15cqw; height: auto; display: block; }
+.dark .mark-mise { filter: invert(1); }
+
+/* Keep marks inside the print area, and tighten busy designs (set by build.py as .dense) */
+.mock .print .mark-img { width: auto; height: 30%; max-width: 80%; object-fit: contain; }
+.mock .print .mark-portrait { height: 34%; }
+.mock .print .mark-mise { width: auto; height: 28%; }
+.mock .print .mark-peachs-wordmark { max-width: 100%; }
+.mock.dense .print { gap: .8cqw; }
+.mock.dense .print .l1 { font-size: 5.4cqw; }
+.mock.dense .print .l2 { font-size: 4.2cqw; }
+.mock.dense .print .l3, .mock.dense .print .l4 { font-size: 2.5cqw; }
+.mock.dense .print .mark-img, .mock.dense .print .mark-mise { height: 22%; }
+.mock.dense .print .mark-peachs-wordmark { width: 20cqw; }

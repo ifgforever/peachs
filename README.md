@@ -4,7 +4,8 @@ Everything made for Chef Cliff Rome's group, built as a pitch. `index.html` is t
 
 - **TV loops**: the three in-store videos for Peach's (see `signage/README.md`). The two silent loops play right on the page; the entrance video, which uses the Obama Foundation's footage, is kept out of the repo and shared directly.
 - **Parkway Ballroom playlist** (`playlist/`): 38 songs by musicians who played the ballroom, each with dated evidence.
-- **Merch ideas** (`merch/`): picks for every company with flat mockups. Edit `merch/ideas.json`, then run `python3 merch/build.py`.
+- **Merch** (`merch/`): ten Peach's designs, a six-piece starter line and four tee concepts, rendered from the Peach's Merch Line and Peach's Shirt Concepts canvases.
+- **Screen network idea** (`screen-network/`): the "free TV for your business" flyer, pitched as a way to market Rome's Joy with other neighborhood businesses.
 - **Websites**: a concept site for each company. Click a card to open it, or use the "Current site" link to compare with the live website.
 
 Live preview: https://peachs.tvinstallchicago.workers.dev/ (Cloudflare redeploys it whenever changes are merged into the main branch).
@@ -92,7 +93,8 @@ menus/                   original menu PDF and images
 docs/                    content inventory and source notes
 signage/                 videos for the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, and the entrance screen (see signage/README.md)
 playlist/                the Parkway Ballroom playlist page
-merch/                   merch ideas page (built from ideas.json by build.py) and mockup styles
+merch/                   Peach's merch page and the rendered designs (img/)
+screen-network/          the free-TV flyer (PDF) and its preview image
 ```
 
 No build step and no frameworks. To change a price, edit `assets/js/menu-data.js`.

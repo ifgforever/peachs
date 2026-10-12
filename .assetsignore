@@ -6,3 +6,4 @@ wrangler.jsonc
 signage/*.mjs
 signage/lib
 signage/entrance.json
+worker

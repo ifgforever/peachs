@@ -4,6 +4,7 @@
     { "page": "loop.html", "scene": "stack" },
     {
       "clip": "source/obama-visits-peachs.mp4",
+      "end": 90.1,
       "eyebrow": "Obama Foundation",
       "title": "President Obama stops by",
       "accent": "Peach’s",

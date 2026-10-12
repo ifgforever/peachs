@@ -4,7 +4,7 @@ Three TVs, three videos. Each is 1920×1080 and loops on its own BrightSign play
 
 | Screen | File | Sound | Length |
 |---|---|---|---|
-| **Entrance**, the first thing guests see | `peachs-entrance-loop.mp4` (built on request, **not in this repo**; see below) | Yes, during the Obama Foundation videos | Depends on the videos |
+| **Entrance**, the first thing guests see | `peachs-entrance-loop.mp4` (full quality for the TV, **not in this repo**; see below) | Yes, during the Obama Foundation videos | Depends on the videos |
 | **Screen 2** | `peachs-instore-loop.mp4` | No | 1:35 |
 | **Screen 3** | `romesjoy-family-loop.mp4` | No | 2:41 |
 
@@ -49,7 +49,7 @@ Facts come from the content inventories in each company's folder (`../romesjoy/c
 3. President Obama's Favorites (from the Screen 2 loop), silent
 4. A title card, then **"What's cooking at the Obama Presidential Center: Meet Chef Cliff Rome"** (Obama Foundation, https://youtu.be/yq40-pdvyPs), with sound
 
-Cliff has permission to show these videos in the restaurant. That doesn't cover publishing them, and this repo is public, so the clips and the finished entrance video are kept out of git (see `.gitignore`).
+The full-quality entrance video is about 30 MB, over Cloudflare's 25 MB limit per file, so it stays out of git along with the source clips (see `.gitignore`) and goes to the TV directly. A smaller 720p copy, `peachs-entrance-loop-web.mp4`, is in the repo and plays on the landing page.
 
 ### Getting the video files
 
@@ -70,6 +70,7 @@ Upload them to Google Drive or Dropbox, set sharing to "Anyone with the link", a
 From the repo root, run `python3 -m http.server 8765`, then `node signage/entrance.mjs`.
 
 - Any listed clip that isn't in `source/` is skipped, so it builds with whatever is there.
+- It writes two files: `peachs-entrance-loop.mp4` for the TV, and `peachs-entrance-loop-web.mp4`, a 720p copy of about 10 MB for the website. Commit only the web copy.
 - Widescreen clips play full screen. A clip of any other shape (a vertical phone video, say) plays in a Peach's-colored frame with its title beside it.
 - Every clip's sound is leveled to the same loudness, so one video isn't much louder than the next.
 - To cut a clip's start or end (for example, a YouTube end screen), add `"start": 2` and/or `"end": 95` (seconds) to that clip in `entrance.json`.

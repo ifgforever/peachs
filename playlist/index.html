@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Concept preview: keep it out of search so it never competes with the live sites. -->
+<meta name="robots" content="noindex, nofollow">
+<title>Parkway Ballroom Playlist</title>
+<meta name="description" content="Songs by musicians who played Chicago's Parkway Ballroom, 4455 S. King Drive, from opening night in 1940 to today, each with the dated evidence.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; }
+  .backbar { max-width: 54rem; margin: 0 auto; padding: 16px 20px 0; font: 500 0.95rem 'Jost', system-ui, sans-serif; }
+  .backbar a { color: var(--sage); text-decoration: none; }
+  .backbar a:hover { text-decoration: underline; }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Jost:wght@400;500;600&display=swap">
+<style>
+  /* Layout: one narrow column read like a 1940s dance card; each era is a "set", each song a numbered dance with a dotted leader to its year. Parkway Social's own palette and fonts. */
+  :root {
+    --paper: #F4EEE3;
+    --card: #FBF8F2;
+    --ink: #1C1D19;
+    --muted: #5B5A52;
+    --sage: #55613F;
+    --accent: #8A5A26;
+    --brass: #D2AE72;
+    --line: rgba(28, 29, 25, 0.14);
+    --on-sage: #FBF8F2;
+    --f-display: 'DM Serif Display', Georgia, 'Times New Roman', serif;
+    --f-body: 'Jost', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #1D2119; --card: #262C20; --ink: #F1EBDF; --muted: #BFC2B1; --sage: #AEBD8E; --accent: #D9B97E; --brass: #D2AE72; --line: rgba(244, 238, 227, 0.16); --on-sage: #1D2119; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1D2119; --card: #262C20; --ink: #F1EBDF; --muted: #BFC2B1; --sage: #AEBD8E; --accent: #D9B97E; --brass: #D2AE72; --line: rgba(244, 238, 227, 0.16); --on-sage: #1D2119; color-scheme: dark;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: var(--f-body); font-size: 1rem; line-height: 1.55; }
+  .page { max-width: 54rem; margin: 0 auto; padding-inline: 20px; padding-block: 48px 72px; display: grid; gap: 56px; }
+  a { color: var(--accent); text-underline-offset: 3px; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; border-radius: 6px; }
+  h1, h2 { font-family: var(--f-display); font-weight: 400; line-height: 1.05; text-wrap: balance; margin: 0; }
+  p { margin: 0; }
+
+  .mast { display: grid; gap: 18px; }
+  .eyebrow { font-size: 0.78rem; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); }
+  h1 { font-size: clamp(2.6rem, 8vw, 4.6rem); }
+  h1 em { color: var(--sage); }
+  .lead { font-size: 1.15rem; max-width: 40rem; color: var(--ink); }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 0.92rem; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 18px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .tools p { flex: 1 1 18rem; min-width: 0; font-size: 0.92rem; color: var(--muted); }
+  button { font: 600 0.95rem var(--f-body); cursor: pointer; border-radius: 999px; padding: 10px 20px; border: 2px solid var(--sage); background: var(--sage); color: var(--on-sage); }
+  button.ghost { background: transparent; color: var(--sage); }
+  .status { font-size: 0.9rem; color: var(--sage); min-height: 1.2em; }
+  textarea { width: 100%; min-height: 9rem; font: 0.85rem/1.4 ui-monospace, Menlo, monospace; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+
+  .set { display: grid; gap: 20px; scroll-margin-top: 16px; }
+  .set__head { display: grid; gap: 6px; }
+  .set__years { font-family: var(--f-display); font-style: italic; font-size: 1.35rem; color: var(--accent); }
+  .set h2 { font-size: clamp(1.9rem, 5vw, 2.6rem); }
+  .set__blurb { max-width: 40rem; color: var(--muted); }
+  .card { list-style: none; margin: 0; padding: 4px 22px; background: var(--card); border: 1px solid var(--line); border-radius: 18px; }
+  #lore .card { border-style: dashed; }
+
+  .dance { display: grid; grid-template-columns: 2.4rem 1fr; gap: 14px; padding-block: 20px; border-top: 1px dotted var(--line); }
+  .dance:first-child { border-top: 0; }
+  .no { font-family: var(--f-display); font-size: 1.5rem; color: var(--sage); line-height: 1.1; text-align: right; font-variant-numeric: tabular-nums; }
+  .dance__main { min-width: 0; display: grid; gap: 4px; }
+  .dance__head { display: flex; align-items: baseline; gap: 10px; }
+  .dance__title { font-family: var(--f-display); font-size: 1.3rem; line-height: 1.2; min-width: 0; }
+  .leader { flex: 1 1 1rem; min-width: 1rem; border-bottom: 2px dotted var(--line); transform: translateY(-5px); }
+  .dance__year { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.95rem; white-space: nowrap; }
+  .dance__artist { font-weight: 500; }
+  .dance__proof { font-size: 0.9rem; color: var(--muted); }
+  .dance__links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .btn { display: inline-block; font-size: 0.85rem; font-weight: 600; text-decoration: none; padding: 5px 14px; border-radius: 999px; border: 1.5px solid var(--sage); color: var(--sage); }
+  .btn:hover { background: var(--sage); color: var(--on-sage); }
+  .btn--quiet { border-style: dashed; font-weight: 500; }
+
+  .chip { display: inline-block; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; padding: 2px 9px; border-radius: 999px; vertical-align: 1px; margin-right: 4px; }
+  .chip--doc { background: var(--sage); color: var(--on-sage); border: 1.5px solid var(--sage); }
+  .chip--rep { color: var(--sage); border: 1.5px solid var(--sage); }
+  .chip--lore { color: var(--muted); border: 1.5px dashed var(--muted); }
+
+  .notes { display: grid; gap: 28px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .notes h2 { font-size: 1.6rem; margin-bottom: 8px; }
+  .notes ul { margin: 0; padding-left: 1.1rem; display: grid; gap: 8px; }
+  .notes p, .notes li { max-width: 42rem; }
+  .fine { font-size: 0.88rem; color: var(--muted); }
+
+  @media (max-width: 30rem) {
+    .card { padding-inline: 14px; }
+    .dance { grid-template-columns: 1.8rem 1fr; gap: 10px; }
+    .no { font-size: 1.2rem; }
+  }
+  @media (prefers-reduced-motion: no-preference) { .btn, button { transition: background-color 0.15s, color 0.15s; } }
+</style>
+
+</head>
+<body>
+<nav class="backbar" aria-label="Back"><a href="../#playlist">← All of Rome’s Joy: sites, TV loops, playlist and merch</a></nav>
+<main class="page">
+  <header class="mast">
+    <p class="eyebrow">4455 S. King Drive · Bronzeville · Opened March 9, 1940</p>
+    <h1>Parkway Ballroom <em>Playlist</em></h1>
+    <p class="lead">38 recordings by musicians who played the Parkway Ballroom, from opening night in 1940 to the gospel mornings of today. Every name was checked against period sources, and the date and the evidence sit under each song.</p>
+    <p class="legend">
+      <span><span class="chip chip--doc">Documented</span> a period source gives the date</span>
+      <span><span class="chip chip--rep">Reported</span> a reliable source, no date</span>
+      <span><span class="chip chip--lore">Lore</span> repeated, never shown</span>
+    </p>
+    <div class="tools">
+      <p>Copy the list, then paste it into TuneMyMusic or Soundiiz to build the playlist in Spotify, Apple Music or YouTube Music. Or open songs one at a time with the buttons below.</p>
+      <button type="button" id="copy-core" data-src="list-core">Copy 32 songs</button>
+      <button type="button" class="ghost" id="copy-all" data-src="list-all">Copy all 38, with lore</button>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <textarea id="fallback" aria-label="Tracklist to copy" readonly hidden></textarea>
+    </div>
+  </header>
+
+  <section class="set" id="open" aria-labelledby="h-open">
+    <header class="set__head">
+      <p class="set__years">1940–1944</p>
+      <h2 id="h-open">The ballroom opens</h2>
+      <p class="set__blurb">Opening night was March 9, 1940, with Floyd Campbell&#x27;s orchestra, the house band. Club dances, school proms and battles of the bands filled the calendar, with touring stars on Sunday nights.</p>
+    </header>
+    <ol class="card" role="list">
+      <li class="dance">
+        <span class="no">1</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Market Street Blues</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1924</span></p>
+          <p class="dance__artist">Charlie Creath&#x27;s Jazz-O-Maniacs (vocal: Floyd Campbell)</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Opening night, March 9, 1940, then the regular house band. <a href="https://archive.org/details/newgrovedictiona00kernf" target="_blank" rel="noopener">The New Grove Dictionary of Jazz; Dempsey Travis, An Autobiography of Black Jazz</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Market%20Street%20Blues%20Charlie%20Creath%27s%20Jazz-O-Maniacs%20%28vocal%3A%20Floyd%20Campbell%29" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=3ckzNSRAYt8" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">2</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Chloe (Song of the Swamp)</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1940</span></p>
+          <p class="dance__artist">Duke Ellington and His Famous Orchestra</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Oct. 28, 1940, Kentucky State alumni scholarship dance. Recorded in Chicago for Victor the same day. <a href="https://tdwaw.ellingtonweb.ca/TDWAW1.html" target="_blank" rel="noopener">Variety, Sept. 25, 1940; The Duke: Where and When</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/0MzlO5hwp7NQQGwDRFQOk6" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=wfi0dbcY6CU" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">3</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">In a Mellotone</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1940</span></p>
+          <p class="dance__artist">Duke Ellington</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Oct. 28, 1940, the Blanton–Webster band. <a href="https://tdwaw.ellingtonweb.ca/TDWAW1.html" target="_blank" rel="noopener">The Duke: Where and When</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/7e4xBouRCBOZ8TINWnDlzq" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=zQD3PElvRE4" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">4</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">T-Bone Blues</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1940</span></p>
+          <p class="dance__artist">Les Hite and His Orchestra (vocal T-Bone Walker)</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> January 1941, the new hall&#x27;s first band residency. <a href="https://archive.org/details/jazz-information" target="_blank" rel="noopener">Jazz Information, Jan. 24, 1941</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/T-Bone%20Blues%20Les%20Hite%20and%20His%20Orchestra%20%28vocal%20T-Bone%20Walker%29" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=g6aJVLPDb2U" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">5</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Lonesome Gal</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1955</span></p>
+          <p class="dance__artist">Lurlean Hunter</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> January 1941, singing with Les Hite. <a href="https://campber.people.clemson.edu/seymour.html" target="_blank" rel="noopener">Red Saunders Research Foundation, citing the Chicago Defender</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/5CT45CrPBKHZCPBUEnKyKY" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=GPhl9nUwRLA" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">6</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">&#x27;Tain&#x27;t What You Do (It&#x27;s the Way That Cha Do It)</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1939</span></p>
+          <p class="dance__artist">Jimmie Lunceford</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Booked for Oct. 26, 1941. <a href="https://archive.org/details/variety144-1941-10" target="_blank" rel="noopener">Variety band routes, Oct. 8, 1941</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/6omAOQxWzNUuE3DZkI4cwr" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=poRvcxZsA7A" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">7</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Red Top</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1947</span></p>
+          <p class="dance__artist">Gene Ammons</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> June 1941, in King Kolax&#x27;s band at a school graduation dance. <a href="https://tedpanken.wordpress.com/2014/04/24/for-the-93rd-birthday-anniversary-of-johnny-griffin-a-1990-interview-on-wkcr-and-a-april-1985-interview-about-gene-ammons/" target="_blank" rel="noopener">Johnny Griffin interviews (Ted Panken)</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/747U9Mp2b5cMtBdYG3Ikyc" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=9ulDQxFNlAA" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">8</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Confessin&#x27; the Blues</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1941</span></p>
+          <p class="dance__artist">Jay McShann, Walter Brown</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Sunday, April 18, 1943. <a href="https://www.worldradiohistory.com/Archive-All-Music/Billboard/40s/1943/Billboard%201943-04-17.pdf" target="_blank" rel="noopener">Variety, April 7, 1943; Billboard, April 17, 1943</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/67hG2ngr9b0ILalOYpFvd6" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=bjo2ZAz6YqE" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">9</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Misty Night</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1960</span></p>
+          <p class="dance__artist">King Fleming Trio</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Many 1943 club dances, including a Feb. 5 &quot;Battle of Jazz-nocracy&quot;. <a href="https://campber.people.clemson.edu/fleming.html" target="_blank" rel="noopener">King Fleming discography, citing Chicago Defender ads</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/2t74cw5HEHgqqM10ZZ3gE1" target="_blank" rel="noopener">Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Misty%20Night%20King%20Fleming%20Trio" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">10</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Is You Is or Is You Ain&#x27;t (Ma&#x27; Baby)</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1944</span></p>
+          <p class="dance__artist">Louis Jordan &amp; His Tympany Five</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Wednesday, Aug. 11, 1943: 2,300 paid admissions. <a href="https://www.worldradiohistory.com/Archive-All-Music/Billboard/40s/1943/Billboard%201943-08-28.pdf" target="_blank" rel="noopener">Billboard, Aug. 28, 1943</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/7dSo5dJassM3MabtZqinwD" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=tFyjoGotmO8" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">11</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Let Me Off Uptown</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1941</span></p>
+          <p class="dance__artist">Gene Krupa &amp; His Orchestra, Anita O&#x27;Day, Roy Eldridge</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Sunday dances, winter 1943–44. <a href="http://books.google.com/books?id=ES0IAQAAMAAJ" target="_blank" rel="noopener">John Chilton, Roy Eldridge: Little Jazz Giant</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/1nEgilCpFCpi5xqC6cmUzF" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=-szPfMHm5fg" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">12</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Hurry, Hurry!</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1944</span></p>
+          <p class="dance__artist">Benny Carter and His Orchestra (vocal by Savannah Churchill); listed on Spotify as Benny Carter, Savannah Churchill</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Booked for March 19, 1944. <a href="https://archive.org/details/sim_variety_variety_1944-03-08_153_13" target="_blank" rel="noopener">Variety, March 8, 1944</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/468VSSZypR7P8mBKnlcuc0" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=Nrs_IJvAEYY" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">13</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">The Congregation</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1957</span></p>
+          <p class="dance__artist">Johnny Griffin</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> April 9, 1944, aged 15, in a battle of the bands. <a href="https://campber.people.clemson.edu/mclin.html" target="_blank" rel="noopener">Claude McLin discography, citing Chicago Defender ads</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/7G2Gc5cnjbVBwj0MXrtbcF" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=ksddHO-lI-E" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+    </ol>
+  </section>
+  <section class="set" id="fifties" aria-labelledby="h-fifties">
+    <header class="set__head">
+      <p class="set__years">1950s</p>
+      <h2 id="h-fifties">Mardi Gras balls and one-nighters</h2>
+      <p class="set__blurb">The Chicago Defender&#x27;s charity Mardi Gras ball, society teas and fashion shows, and one-night stands by touring bands. Sun Ra&#x27;s first Arkestra made the Parkway its home stage in 1955.</p>
+    </header>
+    <ol class="card" role="list">
+      <li class="dance">
+        <span class="no">14</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">If I Didn&#x27;t Care</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1939</span></p>
+          <p class="dance__artist">The Ink Spots</p>
+          <p class="dance__proof"><span class="chip chip--rep">Reported</span> Announced for the Defender Mardi Gras ball, Feb. 5, 1951. <a href="https://tdwaw.ellingtonweb.ca/TDWAW2.html" target="_blank" rel="noopener">Chicago Defender, Feb. 3, 1951 (via Stratemann)</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/4IY76C5dZWMvQ542It1Ykl" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=AMaGs9ievVw" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">15</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Every Day I Have the Blues</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1952</span></p>
+          <p class="dance__artist">Joe Williams with King Kolax and His Orchestra</p>
+          <p class="dance__proof"><span class="chip chip--rep">Reported</span> Defender Mardi Gras ball, Feb. 5, 1951. <a href="http://books.google.com/books?id=2kvfCwAAQBAJ" target="_blank" rel="noopener">Cheryl M. Willis, Tappin&#x27; at the Apollo (reproduced ad)</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/5FZLNbMaXcCtUg8kjXNBlR" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=iZNRhyBRkcg" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">16</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">The Peanut Vendor</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1947</span></p>
+          <p class="dance__artist">Stan Kenton &amp; His Orchestra</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> One-nighters, Jan. 21 and Sept. 6, 1951. <a href="https://archive.org/details/sim_down-beat_1951-09-21_18_19" target="_blank" rel="noopener">Variety, Jan. 10, 1951; Down Beat, Sept. 21, 1951</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/4Bsym9x55B9lkzvmRIZzNc" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=A-ZaN7o02iA" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">17</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">That Old Black Magic</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1951</span></p>
+          <p class="dance__artist">Billy Daniels</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> 1952: &quot;crooned Black Magic&quot; at a fashion show. <a href="https://archive.org/details/sim_jet_1952-09-18_2_21" target="_blank" rel="noopener">Jet, Sept. 18, 1952</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/That%20Old%20Black%20Magic%20Billy%20Daniels" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=orWRHfwBTiE" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">18</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Satin Doll</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1953</span></p>
+          <p class="dance__artist">Duke Ellington</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Feb. 5, 1951 (Defender ball) and May 31, 1953. <a href="https://tdwaw.ellingtonweb.ca/TDWAW2.html" target="_blank" rel="noopener">The Duke: Where and When; Stratemann; Vail</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/5AyPFk7dOjfs7qVF4t2Liw" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=ruewfx57GQA" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">19</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Boogie Woogie on St. Louis Blues</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1940</span></p>
+          <p class="dance__artist">Earl Hines &amp; His Orchestra</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> July 26, 1953: &quot;packed the Parkway Ballroom&quot;. <a href="https://archive.org/details/cashbox14unse_43" target="_blank" rel="noopener">Cash Box, Aug. 1, 1953</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/23wKhuuYIwVTFxc6YAmbsd" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=Ll7tZ46JB0U" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">20</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Brainville</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1956</span></p>
+          <p class="dance__artist">Sun Ra</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> 1955: the first Arkestra, photographed on the Parkway stage. <a href="https://www.lib.uchicago.edu/collex/exhibits/sounds-tomorrows-world/gallery/" target="_blank" rel="noopener">University of Chicago Library, Sounds from Tomorrow&#x27;s World</a></p>
+          <p class="dance__links"><a class="btn" href="https://open.spotify.com/track/6qrzdvMmiYN0KOTgbhtW40" target="_blank" rel="noopener">Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=KwBHcjhe02w" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">21</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Super Blonde</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1956</span></p>
+          <p class="dance__artist">Sun Ra and His Arkestra</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> 1955–56, the Arkestra&#x27;s main venue. <a href="https://campber.people.clemson.edu/sunra.html" target="_blank" rel="noopener">Red Saunders Research Foundation, Sun Ra</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Super%20Blonde%20Sun%20Ra%20and%20His%20Arkestra" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Super%20Blonde%20Sun%20Ra%20and%20His%20Arkestra" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">22</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Something&#x27;s Gotta Give</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1955</span></p>
+          <p class="dance__artist">Sammy Davis Jr.</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> March 4, 1957: &quot;entertained a packed Parkway ballroom&quot; at the Defender Mardi Gras. <a href="https://www.postcard-past.com/cmmac-and-the-parkway-ballroom/" target="_blank" rel="noopener">Chicago Defender, March 7, 1957 (via Postcard Past)</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Something%27s%20Gotta%20Give%20Sammy%20Davis%20Jr." target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Something%27s%20Gotta%20Give%20Sammy%20Davis%20Jr." target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">23</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Old Man River</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1958</span></p>
+          <p class="dance__artist">Paul Robeson</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Recital, Sunday, April 13, 1958. <a href="https://archive.org/details/FBI-Paul-Robeson" target="_blank" rel="noopener">Robeson&#x27;s FBI file (archive.org)</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Old%20Man%20River%20Paul%20Robeson" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Old%20Man%20River%20Paul%20Robeson" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">24</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Move On Up a Little Higher</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1947</span></p>
+          <p class="dance__artist">Mahalia Jackson</p>
+          <p class="dance__proof"><span class="chip chip--rep">Reported</span> 1950s: sang at a victory ball and dinner. <a href="https://books.google.com/books?id=bFByDwAAQBAJ" target="_blank" rel="noopener">Mark Burford, Mahalia Jackson and the Black Gospel Field</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Move%20On%20Up%20a%20Little%20Higher%20Mahalia%20Jackson" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=06gAdro-62E" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+    </ol>
+  </section>
+  <section class="set" id="sixties" aria-labelledby="h-sixties">
+    <header class="set__head">
+      <p class="set__years">1960s–1970s</p>
+      <h2 id="h-sixties">Saturday mornings and a Basie date</h2>
+      <p class="set__blurb">In the late 1960s, Jesse Jackson&#x27;s Operation Breadbasket held its Saturday morning meetings in the ballroom, with Ben Branch&#x27;s band and choir. In 1976 the Count Basie Orchestra played and recorded there.</p>
+    </header>
+    <ol class="card" role="list">
+      <li class="dance">
+        <span class="no">25</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Precious Lord, Take My Hand</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1968</span></p>
+          <p class="dance__artist">Ben Branch &amp; The Operation Breadbasket Orchestra &amp; Choir (solo vocal: Rev. Clay Evans)</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> 1968: Saturday morning meetings &quot;in the big and draughty old Chicago Parkway Ballroom&quot;. <a href="https://books.google.com/books?id=QDgDAAAAMBAJ&amp;pg=PA15" target="_blank" rel="noopener">Jet, Aug. 8, 1968</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Precious%20Lord%2C%20Take%20My%20Hand%20Ben%20Branch%20%26%20The%20Operation%20Breadbasket%20Orchestra%20%26%20Choir%20%28solo%20vocal%3A%20Rev.%20Clay%20Evans%29" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=SHSIgL-C_XU" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">26</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">One O&#x27;Clock Jump</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1937</span></p>
+          <p class="dance__artist">Count Basie and His Orchestra</p>
+          <p class="dance__proof"><span class="chip chip--rep">Reported</span> &quot;Regularly appeared at the Parkway&quot;; his orchestra recorded there Dec. 8, 1976. <a href="http://books.google.com/books?id=mE4gAQAAIAAJ" target="_blank" rel="noopener">Robert E. Weems, Black Business in the Black Metropolis; Chris Sheridan, Count Basie: A Bio-Discography</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/One%20O%27Clock%20Jump%20Count%20Basie%20and%20His%20Orchestra" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=One%20O%27Clock%20Jump%20Count%20Basie%20and%20His%20Orchestra" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">27</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">My One and Only Love</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1963</span></p>
+          <p class="dance__artist">John Coltrane, Johnny Hartman</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Dec. 8, 1976, with the Count Basie Orchestra (led by Nat Pierce). <a href="http://books.google.com/books?id=tS0KAQAAMAAJ" target="_blank" rel="noopener">Chris Sheridan, Count Basie: A Bio-Discography</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/My%20One%20and%20Only%20Love%20John%20Coltrane%2C%20Johnny%20Hartman" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=My%20One%20and%20Only%20Love%20John%20Coltrane%2C%20Johnny%20Hartman" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+    </ol>
+  </section>
+  <section class="set" id="now" aria-labelledby="h-now">
+    <header class="set__head">
+      <p class="set__years">Since 2002</p>
+      <h2 id="h-now">The room comes back</h2>
+      <p class="set__blurb">Reopened in 2002, the ballroom hosts galas, lectures, community dinners and gospel mornings, and is now home to Parkway Social.</p>
+    </header>
+    <ol class="card" role="list">
+      <li class="dance">
+        <span class="no">28</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Groove Awakening</span><span class="leader" aria-hidden="true"></span><span class="dance__year">2013</span></p>
+          <p class="dance__artist">Ari Brown</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> April 11, 2015: concert after the first Timuel Black lecture. <a href="https://news.uchicago.edu/story/uchicago-honors-south-side-activist-timuel-black-guest-lecture-jazz-concert" target="_blank" rel="noopener">UChicago News, April 7, 2015</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Groove%20Awakening%20Ari%20Brown" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Groove%20Awakening%20Ari%20Brown" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">29</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Change the World</span><span class="leader" aria-hidden="true"></span><span class="dance__year">2008</span></p>
+          <p class="dance__artist">The Reminders</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Nov. 21, 2008: IMAN Community Cafe. <a href="https://archive.org/details/redeye-chicago-magazine-20081121" target="_blank" rel="noopener">RedEye Chicago, Nov. 21, 2008</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Change%20the%20World%20The%20Reminders" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Change%20the%20World%20The%20Reminders" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">30</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Reality Check</span><span class="leader" aria-hidden="true"></span><span class="dance__year">2000</span></p>
+          <p class="dance__artist">Binary Star</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Oct. 2, 2009: Community Cafe Eid celebration. <a href="https://archive.org/details/redeye-chicago-magazine-20091002" target="_blank" rel="noopener">RedEye Chicago, Oct. 2, 2009</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Reality%20Check%20Binary%20Star" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Reality%20Check%20Binary%20Star" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">31</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Your Will</span><span class="leader" aria-hidden="true"></span><span class="dance__year">2004</span></p>
+          <p class="dance__artist">Darius Brooks</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Dec. 21, 2019: Rainbow PUSH Founder&#x27;s Day. <a href="https://www.youtube.com/watch?v=jn3reWm9Oe0" target="_blank" rel="noopener">Rainbow PUSH Coalition livestream</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Your%20Will%20Darius%20Brooks" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=ArAoYU2UetQ" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">32</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Available to You</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1988</span></p>
+          <p class="dance__artist">Rev. Milton Brunson &amp; The Thompson Community Singers</p>
+          <p class="dance__proof"><span class="chip chip--doc">Documented</span> Dec. 21, 2019, as the Tommies Reunion. <a href="https://www.youtube.com/watch?v=jn3reWm9Oe0" target="_blank" rel="noopener">Rainbow PUSH Coalition livestream</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Available%20to%20You%20Rev.%20Milton%20Brunson%20%26%20The%20Thompson%20Community%20Singers" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Available%20to%20You%20Rev.%20Milton%20Brunson%20%26%20The%20Thompson%20Community%20Singers" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+    </ol>
+  </section>
+  <section class="set" id="lore" aria-labelledby="h-lore">
+    <header class="set__head">
+      <p class="set__years">Said to have played</p>
+      <h2 id="h-lore">Ballroom lore</h2>
+      <p class="set__blurb">These names are repeated in articles and on the venue&#x27;s website, but we found no ad, notice, itinerary or photo that puts them on the Parkway stage. They&#x27;re here as a bonus, marked as unverified.</p>
+    </header>
+    <ol class="card" role="list">
+      <li class="dance">
+        <span class="no">33</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">What a Wonderful World</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1967</span></p>
+          <p class="dance__artist">Louis Armstrong</p>
+          <p class="dance__proof"><span class="chip chip--lore">Lore</span> Named on Parkway Social&#x27;s website; no date or event found. <a href="https://parkwaysocialchicago.com/about-us/" target="_blank" rel="noopener">Parkway Social, About</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/What%20a%20Wonderful%20World%20Louis%20Armstrong" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=rBrd_3VMC3c" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">34</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Straighten Up and Fly Right</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1943</span></p>
+          <p class="dance__artist">The King Cole Trio</p>
+          <p class="dance__proof"><span class="chip chip--lore">Lore</span> Named in many articles, all repeating the venue&#x27;s website. <a href="https://www.dnainfo.com/chicago/20160216/bronzeville/parkway-ballroom-once-host-count-basie-welcome-hillary-clinton/" target="_blank" rel="noopener">DNAinfo, 2016</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Straighten%20Up%20and%20Fly%20Right%20The%20King%20Cole%20Trio" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Straighten%20Up%20and%20Fly%20Right%20The%20King%20Cole%20Trio" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">35</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">How High the Moon</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1947</span></p>
+          <p class="dance__artist">Ella Fitzgerald</p>
+          <p class="dance__proof"><span class="chip chip--lore">Lore</span> Named in blog posts with no date or source. <a href="https://www.postcard-past.com/cmmac-and-the-parkway-ballroom/" target="_blank" rel="noopener">Postcard Past, 2024</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/How%20High%20the%20Moon%20Ella%20Fitzgerald" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=How%20High%20the%20Moon%20Ella%20Fitzgerald" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">36</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Groovin&#x27; High</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1945</span></p>
+          <p class="dance__artist">Dizzy Gillespie</p>
+          <p class="dance__proof"><span class="chip chip--lore">Lore</span> Named by the Bronzeville Historical Society&#x27;s founder in 2021. <a href="https://chicagodefender.com/bronzeville-historical-society-re-opens/" target="_blank" rel="noopener">Chicago Defender, Nov. 11, 2021</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Groovin%27%20High%20Dizzy%20Gillespie" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=Groovin%27%20High%20Dizzy%20Gillespie" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">37</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">God Bless the Child</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1941</span></p>
+          <p class="dance__artist">Billie Holiday</p>
+          <p class="dance__proof"><span class="chip chip--rep">Reported</span> One line in an academic book, with no date. <a href="https://books.google.com/books?id=k6d_CgAAQBAJ" target="_blank" rel="noopener">Brown &amp; Smith, eds., Race and Real Estate (Oxford, 2015)</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/God%20Bless%20the%20Child%20Billie%20Holiday" target="_blank" rel="noopener">Find on Spotify</a><a class="btn btn--quiet" href="https://www.youtube.com/results?search_query=God%20Bless%20the%20Child%20Billie%20Holiday" target="_blank" rel="noopener">Find on YouTube</a></p>
+        </div>
+      </li>
+      <li class="dance">
+        <span class="no">38</span>
+        <div class="dance__main">
+          <p class="dance__head"><span class="dance__title">Lullaby of Birdland</span><span class="leader" aria-hidden="true"></span><span class="dance__year">1954</span></p>
+          <p class="dance__artist">Sarah Vaughan</p>
+          <p class="dance__proof"><span class="chip chip--lore">Lore</span> At the Parkway in 1952 to present a raffle prize; no documented performance. <a href="https://archive.org/details/sim_jet_1952-05-01_2_1" target="_blank" rel="noopener">Jet, May 1, 1952</a></p>
+          <p class="dance__links"><a class="btn btn--quiet" href="https://open.spotify.com/search/Lullaby%20of%20Birdland%20Sarah%20Vaughan" target="_blank" rel="noopener">Find on Spotify</a><a class="btn" href="https://www.youtube.com/watch?v=2njqRTDVXzo" target="_blank" rel="noopener">YouTube</a></p>
+        </div>
+      </li>
+    </ol>
+  </section>
+  <section class="notes" aria-label="Notes">
+    <div>
+      <h2>Also on the bandstand</h2>
+      <ul>
+        <li><strong>Captain Walter Dyett</strong>, DuSable High's band director, led dance orchestras at the Parkway from 1943 to 1959. He left no commercial records, so he isn't on the playlist.</li>
+        <li><strong>McKie Fitzhugh</strong>, DJ and promoter, started his dances at the Parkway in 1942 and presented Duke Ellington there in 1953.</li>
+        <li><strong>Fred Guy</strong>, Ellington's guitarist for over 20 years, managed the Parkway Ballroom from 1949 until his death in 1971.</li>
+        <li><strong>Lonnie Simmons</strong>, jazz organist, was signed in 1958 to a Saturday radio show broadcast from the Parkway's Blue Room. <strong>Lorna Boston</strong> and LB's Blues Machine played a 2014 blues night there. Neither has a recording we could find on streaming services.</li>
+        <li><strong>Mavis Staples</strong> held her first wedding reception there in 1964.</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Not on the list</h2>
+      <p>Lena Horne and Josephine Baker are often named as Parkway guests. The only source is a 2024 article saying they "stepped foot in" the building, and no record shows either one performing there.</p>
+    </div>
+    <div>
+      <h2>Playing it in the restaurant</h2>
+      <p>Personal Spotify and Apple Music accounts are licensed for personal listening only. To play music for customers, use a business music service or a public-performance license (ASCAP, BMI, SESAC, GMR).</p>
+    </div>
+    <p class="fine">Researched October 2026 from Variety, Billboard, Cash Box, Down Beat, Jazz Information, Jet, the Chicago Defender, Duke Ellington day-by-day itineraries, jazz discographies, oral histories and the University of Chicago Library. The venue's opening date comes from The New Grove Dictionary of Jazz and Floyd Campbell's own account.</p>
+  </section>
+</main>
+
+<pre id="list-core" hidden>Charlie Creath&#x27;s Jazz-O-Maniacs (vocal: Floyd Campbell) - Market Street Blues
+Duke Ellington and His Famous Orchestra - Chloe (Song of the Swamp)
+Duke Ellington - In a Mellotone
+Les Hite and His Orchestra (vocal T-Bone Walker) - T-Bone Blues
+Lurlean Hunter - Lonesome Gal
+Jimmie Lunceford - &#x27;Tain&#x27;t What You Do (It&#x27;s the Way That Cha Do It)
+Gene Ammons - Red Top
+Jay McShann, Walter Brown - Confessin&#x27; the Blues
+King Fleming Trio - Misty Night
+Louis Jordan &amp; His Tympany Five - Is You Is or Is You Ain&#x27;t (Ma&#x27; Baby)
+Gene Krupa &amp; His Orchestra, Anita O&#x27;Day, Roy Eldridge - Let Me Off Uptown
+Benny Carter and His Orchestra (vocal by Savannah Churchill); listed on Spotify as Benny Carter, Savannah Churchill - Hurry, Hurry!
+Johnny Griffin - The Congregation
+The Ink Spots - If I Didn&#x27;t Care
+Joe Williams with King Kolax and His Orchestra - Every Day I Have the Blues
+Stan Kenton &amp; His Orchestra - The Peanut Vendor
+Billy Daniels - That Old Black Magic
+Duke Ellington - Satin Doll
+Earl Hines &amp; His Orchestra - Boogie Woogie on St. Louis Blues
+Sun Ra - Brainville
+Sun Ra and His Arkestra - Super Blonde
+Sammy Davis Jr. - Something&#x27;s Gotta Give
+Paul Robeson - Old Man River
+Mahalia Jackson - Move On Up a Little Higher
+Ben Branch &amp; The Operation Breadbasket Orchestra &amp; Choir (solo vocal: Rev. Clay Evans) - Precious Lord, Take My Hand
+Count Basie and His Orchestra - One O&#x27;Clock Jump
+John Coltrane, Johnny Hartman - My One and Only Love
+Ari Brown - Groove Awakening
+The Reminders - Change the World
+Binary Star - Reality Check
+Darius Brooks - Your Will
+Rev. Milton Brunson &amp; The Thompson Community Singers - Available to You</pre>
+<pre id="list-all" hidden>Charlie Creath&#x27;s Jazz-O-Maniacs (vocal: Floyd Campbell) - Market Street Blues
+Duke Ellington and His Famous Orchestra - Chloe (Song of the Swamp)
+Duke Ellington - In a Mellotone
+Les Hite and His Orchestra (vocal T-Bone Walker) - T-Bone Blues
+Lurlean Hunter - Lonesome Gal
+Jimmie Lunceford - &#x27;Tain&#x27;t What You Do (It&#x27;s the Way That Cha Do It)
+Gene Ammons - Red Top
+Jay McShann, Walter Brown - Confessin&#x27; the Blues
+King Fleming Trio - Misty Night
+Louis Jordan &amp; His Tympany Five - Is You Is or Is You Ain&#x27;t (Ma&#x27; Baby)
+Gene Krupa &amp; His Orchestra, Anita O&#x27;Day, Roy Eldridge - Let Me Off Uptown
+Benny Carter and His Orchestra (vocal by Savannah Churchill); listed on Spotify as Benny Carter, Savannah Churchill - Hurry, Hurry!
+Johnny Griffin - The Congregation
+The Ink Spots - If I Didn&#x27;t Care
+Joe Williams with King Kolax and His Orchestra - Every Day I Have the Blues
+Stan Kenton &amp; His Orchestra - The Peanut Vendor
+Billy Daniels - That Old Black Magic
+Duke Ellington - Satin Doll
+Earl Hines &amp; His Orchestra - Boogie Woogie on St. Louis Blues
+Sun Ra - Brainville
+Sun Ra and His Arkestra - Super Blonde
+Sammy Davis Jr. - Something&#x27;s Gotta Give
+Paul Robeson - Old Man River
+Mahalia Jackson - Move On Up a Little Higher
+Ben Branch &amp; The Operation Breadbasket Orchestra &amp; Choir (solo vocal: Rev. Clay Evans) - Precious Lord, Take My Hand
+Count Basie and His Orchestra - One O&#x27;Clock Jump
+John Coltrane, Johnny Hartman - My One and Only Love
+Ari Brown - Groove Awakening
+The Reminders - Change the World
+Binary Star - Reality Check
+Darius Brooks - Your Will
+Rev. Milton Brunson &amp; The Thompson Community Singers - Available to You
+Louis Armstrong - What a Wonderful World
+The King Cole Trio - Straighten Up and Fly Right
+Ella Fitzgerald - How High the Moon
+Dizzy Gillespie - Groovin&#x27; High
+Billie Holiday - God Bless the Child
+Sarah Vaughan - Lullaby of Birdland</pre>
+<script>
+  const status = document.getElementById('status');
+  const fallback = document.getElementById('fallback');
+  for (const id of ['copy-core', 'copy-all']) {
+    const btn = document.getElementById(id);
+    btn.addEventListener('click', () => {
+      const text = document.getElementById(btn.dataset.src).textContent.trim();
+      const count = text.split('\n').length;
+      const showFallback = () => {
+        fallback.value = text;
+        fallback.hidden = false;
+        fallback.focus();
+        fallback.select();
+        status.textContent = 'Your browser blocked copying. The list is selected below: press Ctrl+C (or Cmd+C).';
+      };
+      try {
+        navigator.clipboard.writeText(text).then(() => {
+          fallback.hidden = true;
+          status.textContent = `Copied ${count} songs. Paste them into TuneMyMusic or Soundiiz.`;
+        }, showFallback);
+      } catch (err) {
+        showFallback();
+      }
+    });
+  }
+</script>
+
+</body>
+</html>

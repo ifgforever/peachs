@@ -1,1 +1,5 @@
 build/
+# The entrance video and its source clips belong to the Obama Foundation. They are cleared to play in the
+# restaurant, not to publish, and this repo is public, so they stay out of git.
+source/
+peachs-entrance-loop.mp4

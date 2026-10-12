@@ -3,4 +3,6 @@
 .wrangler
 wrangler.jsonc
 .assetsignore
-signage/render.mjs
+signage/*.mjs
+signage/lib
+signage/entrance.json

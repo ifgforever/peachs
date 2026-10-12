@@ -20,7 +20,7 @@ Promotes Chef Cliff Rome, every company in the group, and his community work. Ea
 4. **Meet the family**: all six companies with their logos.
 5. **Peach's**: "You're at Peach's on 47th. Find us on campus, too." (47th, University, Law).
 6. **Rome's Joy Catering**: full-service catering, Chef Trillis Rollins, phone, email, @rjc.events.
-7. **Parkway Social**: the historic Parkway Ballroom (Ellington, Basie, Armstrong), $150 membership, $25 day pass, and "Members save 15% on Peach's meals over $30".
+7. **Parkway Social**: the historic Parkway Ballroom (Duke Ellington, Louis Jordan and Sun Ra all have dated appearances there), $150 membership, $25 day pass, and "Members save 15% on Peach's meals over $30".
 8. **In his words**: Chef Rome's own GuestBook text about the Parkway Ballroom (Blanc, 2024).
 9. **Blanc Gallery**: mission, Do Well / Do Good, hours, and the fall show *What Shall I Do With My Dead?*
 10. **R.J.C. Sausage Co.**: Halal Zabiha chicken sausage and patties.

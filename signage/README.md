@@ -49,7 +49,7 @@ Facts come from the content inventories in each company's folder (`../romesjoy/c
 3. President Obama's Favorites (from the Screen 2 loop), silent
 4. A title card, then **"What's cooking at the Obama Presidential Center: Meet Chef Cliff Rome"** (Obama Foundation, https://youtu.be/yq40-pdvyPs), with sound
 
-Cliff has permission for these videos. The full-quality entrance video is about 30 MB, over Cloudflare's 25 MB limit per file, so it stays out of git along with the source clips (see `.gitignore`) and goes to the TV directly. A smaller 720p copy, `peachs-entrance-loop-web.mp4`, is in the repo and plays on the landing page.
+The full-quality entrance video is about 30 MB, over Cloudflare's 25 MB limit per file, so it stays out of git along with the source clips (see `.gitignore`) and goes to the TV directly. A smaller 720p copy, `peachs-entrance-loop-web.mp4`, is in the repo and plays on the landing page.
 
 ### Getting the video files
 

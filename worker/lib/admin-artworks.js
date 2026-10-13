@@ -30,7 +30,7 @@ export const ARTWORK_FIELDS = {
 export const ARTWORK_COLUMNS = ['business_slug', ...Object.keys(ARTWORK_FIELDS), 'sort_order', 'created_at', 'updated_at'];
 export const IMAGE_COLUMNS = ['artwork_id', 'url', 'thumb_url', 'alt', 'width', 'height', 'sort_order', 'created_at'];
 
-const IMAGE_FIELDS = {
+export const IMAGE_FIELDS = {
   url: { type: 'text', required: true, max: 2000, label: 'photo link' },
   thumb_url: { type: 'text', max: 2000, label: 'thumbnail link' },
   alt: { type: 'text', max: 500, label: 'photo description' },
@@ -99,7 +99,7 @@ const parseUrl = (s, base) => { try { return new URL(s, base); } catch { return 
 const mediaPath = (path) => /^\/api\/media\/[^\s\\?#]+$/.test(path) && !path.split('/').includes('..');
 const PATH_BASE = 'https://path.invalid';
 
-function checkPhotoUrl(value, name, ctx) {
+export function checkPhotoUrl(value, name, ctx) {
   if (value == null) return null;
   if (!/[\s\\]/.test(value)) {
     if (value.startsWith('/')) {

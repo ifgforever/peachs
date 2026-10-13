@@ -22,7 +22,8 @@ export const ANNOUNCEMENT_COLUMNS = ['business_slug', ...Object.keys(ANNOUNCEMEN
 const shape = (row) => shapeAnnouncement(row, { admin: true });
 const describe = (row) => `${row.business_slug ? '' : 'family-wide '}announcement ${quote(row.title)}`;
 
-function checkDates(a) {
+/** The end date must not come before the start (also used by change sets). */
+export function checkDates(a) {
   if (a.ends_at && a.starts_at && a.ends_at < a.starts_at) throw bad('The end date cannot be before the start date.', 'invalid_dates');
 }
 

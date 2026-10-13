@@ -106,17 +106,7 @@ export async function patch(ctx) {
 /** PUT /api/admin/businesses/:slug/hours — all 7 days at once. */
 export async function putHours(ctx) {
   const business = await requireBusiness(ctx, ctx.params.slug);
-  const body = await readBody(ctx.request);
-  if (!Array.isArray(body.hours) || body.hours.length !== 7) throw bad('Send hours for all 7 days.', 'invalid_field');
-  const rows = [];
-  const seen = new Set();
-  for (const raw of body.hours) {
-    const weekday = Number(raw?.weekday);
-    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || seen.has(weekday)) throw bad('Each weekday 0–6 must appear exactly once.', 'invalid_field');
-    seen.add(weekday);
-    rows.push({ weekday, ...readHoursRow(raw, `${DAY_LABELS[weekday]} hours`) });
-  }
-  rows.sort((a, b) => a.weekday - b.weekday);
+  const rows = readWeekHours(await readBody(ctx.request));
   const current = await all(ctx.env, 'SELECT weekday, closed, open_min, close_min FROM hours WHERE business_slug = ? ORDER BY weekday', [business.slug]);
   await saveHours(ctx.env, business.slug, rows);
   const before = shapeHours(current);
@@ -132,6 +122,20 @@ export async function putHours(ctx) {
     });
   }
   return { hours: after };
+}
+
+/** { hours: [7 × { weekday, closed, open_min, close_min }] } → the 7 rows, Sunday first, or a 400 (also used by change sets). */
+export function readWeekHours(body) {
+  if (!Array.isArray(body?.hours) || body.hours.length !== 7) throw bad('Send hours for all 7 days.', 'invalid_field');
+  const rows = [];
+  const seen = new Set();
+  for (const raw of body.hours) {
+    const weekday = Number(raw?.weekday);
+    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || seen.has(weekday)) throw bad('Each weekday 0–6 must appear exactly once.', 'invalid_field');
+    seen.add(weekday);
+    rows.push({ weekday, ...readHoursRow(raw, `${DAY_LABELS[weekday]} hours`) });
+  }
+  return rows.sort((a, b) => a.weekday - b.weekday);
 }
 
 const plainHours = (h) => ({ weekday: h.weekday, closed: h.closed ? 1 : 0, open_min: h.open_min, close_min: h.close_min });
@@ -152,13 +156,17 @@ export async function listExceptions(ctx) {
 
 const exceptionSummary = (row) => `${shortDate(row.date)}: ${hoursText(row)}${row.label ? ` (${row.label})` : ''}`;
 
+/** { date, closed, open_min, close_min, label } → { date, label, closed, open_min, close_min } or a 400 (also used by change sets). */
+export function readException(body) {
+  const { date, label } = readFields(body, { date: { type: 'date', required: true }, label: { type: 'text', max: 120 } });
+  const closed = body.closed === undefined ? body.open_min == null && body.open == null : body.closed;
+  return { date, label, ...readHoursRow({ ...body, closed }, 'Special hours') };
+}
+
 /** POST /api/admin/businesses/:slug/hours/exceptions */
 export async function createException(ctx) {
   const business = await requireBusiness(ctx, ctx.params.slug);
-  const body = await readBody(ctx.request);
-  const { date, label } = readFields(body, { date: { type: 'date', required: true }, label: { type: 'text', max: 120 } });
-  const closed = body.closed === undefined ? body.open_min == null && body.open == null : body.closed;
-  const hours = readHoursRow({ ...body, closed }, 'Special hours');
+  const { date, label, ...hours } = readException(await readBody(ctx.request));
   const existing = await first(ctx.env, 'SELECT id FROM hours_exceptions WHERE business_slug = ? AND date = ?', [business.slug, date]);
   if (existing) throw conflict(`There are already special hours for ${shortDate(date)}. Remove them first.`, 'duplicate_date');
   const id = await insertRow(ctx.env, 'hours_exceptions', { business_slug: business.slug, date, label, ...hours });

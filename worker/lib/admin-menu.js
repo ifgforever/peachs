@@ -16,7 +16,7 @@ export const SECTION_FIELDS = {
 export const SECTION_COLUMNS = ['business_slug', ...Object.keys(SECTION_FIELDS)];
 
 // Body keys → columns: tags → tags_json, allergens → allergens_json, prices → prices_json.
-const ITEM_FIELDS = {
+export const ITEM_FIELDS = {
   name: { type: 'text', required: true, max: 160 },
   portion: { type: 'text', max: 80 },
   price: { type: 'number', min: 0 },
@@ -31,7 +31,8 @@ const ITEM_FIELDS = {
 const ITEM_RENAMES = { prices: 'prices_json', tags: 'tags_json', allergens: 'allergens_json' };
 export const ITEM_COLUMNS = ['section_id', 'name', 'portion', 'price', 'prices_json', 'description', 'tags_json', 'allergens_json', 'featured', 'available', 'sort_order'];
 
-function itemColumns(fields) {
+/** Validated item fields → column names (also used by change sets). */
+export function itemColumns(fields) {
   const out = {};
   for (const [k, v] of Object.entries(fields)) out[ITEM_RENAMES[k] || k] = v;
   return out;

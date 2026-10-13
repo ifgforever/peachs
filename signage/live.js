@@ -34,6 +34,8 @@
   const BUSINESS = /^[a-z0-9-]{1,40}$/.test(params.get('business') || '') ? params.get('business') : 'peachs';
   const API = apiBase(params.get('api'));
   const FROZEN = parseFrozenClock(params.get('at'));   // ?at=2026-10-14T10:30 freezes "now" for previews
+  // ?preview=<draft id> from the admin's Assistant: the bundles as they will be once it is published (never cached).
+  const PREVIEW = /^[A-Za-z0-9_-]{10,64}$/.test(params.get('preview') || '') ? params.get('preview') : null;
   const CACHE_KEY = 'romesjoy-tv:' + BUSINESS;
   const IMAGES_KEY = CACHE_KEY + ':images';
 
@@ -251,7 +253,8 @@
   function fetchJson(path) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    return fetch(API + path, { signal: ctrl.signal, headers: { Accept: 'application/json' } })
+    const url = API + path + (PREVIEW ? (path.indexOf('?') > -1 ? '&' : '?') + 'preview=' + encodeURIComponent(PREVIEW) : '');
+    return fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' }, cache: PREVIEW ? 'no-store' : 'default' })
       .then((res) => {
         if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + path);
         return res.json();
@@ -266,6 +269,7 @@
   }
 
   function loadCache() {
+    if (PREVIEW) return null; // a preview never paints from, or writes to, the player's cache
     try {
       const raw = localStorage.getItem(CACHE_KEY);
       const saved = raw && JSON.parse(raw);
@@ -274,6 +278,7 @@
     return null;
   }
   function saveCache(data) {
+    if (PREVIEW) return;
     try { localStorage.setItem(CACHE_KEY, JSON.stringify(Object.assign({ v: 1 }, data))); } catch (e) { note(e, 'cache'); }
   }
 
@@ -382,6 +387,7 @@
           state.lastOkAt = state.data.savedAt;
           state.lastError = null;
           saveCache(state.data);
+          if (PREVIEW) previewBadge(bundle);
           plan();
           if (!state.timer) advance();
           fetched = true;
@@ -1015,11 +1021,27 @@
     else if (e.key === 'r' || e.key === 'R') refresh();
   });
 
+  /** The PREVIEW corner badge; once the draft is published, discarded or expired the API sends the live data instead. */
+  function previewBadge(bundle) {
+    let badge = document.getElementById('tv-preview');
+    if (!badge) {
+      badge = el('div', { text: 'PREVIEW', attrs: { id: 'tv-preview', role: 'status' } });
+      badge.style.cssText = 'position:fixed;top:calc(24px * var(--tv-scale, 1));right:calc(24px * var(--tv-scale, 1));z-index:25;'
+        + 'padding:calc(8px * var(--tv-scale, 1)) calc(18px * var(--tv-scale, 1));border-radius:calc(8px * var(--tv-scale, 1));'
+        + 'background:#c8102e;color:#ffffff;border:calc(2px * var(--tv-scale, 1)) solid #ffffff;'
+        + 'font:700 calc(26px * var(--tv-scale, 1))/1.2 system-ui, sans-serif;letter-spacing:0.12em;'
+        + 'box-shadow:0 4px 16px rgba(0, 0, 0, 0.35);pointer-events:none';
+      document.body.appendChild(badge);
+    }
+    if (bundle) badge.textContent = bundle.preview ? 'PREVIEW' : 'PREVIEW ENDED · LIVE';
+  }
+
   /* -------------------------------------------------------------------------
      Start
      ------------------------------------------------------------------------- */
   function init() {
     fit();
+    if (PREVIEW) previewBadge(null);
     window.addEventListener('resize', fit, { passive: true });
     if (BUSINESS !== 'peachs') {
       // Another business with nothing loaded yet: show its slug as a name rather than Peach's.

@@ -27,7 +27,8 @@ export const EVENT_FIELDS = {
 };
 export const EVENT_COLUMNS = ['business_slug', ...Object.keys(EVENT_FIELDS), 'created_at', 'updated_at'];
 
-function checkDates(ev) {
+/** The end date and time must not come before the start (also used by change sets). */
+export function checkDates(ev) {
   if (ev.end_date && ev.end_date < ev.start_date) throw bad('The end date cannot be before the start date.', 'invalid_dates');
   const sameDay = !ev.end_date || ev.end_date === ev.start_date;
   if (sameDay && ev.start_time && ev.end_time && timeToMinutes(ev.end_time) <= timeToMinutes(ev.start_time)) {

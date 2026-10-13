@@ -827,6 +827,317 @@ await step('POST /api/auth/logout → 401 afterwards', async () => {
   token = null;
 });
 
+/* ---------- Change sets: drafts, previews, double-checks, publish, verify, undo (docs/assistant-api.md §1) ---------- */
+// These steps sign in again (the logout above ended that session), work on the same business as the steps above, and
+// remove what they create. Two need the local database itself: an expired draft, and a publish that fails half way (a
+// temporary SQLite trigger makes one insert fail). They run when SMOKE_PERSIST_TO is the folder wrangler dev was started
+// with (--persist-to); otherwise they are skipped.
+const PERSIST = process.env.SMOKE_PERSIST_TO || '';
+const cs = { token: null, slug: null, other: null, hours: null, day: null, dayLine: null, tagline: null, sectionId: null, item: null, draftId: null, editorId: null };
+const csApi = (method, path, body) => api(method, path, body, { auth: cs.token });
+const publicGet = (path) => api('GET', path, undefined, { auth: null });
+const propose = (title, ops, extra = {}, auth = cs.token) => api('POST', '/api/admin/change-sets', { title, ops, ...extra }, { auth });
+const weekWith = (hours, day) => hours.map((h) => (h.weekday === day.weekday ? day : h));
+const dayIn = (bundle) => bundle.hours.find((h) => h.weekday === cs.day.weekday).text;
+const needDraft = () => expect(cs.draftId, 'needs the draft from the "valid draft" step, which failed');
+async function localSql(command) {
+  const { execFileSync } = await import('node:child_process');
+  const { fileURLToPath } = await import('node:url');
+  execFileSync('npx', ['-y', 'wrangler@4', 'd1', 'execute', 'romesjoy-admin', '--local', '--persist-to', PERSIST, '--command', command],
+    { cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: 'pipe' });
+}
+
+await step('Change sets: sign in again, add a menu item to work on', async () => {
+  const login = await api('POST', '/api/auth/login', { email: EMAIL, password: PASSWORD }, { auth: null });
+  expectStatus(login, 200, 'login');
+  cs.token = login.data.token;
+  const list = (await csApi('GET', '/api/admin/businesses')).data.businesses;
+  cs.slug = state.slug || list[0].slug;
+  cs.other = list.find((b) => b.slug !== cs.slug)?.slug || null;
+  const detail = (await csApi('GET', `/api/admin/businesses/${cs.slug}`)).data;
+  cs.hours = detail.hours.map((h) => ({ weekday: h.weekday, closed: h.closed, open_min: h.open_min, close_min: h.close_min }));
+  cs.tagline = detail.business.tagline;
+  // One hour off the first open day (or open a closed Monday 9–5): the draft's hours change.
+  const open = cs.hours.find((h) => !h.closed && h.close_min - h.open_min > 60);
+  cs.day = open ? { ...open, close_min: open.close_min - 60 } : { weekday: cs.hours[0].weekday, closed: false, open_min: 540, close_min: 1020 };
+  const sec = await csApi('POST', `/api/admin/businesses/${cs.slug}/menu/sections`, { title: 'Smoke CS Plates' });
+  expectStatus(sec, 200, 'menu section');
+  cs.sectionId = sec.data.section.id;
+  const item = await csApi('POST', `/api/admin/menu/sections/${cs.sectionId}/items`, { name: 'Smoke CS Catfish', price: 10, tags: ['GF'], allergens: ['Fish'] });
+  expectStatus(item, 200, 'menu item');
+  cs.item = item.data.item;
+  return cs.slug;
+});
+
+await step('Change sets: bad drafts are refused with details per op', async () => {
+  const res = await propose('Smoke bad draft', [
+    { op: 'hours.put', business_slug: cs.slug, args: { hours: cs.hours.slice(0, 6) } },
+    { op: 'event.create', business_slug: cs.slug, args: { title: 'Smoke backwards', start_date: chicagoToday(9), end_date: chicagoToday(3) } },
+    { op: 'event.patch', business_slug: cs.slug, args: { id: { $ref: 3 }, featured: true } },
+    { op: 'menu.burn', business_slug: cs.slug, args: {} },
+    { op: 'business.patch', business_slug: cs.slug, args: { inquiry_emails: 'not an email' } },
+    { op: 'menu_item.patch', business_slug: cs.slug, args: { id: 999999999, price: 5 } },
+  ]);
+  expectStatus(res, 400, 'bad draft');
+  expect(res.data.code === 'invalid_change_set' && res.data.details?.map((d) => d.op_index).join() === '0,1,2,3,4,5', `details ${JSON.stringify(res.data.details)}`);
+  expect(res.data.details.every((d) => typeof d.message === 'string' && d.message.length > 10) && /change 2: The end date/.test(res.data.error), `messages ${res.data.error}`);
+  const tooMany = await propose('Smoke too many', Array.from({ length: 41 }, () => ({ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'x' } })));
+  expectStatus(tooMany, 400, '41 ops');
+  expectStatus(await propose('', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'x' } }]), 400, 'missing title');
+  expectStatus(await propose('x', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'x' } }], {}, null), 401, 'not signed in');
+});
+
+await step('Change sets: a valid draft has a before → after summary, checks and preview links', async () => {
+  const ops = [
+    { op: 'hours.put', business_slug: cs.slug, args: { hours: weekWith(cs.hours, cs.day) } },
+    { op: 'business.patch', business_slug: cs.slug, args: { notice: 'Smoke preview notice', notice_until: chicagoToday(3) } },
+    { op: 'event.create', business_slug: cs.slug, args: { title: 'Smoke preview event', start_date: chicagoToday(6), start_time: '10:00', end_time: '14:00' } },
+    { op: 'event.patch', business_slug: cs.slug, args: { id: { $ref: 2 }, featured: true } },
+    { op: 'hours_exception.create', business_slug: cs.slug, args: { date: chicagoToday(21), closed: true, label: 'Smoke preview holiday' } },
+    { op: 'menu_item.patch', business_slug: cs.slug, args: { id: cs.item.id, price: 40, allergens: [] } },
+  ];
+  const firstTry = await propose('Smoke draft, first try', ops.slice(0, 2));
+  expectStatus(firstTry, 200, 'first draft');
+  const res = await propose('Smoke: close early + an event', ops, { replace_id: firstTry.data.change_set.id });
+  expectStatus(res, 200, 'propose');
+  const d = res.data.change_set;
+  expect(d.id === firstTry.data.change_set.id && /^[A-Za-z0-9_-]{22}$/.test(d.id), 'replace_id overwrites the same draft');
+  cs.draftId = d.id;
+  expect(d.status === 'draft' && d.source === 'assistant' && d.businesses.join() === cs.slug && d.ops.length === ops.length, `draft ${JSON.stringify({ ...d, ops: undefined, summary: undefined })}`);
+  cs.dayLine = d.summary.find((l) => l.op_index === 0);
+  expect(cs.dayLine && / hours$/.test(cs.dayLine.line) && cs.dayLine.before && cs.dayLine.after && cs.dayLine.before !== cs.dayLine.after && cs.dayLine.business_name, `hours line ${JSON.stringify(cs.dayLine)}`);
+  expect(d.summary.some((l) => l.line === 'Notice' && l.after === 'Smoke preview notice'), 'notice line');
+  expect(d.summary.some((l) => l.line === "New event 'Smoke preview event'" && l.before === null && /10 am – 2 pm/.test(l.after)), 'event line');
+  expect(d.summary.some((l) => l.line === "Menu item 'Smoke CS Catfish': price" && l.before === '$10' && l.after === '$40'), 'price line');
+  expect(d.checks.some((k) => k.level === 'warn' && k.op_index === 5 && /\$10 to \$40/.test(k.message)), `price warning ${JSON.stringify(d.checks)}`);
+  expect(d.checks.some((k) => k.level === 'warn' && /^Allergen info removed from 'Smoke CS Catfish': Fish/.test(k.message)), 'allergen warning');
+  expect(!d.checks.some((k) => k.level === 'block'), 'no blocking checks');
+  const hoursLeft = (Date.parse(d.expires_at) - Date.now()) / 3600000;
+  expect(hoursLeft > 47 && hoursLeft <= 48.05, `expires in ${hoursLeft.toFixed(2)} h`);
+  const site = d.preview_urls.find((u) => u.label !== 'TV screen');
+  const tv = d.preview_urls.find((u) => u.label === 'TV screen');
+  expect(site && site.url.endsWith(`?preview=${d.id}`) && tv && tv.url.endsWith(`/signage/live.html?business=${cs.slug}&preview=${d.id}`), `preview_urls ${JSON.stringify(d.preview_urls)}`);
+  expectStatus(await csApi('GET', `/api/admin/change-sets/${d.id}`), 200, 'get');
+  const drafts = await csApi('GET', '/api/admin/change-sets?status=draft');
+  expect(drafts.data.change_sets.some((x) => x.id === d.id), 'listed as a draft');
+  return `${d.summary.length} lines, ${d.checks.length} checks`;
+});
+
+await step('Change sets: the preview bundle shows the draft; the live bundle does not', async () => {
+  needDraft();
+  const preview = await publicGet(`/api/public/${cs.slug}?preview=${cs.draftId}`);
+  expectStatus(preview, 200, 'preview');
+  const p = preview.data;
+  expect(p.preview?.id === cs.draftId && p.preview.title === 'Smoke: close early + an event' && p.preview.expires_at, `preview ${JSON.stringify(p.preview)}`);
+  expect(preview.headers.get('cache-control') === 'no-store', `preview Cache-Control ${preview.headers.get('cache-control')}`);
+  expect(dayIn(p) === cs.dayLine.after && p.business.notice?.text === 'Smoke preview notice', `preview hours ${dayIn(p)}, notice ${JSON.stringify(p.business.notice)}`);
+  const ev = p.events.upcoming.find((e) => e.title === 'Smoke preview event');
+  expect(ev && ev.featured === true && ev.time_text === '10 am – 2 pm', `preview event ${JSON.stringify(ev)}`);
+  expect(p.exceptions.some((e) => e.label === 'Smoke preview holiday' && e.closed === true), 'preview special day');
+  const item = p.menu.sections.flatMap((s) => s.items).find((i) => i.id === cs.item.id);
+  expect(item?.price === 40 && item.allergens.length === 0, `preview item ${JSON.stringify(item)}`);
+  const live = await publicGet(`/api/public/${cs.slug}`);
+  expect(!('preview' in live.data) && /max-age=60/.test(live.headers.get('cache-control') || ''), 'the live bundle has no preview and stays cacheable');
+  expect(dayIn(live.data) === cs.dayLine.before && !JSON.stringify(live.data).includes('Smoke preview'), 'nothing from the draft is live');
+  expect(live.data.menu.sections.flatMap((s) => s.items).find((i) => i.id === cs.item.id)?.price === 10, 'live price unchanged');
+  const tv = await publicGet(`/api/public/signage/${cs.slug}?preview=${cs.draftId}`);
+  expect(tv.data.preview?.id === cs.draftId && tv.headers.get('cache-control') === 'no-store' && dayIn(tv.data) === cs.dayLine.after, 'TV preview');
+  expect(tv.data.family.find((f) => f.slug === cs.slug)?.hours_summary === p.hours_summary, 'the family strip shows the draft hours too');
+  if (cs.other) expect(!('preview' in (await publicGet(`/api/public/${cs.other}?preview=${cs.draftId}`)).data), 'another business ignores the id');
+  const bogus = await publicGet(`/api/public/${cs.slug}?preview=AAAAAAAAAAAAAAAAAAAAAA`);
+  expect(bogus.status === 200 && !('preview' in bogus.data), 'an unknown id is ignored');
+});
+
+await step('Change sets: blocking checks, "nothing unusual", discard', async () => {
+  const plain = await propose('Smoke plain draft', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke plain tagline' } }]);
+  expectStatus(plain, 200, 'plain draft');
+  const checks = plain.data.change_set.checks;
+  expect(checks.length === 1 && checks[0].level === 'ok' && checks[0].message === 'Checked: nothing unusual.', `checks ${JSON.stringify(checks)}`);
+  const blocked = await propose('Smoke blocked draft', [
+    { op: 'business.patch', business_slug: cs.slug, args: { notice: 'Smoke old notice', notice_until: chicagoToday(-2) } },
+    { op: 'hours_exception.create', business_slug: cs.slug, args: { date: chicagoToday(-5), closed: true } },
+    { op: 'menu_item.patch', business_slug: cs.slug, args: { id: cs.item.id, price: 0 } },
+  ]);
+  expectStatus(blocked, 200, 'a draft with blocking checks is saved for the person to see');
+  const b = blocked.data.change_set;
+  expect(b.checks.filter((k) => k.level === 'block').map((k) => k.op_index).join() === '0,1,2', `block checks ${JSON.stringify(b.checks)}`);
+  const refused = await csApi('POST', `/api/admin/change-sets/${b.id}/publish`);
+  expectStatus(refused, 409, 'publish with a blocking check');
+  expect(refused.data.code === 'change_set_blocked', `code ${refused.data.code}`);
+  for (const id of [plain.data.change_set.id, b.id]) {
+    const dis = await csApi('POST', `/api/admin/change-sets/${id}/discard`);
+    expectStatus(dis, 200, 'discard');
+    expect(dis.data.change_set.status === 'discarded', 'discarded');
+  }
+  const gone = (await publicGet(`/api/public/${cs.slug}?preview=${plain.data.change_set.id}`)).data;
+  expect(!('preview' in gone) && gone.business.tagline !== 'Smoke plain tagline', 'a discarded draft no longer previews');
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${plain.data.change_set.id}/publish`), 409, 'publish a discarded draft');
+});
+
+await step('Change sets: an editor of another business is blocked', async () => {
+  if (state.role === 'editor') return 'skipped (logged in as an editor)';
+  needDraft();
+  const email = `smoke-cs-editor-${Date.now()}@example.com`;
+  const made = await csApi('POST', '/api/admin/users', { email, name: 'Smoke Draft Editor', role: 'editor', businesses: cs.other ? [cs.other] : [], password: EDITOR_PASSWORD });
+  expectStatus(made, 200, 'create editor');
+  cs.editorId = made.data.user.id;
+  const login = await api('POST', '/api/auth/login', { email, password: EDITOR_PASSWORD }, { auth: null });
+  expectStatus(login, 200, 'editor login');
+  const ed = login.data.token;
+  const theirs = await propose('Smoke not mine', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'nope' } }], {}, ed);
+  expectStatus(theirs, 400, 'drafting for a business they cannot edit');
+  expect(theirs.data.code === 'invalid_change_set' && /assigned to you/.test(theirs.data.details?.[0]?.message || ''), `details ${JSON.stringify(theirs.data.details)}`);
+  expectStatus(await propose('Smoke family', [{ op: 'announcement.create', business_slug: null, args: { title: 'nope' } }], {}, ed), 400, 'a family-wide announcement');
+  for (const [method, path] of [['GET', ''], ['POST', '/publish'], ['POST', '/discard'], ['POST', '/undo'], ['GET', '/verify']]) {
+    expectStatus(await api(method, `/api/admin/change-sets/${cs.draftId}${path}`, undefined, { auth: ed }), 404, `${method} …${path} on someone else's draft`);
+  }
+  const list = await api('GET', '/api/admin/change-sets?status=all', undefined, { auth: ed });
+  expect(list.status === 200 && !list.data.change_sets.some((x) => x.id === cs.draftId), 'not in their list');
+  if (cs.other) {
+    const own = await propose('Smoke own business', [{ op: 'business.patch', business_slug: cs.other, args: { tagline: 'Smoke editor tagline' } }], {}, ed);
+    expectStatus(own, 200, 'their own business');
+    expectStatus(await api('POST', `/api/admin/change-sets/${own.data.change_set.id}/discard`, undefined, { auth: ed }), 200, 'discard their own');
+  }
+  expect((await csApi('GET', `/api/admin/change-sets/${cs.draftId}`)).data.change_set.status === 'draft', 'the draft is untouched');
+});
+
+await step('Change sets: an expired draft cannot be published or previewed', async () => {
+  if (!PERSIST) return 'skipped (set SMOKE_PERSIST_TO to the folder wrangler dev uses for --persist-to)';
+  const res = await propose('Smoke expiring draft', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke expired tagline' } }]);
+  expectStatus(res, 200, 'draft');
+  const id = res.data.change_set.id;
+  expect(/^[A-Za-z0-9_-]{22}$/.test(id), 'id is safe to put in SQL');
+  await localSql(`UPDATE change_sets SET expires_at = datetime('now', '-1 minute') WHERE id = '${id}'`);
+  const preview = (await publicGet(`/api/public/${cs.slug}?preview=${id}`)).data;
+  expect(!('preview' in preview) && preview.business.tagline !== 'Smoke expired tagline', 'no preview once expired');
+  const got = (await csApi('GET', `/api/admin/change-sets/${id}`)).data.change_set;
+  expect(got.status === 'expired', `status ${got.status}`);
+  const refused = await csApi('POST', `/api/admin/change-sets/${id}/publish`);
+  expectStatus(refused, 409, 'publish an expired draft');
+  expect(refused.data.code === 'change_set_expired', `code ${refused.data.code}`);
+  const fresh = await propose('Smoke after expiry', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke fresh tagline' } }], { replace_id: id });
+  expectStatus(fresh, 200, 'replacing an expired draft');
+  expect(fresh.data.change_set.id !== id && fresh.data.change_set.status === 'draft', 'makes a new draft');
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${fresh.data.change_set.id}/discard`), 200, 'discard it');
+});
+
+await step('Change sets: publish runs the real handlers; History and verify agree', async () => {
+  needDraft();
+  const res = await csApi('POST', `/api/admin/change-sets/${cs.draftId}/publish`);
+  expectStatus(res, 200, 'publish');
+  const { change_set: d, results: done } = res.data;
+  expect(d.status === 'published' && d.published_at && done.length === d.ops.length && done.every((r) => r.ok && r.audit_ids.length === 1), `results ${JSON.stringify(done)}`);
+  const eventId = done[2].created_id;
+  expect(Number.isInteger(eventId) && eventId > 0, `created event id ${eventId}`);
+  const live = (await publicGet(`/api/public/${cs.slug}`)).data;
+  expect(dayIn(live) === cs.dayLine.after && live.business.notice?.text === 'Smoke preview notice', 'hours and notice are live');
+  expect(live.events.upcoming.find((e) => e.id === eventId)?.featured === true, 'the event is live, and the $ref patch featured it');
+  expect(live.menu.sections.flatMap((s) => s.items).find((i) => i.id === cs.item.id)?.price === 40, 'price is live');
+  const hist = (await csApi('GET', `/api/admin/businesses/${cs.slug}/history?limit=10`)).data.entries;
+  expect(hist[0].entity === 'change_set' && hist[0].summary === `Published "Smoke: close early + an event" (${d.ops.length} changes)`, `latest entry: ${hist[0]?.summary}`);
+  expect(hist.slice(1, 1 + d.ops.length).every((e) => e.summary.startsWith('Assistant: ')), `entries ${hist.map((e) => e.summary).join(' | ')}`);
+  const verify = await csApi('GET', `/api/admin/change-sets/${cs.draftId}/verify`);
+  expectStatus(verify, 200, 'verify');
+  expect(verify.data.ok === true && verify.data.lines.length === d.summary.length && verify.data.lines.every((l) => l.ok && l.detail && l.line), `verify ${JSON.stringify(verify.data)}`);
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${cs.draftId}/publish`), 409, 'publishing twice');
+  // A manual edit afterwards: verify says that line is no longer what was published.
+  expectStatus(await csApi('PATCH', `/api/admin/businesses/${cs.slug}`, { notice: 'Smoke manual notice' }), 200, 'manual edit');
+  const again = (await csApi('GET', `/api/admin/change-sets/${cs.draftId}/verify`)).data;
+  expect(again.ok === false && again.lines.find((l) => l.line === 'Notice')?.ok === false && again.lines.filter((l) => !l.ok).length === 1, `verify after an edit ${JSON.stringify(again)}`);
+});
+
+await step('Change sets: Undo all puts the live site back', async () => {
+  needDraft();
+  const res = await csApi('POST', `/api/admin/change-sets/${cs.draftId}/undo`);
+  expectStatus(res, 200, 'undo');
+  expect(res.data.change_set.status === 'undone', `status ${res.data.change_set.status}`);
+  const live = (await publicGet(`/api/public/${cs.slug}`)).data;
+  expect(dayIn(live) === cs.dayLine.before && !JSON.stringify(live).includes('Smoke preview'), 'hours, event and special day back');
+  expect(!live.business.notice || !/^Smoke/.test(live.business.notice.text), `notice ${JSON.stringify(live.business.notice)}`);
+  const item = live.menu.sections.flatMap((s) => s.items).find((i) => i.id === cs.item.id);
+  expect(item?.price === 10 && item.allergens.join() === 'Fish', `item back ${JSON.stringify(item)}`);
+  const hist = (await csApi('GET', `/api/admin/businesses/${cs.slug}/history?limit=3`)).data.entries;
+  expect(hist[0].summary === 'Undid "Smoke: close early + an event" (6 changes)', `latest entry: ${hist[0]?.summary}`);
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${cs.draftId}/undo`), 409, 'undo twice');
+  expectStatus(await csApi('GET', `/api/admin/change-sets/${cs.draftId}/verify`), 409, 'verify after undo');
+});
+
+await step('Change sets: a failing op rolls back the ones before it', async () => {
+  if (!PERSIST) return 'skipped (set SMOKE_PERSIST_TO to the folder wrangler dev uses for --persist-to)';
+  await localSql("CREATE TRIGGER IF NOT EXISTS smoke_changeset_fail BEFORE INSERT ON hours_exceptions WHEN NEW.label = 'Smoke rollback trigger' BEGIN SELECT RAISE(ABORT, 'Smoke test: forced failure'); END;");
+  try {
+    const res = await propose('Smoke rollback', [
+      { op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke rollback tagline' } },
+      { op: 'hours.put', business_slug: cs.slug, args: { hours: weekWith(cs.hours, cs.day) } },
+      { op: 'event.create', business_slug: cs.slug, args: { title: 'Smoke rollback event', start_date: chicagoToday(4) } },
+      { op: 'hours_exception.create', business_slug: cs.slug, args: { date: chicagoToday(25), closed: true, label: 'Smoke rollback trigger' } },
+    ]);
+    expectStatus(res, 200, 'draft (the trigger only bites on publish)');
+    const id = res.data.change_set.id;
+    const attempt = await csApi('POST', `/api/admin/change-sets/${id}/publish`);
+    expectStatus(attempt, 409, 'publish that fails at the last op');
+    expect(attempt.data.code === 'publish_failed' && /^Change 4 could not be made/.test(attempt.data.error) && /Nothing was changed/.test(attempt.data.error), `error: ${attempt.data.error}`);
+    const after = (await csApi('GET', `/api/admin/change-sets/${id}`)).data.change_set;
+    expect(after.status === 'failed' && /^Change 4/.test(after.error || ''), `change set ${after.status} ${after.error}`);
+    const live = (await publicGet(`/api/public/${cs.slug}`)).data;
+    expect(live.business.tagline === cs.tagline && dayIn(live) === cs.dayLine.before && !JSON.stringify(live).includes('Smoke rollback'), 'nothing partial is left');
+    const hist = (await csApi('GET', `/api/admin/businesses/${cs.slug}/history?limit=3`)).data.entries;
+    expect(hist.every((e) => e.action === 'restore'), `the three earlier changes were put back: ${hist.map((e) => e.summary).join(' | ')}`);
+    expectStatus(await csApi('POST', `/api/admin/change-sets/${id}/publish`), 409, 'a failed draft cannot be published again');
+  } finally {
+    await localSql('DROP TRIGGER IF EXISTS smoke_changeset_fail;');
+  }
+});
+
+await step('Change sets: artworks, a photo, family-wide news and TV settings in one draft', async () => {
+  if (state.role === 'editor') return 'skipped (logged in as an editor)';
+  const art = state.artSlug;
+  expect(art, 'needs the gallery business from the artwork steps');
+  const tvBefore = (await csApi('GET', `/api/admin/settings/signage:${art}`)).data.value;
+  const res = await propose('Smoke gallery draft', [
+    { op: 'event.create', business_slug: art, args: { title: 'Smoke CS show', kind: 'exhibition', start_date: chicagoToday(-1), end_date: chicagoToday(30) } },
+    { op: 'artwork.create', business_slug: art, args: { title: 'Smoke CS Piece', artist: 'Smoke Artist', price: 1200, price_display: 'show', status: 'sold', event_id: { $ref: 0 } } },
+    { op: 'artwork_image.add', business_slug: art, args: { id: { $ref: 1 }, url: 'https://example.com/smoke-cs.webp' } },
+    { op: 'announcement.create', business_slug: null, args: { title: 'Smoke CS family news', ends_at: chicagoToday(5) } },
+    { op: 'screen_settings.put', business_slug: art, args: { value: { ...tvBefore, seconds_per_scene: 15 } } },
+  ]);
+  expectStatus(res, 200, 'draft');
+  const d = res.data.change_set;
+  expect(d.checks.some((k) => /marked sold, so its price will be hidden/.test(k.message)) && d.checks.some((k) => /no description/.test(k.message)), `checks ${JSON.stringify(d.checks)}`);
+  expect(d.summary.some((l) => l.line === 'TV screens: seconds per scene' && l.after === '15') && d.summary.some((l) => l.business_slug === null && /family-wide/.test(l.line)), `summary ${JSON.stringify(d.summary)}`);
+  const p = (await publicGet(`/api/public/${art}?preview=${d.id}`)).data;
+  const piece = p.artworks?.find((a) => a.title === 'Smoke CS Piece');
+  expect(piece && piece.status === 'sold' && piece.price_text === null && piece.images.length === 1 && p.events.current.find((e) => e.id === piece.event_id)?.artwork_count === 1, `preview piece ${JSON.stringify(piece)}`);
+  expect(p.announcements.some((a) => a.title === 'Smoke CS family news' && a.business_slug === null), 'family news in the preview');
+  const elsewhere = (await publicGet(`/api/public/${cs.slug}?preview=${d.id}`)).data;
+  expect(elsewhere.preview && elsewhere.announcements.some((a) => a.title === 'Smoke CS family news') && !('artworks' in elsewhere && elsewhere.artworks.some((a) => a.title === 'Smoke CS Piece')), 'family news previews on every site, the gallery change only on its own');
+  expect((await publicGet(`/api/public/signage/${art}?preview=${d.id}`)).data.signage?.seconds_per_scene === 15, 'TV preview has the new setting');
+  const done = await csApi('POST', `/api/admin/change-sets/${d.id}/publish`);
+  expectStatus(done, 200, 'publish');
+  const verify = (await csApi('GET', `/api/admin/change-sets/${d.id}/verify`)).data;
+  expect(verify.ok === true, `verify ${JSON.stringify(verify)}`);
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${d.id}/undo`), 200, 'undo');
+  const back = (await publicGet(`/api/public/${art}`)).data;
+  expect(!JSON.stringify(back).includes('Smoke CS'), 'all gone after undo');
+  expect(JSON.stringify((await csApi('GET', `/api/admin/settings/signage:${art}`)).data.value) === JSON.stringify(tvBefore), 'TV settings back');
+});
+
+await step('Change sets: cleanup and sign out', async () => {
+  const errors = [];
+  if (cs.sectionId) { const r = await csApi('DELETE', `/api/admin/menu/sections/${cs.sectionId}`); if (r.status !== 200) errors.push(`menu section → ${r.status}`); }
+  if (cs.editorId) { const r = await csApi('DELETE', `/api/admin/users/${cs.editorId}`); if (r.status !== 200) errors.push(`editor → ${r.status}`); }
+  // Undo and rollback put everything else back; if a step failed half way, put the hours and tagline back too.
+  if (cs.hours) {
+    const now = (await csApi('GET', `/api/admin/businesses/${cs.slug}`)).data;
+    if (JSON.stringify(now.hours.map((h) => [h.weekday, h.closed, h.open_min, h.close_min])) !== JSON.stringify(cs.hours.map((h) => [h.weekday, h.closed, h.open_min, h.close_min]))) {
+      await csApi('PUT', `/api/admin/businesses/${cs.slug}/hours`, { hours: cs.hours });
+    }
+    if (now.business.tagline !== cs.tagline) await csApi('PATCH', `/api/admin/businesses/${cs.slug}`, { tagline: cs.tagline });
+  }
+  expectStatus(await csApi('POST', '/api/auth/logout'), 200, 'logout');
+  expect(!errors.length, errors.join('; '));
+});
+
 /* ---------- summary ---------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} steps passed${failed.length ? `; FAILED: ${failed.map((f) => f.name).join(', ')}` : ''}`);

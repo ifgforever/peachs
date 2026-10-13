@@ -4,14 +4,17 @@ import { run } from './db.js';
 /**
  * Records one change. `before` and `after` are stored as JSON so the entry can be restored later;
  * `summary` is the plain-English line staff read, e.g. "Changed Saturday hours to 8 am – 3 pm".
+ * Change sets (worker/lib/changesets.js) set ctx.auditSource ("Assistant", "Claude app"), which prefixes the
+ * summary ("Assistant: Changed …"), and ctx.auditIds, an array that collects the id of every row written.
  */
 export async function audit(ctx, { business_slug = null, entity, entity_id = null, action, summary, before = null, after = null }) {
-  await run(ctx.env, `INSERT INTO audit_log (user_id, user_email, business_slug, entity, entity_id, action, summary, before_json, after_json)
+  const { meta } = await run(ctx.env, `INSERT INTO audit_log (user_id, user_email, business_slug, entity, entity_id, action, summary, before_json, after_json)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
     ctx.user?.id ?? null, ctx.user?.email ?? null, business_slug, entity,
-    entity_id == null ? null : String(entity_id), action, summary,
+    entity_id == null ? null : String(entity_id), action, ctx.auditSource ? `${ctx.auditSource}: ${summary}` : summary,
     before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after),
   ]);
+  if (Array.isArray(ctx.auditIds)) ctx.auditIds.push(meta.last_row_id);
 }
 
 /** 'Hangover Plate' with curly-safe quotes for summaries. */
@@ -42,6 +45,7 @@ const FIELD_LABELS = {
   portion: 'portion', price: 'price', prices_json: 'prices', tags_json: 'dietary tags', allergens_json: 'allergens',
   available: 'availability', status: 'status', role: 'role', businesses_json: 'businesses', active: 'active',
   password_hash: 'password', must_change_password: 'password reset', email: 'email',
+  dimensions: 'size', price_display: 'price display', event_id: 'exhibition', alt: 'photo description',
 };
 export const fieldLabel = (key) => FIELD_LABELS[key] || key.replace(/_/g, ' ');
 export const fieldLabels = (keys) => listWords(keys.map(fieldLabel));

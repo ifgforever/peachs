@@ -67,6 +67,10 @@
 //
 //   [data-live-menu]              marks a page with a menu; bundle.menu is handed to options.renderMenu.
 //
+//   ?preview=<id> in the page's address (a link from the admin's Assistant) asks for the bundle as it will look once
+//   that draft is published: it is fetched fresh, never cached or read from the cache, and a fixed banner at the top
+//   says "Preview — not live yet · <title>" with a link back to the admin. An ended preview shows the live site.
+//
 //   document receives a "live:hydrated" CustomEvent ({ slug, bundle, fromCache }) after each hydration.
 //   A classic page script that loads after the first (cached) hydration can catch up with
 //   import(liveScript.src).then((live) => live.liveBundle(slug)), then listen for the event.
@@ -81,6 +85,7 @@ const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEK_ORDER = [1, 2, 3, 4, 5, 6, 0];
 const SAFE_PROTOCOLS = new Set(['http:', 'https:', 'tel:', 'mailto:']);
+const PREVIEW_ID = previewParam();
 
 const registry = new Map(); // slug → { slug, options, bundle, fromCache, promise, timer }
 
@@ -107,6 +112,14 @@ function cityLine(address) {
   if (!address) return null;
   const region = [address.state, address.zip].filter(Boolean).join(' ');
   return [address.city, region].filter(Boolean).join(', ') || null;
+}
+
+/** The draft id from ?preview= (change sets, docs/assistant-api.md), or null. */
+function previewParam() {
+  try {
+    const id = new URLSearchParams(location.search).get('preview');
+    return id && /^[A-Za-z0-9_-]{10,64}$/.test(id) ? id : null;
+  } catch { return null; }
 }
 
 /** The API origin from <meta name="live-api">, or '' for same origin. */
@@ -194,8 +207,10 @@ async function fetchBundle(slug) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
   try {
-    const res = await fetch(`${apiBase()}/api/public/${encodeURIComponent(slug)}`, {
+    const query = PREVIEW_ID ? `?preview=${encodeURIComponent(PREVIEW_ID)}` : '';
+    const res = await fetch(`${apiBase()}/api/public/${encodeURIComponent(slug)}${query}`, {
       headers: { Accept: 'application/json' }, credentials: 'omit', signal: controller.signal,
+      cache: PREVIEW_ID ? 'no-store' : 'default',
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -526,14 +541,75 @@ const domReady = () => (document.readyState === 'loading'
 
 async function run(entry) {
   await domReady();
-  const cached = readCache(entry.slug);
+  // A preview never touches the cache: the next normal visit must not paint a draft.
+  const cached = PREVIEW_ID ? null : readCache(entry.slug);
   if (cached) hydrate(entry, cached, true);
   const bundle = await fetchBundle(entry.slug);
   if (bundle) {
     hydrate(entry, bundle, false);
-    writeCache(entry.slug, bundle);
+    if (!PREVIEW_ID) writeCache(entry.slug, bundle);
   }
+  if (PREVIEW_ID) showPreviewBanner(bundle);
   return entry.bundle;
+}
+
+/* -------------------------------------------------------------------------
+   Preview banner (?preview=): fixed to the top; the page moves down by its height so nothing is covered.
+   Built with DOM nodes and inline styles, so it looks the same on every site and needs no stylesheet.
+   ------------------------------------------------------------------------- */
+function showPreviewBanner(bundle) {
+  if (document.getElementById('rj-preview')) return;
+  const bar = document.createElement('div');
+  bar.id = 'rj-preview';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', 'Website preview');
+  Object.assign(bar.style, {
+    position: 'fixed', top: '0', left: '0', right: '0', zIndex: '2147483000', boxSizing: 'border-box',
+    display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0 16px', padding: '0 16px', minHeight: '44px',
+    background: bundle?.preview ? '#1f2933' : '#5c3a00', color: '#ffffff', boxShadow: '0 2px 8px rgba(0, 0, 0, 0.3)',
+    font: '15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif', textAlign: 'left',
+  });
+  const message = document.createElement('p');
+  // Site stylesheets style p, strong, a and button their own way; these inline values win over them.
+  Object.assign(message.style, { margin: '0', padding: '10px 0', flex: '1 1 16em', maxWidth: 'none', color: 'inherit', font: 'inherit' });
+  const strong = document.createElement('strong');
+  Object.assign(strong.style, { color: 'inherit', font: 'inherit', fontWeight: '700' });
+  if (bundle?.preview) {
+    strong.textContent = 'Preview — not live yet';
+    message.append(strong, ` · ${text(bundle.preview.title)}`);
+  } else {
+    strong.textContent = bundle ? 'This preview has ended.' : 'The preview could not be loaded.';
+    message.append(strong, bundle ? ' It was published, discarded or has expired; this is the live website.' : ' Check the connection and reload the page.');
+  }
+  const link = document.createElement('a');
+  link.href = `${apiBase()}/admin/`;
+  link.textContent = 'Back to the admin';
+  const hide = document.createElement('button');
+  hide.type = 'button';
+  hide.textContent = 'Hide';
+  hide.setAttribute('aria-label', 'Hide the preview banner');
+  for (const el of [link, hide]) {
+    Object.assign(el.style, {
+      display: 'inline-flex', alignItems: 'center', minHeight: '44px', minWidth: '44px', boxSizing: 'border-box',
+      color: '#ffe3a3', font: 'inherit', fontWeight: '600', textDecoration: 'underline', textUnderlineOffset: '3px',
+    });
+  }
+  Object.assign(hide.style, {
+    justifyContent: 'center', padding: '0 12px', margin: '0', background: 'transparent', color: '#ffffff', textDecoration: 'none',
+    border: '1px solid rgba(255, 255, 255, 0.7)', borderRadius: '6px', cursor: 'pointer',
+  });
+  bar.append(message, link, hide);
+  document.body.prepend(bar);
+  const basePadding = document.body.style.paddingTop;
+  const baseTop = parseFloat(getComputedStyle(document.body).paddingTop) || 0;
+  const fitPage = () => { document.body.style.paddingTop = `${baseTop + bar.offsetHeight}px`; };
+  fitPage();
+  window.addEventListener('resize', fitPage, { passive: true });
+  hide.addEventListener('click', () => {
+    window.removeEventListener('resize', fitPage);
+    bar.remove();
+    document.body.style.paddingTop = basePadding;
+  });
 }
 
 /**

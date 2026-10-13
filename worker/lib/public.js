@@ -1,7 +1,7 @@
 // Rome's Joy admin Worker: the public bundles every site and TV screen renders from, plus the row shapes
 // the admin routes reuse (events, menu items, announcements, artworks).
 import { PUBLIC_CACHE, json, notFound } from './http.js';
-import { all, batch, first, isoTime, parseJson, stmt, withIsoTimes } from './db.js';
+import { all, batch, isoTime, parseJson, stmt, withIsoTimes } from './db.js';
 import { addDays, eventDateText, eventStatus, eventTimeText, hoursSummary, minutesToText, openNow, shapeHours } from './time.js';
 
 export const DIETARY = { GF: 'Gluten free', V: 'Vegetarian', DF: 'Dairy free' };
@@ -203,28 +203,9 @@ export function imagesByArtwork(rows) {
 /**
  * The pieces a site may show, for queries over `artworks a LEFT JOIN events e ON e.id = a.event_id`: published,
  * and not hanging in an exhibition that is still a draft (a show being prepared stays private, prices included).
+ * renderBundle() applies the same rule in code.
  */
 export const PUBLIC_ARTWORK_SQL = 'a.published = 1 AND (a.event_id IS NULL OR e.published = 1)';
-
-/** Published artworks of a business with their photos, featured first. */
-async function publicArtworks(env, slug) {
-  let artworks;
-  let images;
-  try {
-    [artworks, images] = await batch(env, [
-      stmt(env, `SELECT a.* FROM artworks a LEFT JOIN events e ON e.id = a.event_id
-        WHERE a.business_slug = ? AND ${PUBLIC_ARTWORK_SQL} ORDER BY a.featured DESC, a.sort_order, a.id`, [slug]),
-      stmt(env, `SELECT i.* FROM artwork_images i JOIN artworks a ON a.id = i.artwork_id LEFT JOIN events e ON e.id = a.event_id
-        WHERE a.business_slug = ? AND ${PUBLIC_ARTWORK_SQL} ORDER BY i.sort_order, i.id`, [slug]),
-    ]);
-  } catch (err) {
-    // Switched on before the artworks migration ran: no catalog, but the hours, events and TV keep working.
-    if (/no such table/i.test(String(err?.message))) return [];
-    throw err;
-  }
-  const byArtwork = imagesByArtwork(images.results);
-  return artworks.results.map((row) => shapeArtworkPublic(row, byArtwork.get(row.id) || []));
-}
 
 /** Sorts public events into the three buckets the sites show. */
 export function bucketEvents(rows, today) {
@@ -244,47 +225,126 @@ export function nestMenu(sections, items, opts) {
   return sections.map((s) => shapeSection(s, bySection.get(s.id) || [], opts));
 }
 
-/** Everything a site needs for one business. Returns null when the slug is unknown. */
-export async function buildBundle(env, slug, now) {
-  const today = now.date;
-  const [biz, hours, exceptions, announcements, events, sections, items, featureRow] = await batch(env, [
+/* -------------------------------------------------------------------------
+   The bundle: every row it is built from is read first (drafts and hidden rows too), then filtered and shaped
+   here in code. A change-set preview (worker/lib/changesets.js) applies its draft to those rows in between, so
+   the preview and the live site come from exactly the same code.
+   ------------------------------------------------------------------------- */
+
+const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+/** Preview rows have negative ids (-1 for the draft's first op); they sort as the newest, like a real insert. */
+const sortId = (id) => (id < 0 ? 2 ** 52 - id : id);
+/** A sorted copy, like SQL ORDER BY: keys are [(row) => value, 'desc'?]. */
+function orderBy(rows, keys) {
+  return [...rows].sort((a, b) => {
+    for (const [get, dir] of keys) {
+      const c = compare(get(a), get(b));
+      if (c) return dir === 'desc' ? -c : c;
+    }
+    return 0;
+  });
+}
+const BY_POSITION = [[(r) => r.sort_order], [(r) => sortId(r.id)]];
+
+/** Artwork rows of a business and their photos ({ artworks: null } before the artworks migration has run). */
+async function artworkRows(env, slug) {
+  try {
+    const [artworks, images] = await batch(env, [
+      stmt(env, 'SELECT * FROM artworks WHERE business_slug = ?', [slug]),
+      stmt(env, 'SELECT i.* FROM artwork_images i JOIN artworks a ON a.id = i.artwork_id WHERE a.business_slug = ?', [slug]),
+    ]);
+    return { artworks: artworks.results, artworkImages: images.results };
+  } catch (err) {
+    // Switched on before the artworks migration ran: no catalog, but the hours, events and TV keep working.
+    if (/no such table/i.test(String(err?.message))) return { artworks: null, artworkImages: null };
+    throw err;
+  }
+}
+
+/**
+ * Every row one business's bundle is built from, unfiltered: { business, hours, exceptions (today and later),
+ * announcements (its own and family-wide), events, sections, items, features, artworks, artworkImages }, plus
+ * `signage` (its TV settings) when asked. Artwork rows are read where the catalog is on, or always with
+ * { artworks: true }. Returns null for an unknown slug.
+ */
+export async function loadBundleRows(env, slug, now, { signage = false, artworks = false } = {}) {
+  const statements = [
     stmt(env, 'SELECT * FROM businesses WHERE slug = ?', [slug]),
     stmt(env, 'SELECT * FROM hours WHERE business_slug = ?', [slug]),
-    stmt(env, 'SELECT * FROM hours_exceptions WHERE business_slug = ? AND date >= ? AND date <= ? ORDER BY date', [slug, today, addDays(today, EXCEPTION_WINDOW_DAYS)]),
-    stmt(env, `SELECT * FROM announcements WHERE (business_slug = ? OR business_slug IS NULL) AND published = 1
-      AND starts_at <= ? AND (ends_at IS NULL OR ends_at >= ?) ORDER BY starts_at DESC, id DESC`, [slug, today, today]),
-    stmt(env, 'SELECT * FROM events WHERE business_slug = ? AND published = 1 ORDER BY start_date, sort_order, id', [slug]),
-    stmt(env, 'SELECT * FROM menu_sections WHERE business_slug = ? AND published = 1 ORDER BY sort_order, id', [slug]),
-    stmt(env, `SELECT i.* FROM menu_items i JOIN menu_sections s ON s.id = i.section_id
-      WHERE s.business_slug = ? AND s.published = 1 AND i.available = 1 ORDER BY i.sort_order, i.id`, [slug]),
+    stmt(env, 'SELECT * FROM hours_exceptions WHERE business_slug = ? AND date >= ? ORDER BY date', [slug, now.date]),
+    stmt(env, 'SELECT * FROM announcements WHERE business_slug = ? OR business_slug IS NULL', [slug]),
+    stmt(env, 'SELECT * FROM events WHERE business_slug = ?', [slug]),
+    stmt(env, 'SELECT * FROM menu_sections WHERE business_slug = ?', [slug]),
+    stmt(env, 'SELECT i.* FROM menu_items i JOIN menu_sections s ON s.id = i.section_id WHERE s.business_slug = ?', [slug]),
     stmt(env, 'SELECT value_json FROM settings WHERE key = ?', [`features:${slug}`]),
-  ]);
+  ];
+  if (signage) statements.push(stmt(env, 'SELECT value_json FROM settings WHERE key = ?', [`signage:${slug}`]));
+  const [biz, hours, exceptions, announcements, events, sections, items, featureRow, signageRow] = await batch(env, statements);
   const business = biz.results[0];
   if (!business) return null;
-  const shaped = shapeHours(hours.results);
   const features = parseFeatures(featureRow.results[0]?.value_json);
+  const rows = {
+    business, hours: hours.results, exceptions: exceptions.results, announcements: announcements.results,
+    events: events.results, sections: sections.results, items: items.results, features,
+    ...(features.artworks || artworks ? await artworkRows(env, slug) : { artworks: null, artworkImages: null }),
+  };
+  if (signage) rows.signage = parseJson(signageRow.results[0]?.value_json, {}) ?? {};
+  return rows;
+}
+
+/** What a site may show from those rows: the rules in docs/admin-api.md ("published", dates, availability). */
+export function renderBundle(rows, now) {
+  const today = now.date;
+  const lastException = addDays(today, EXCEPTION_WINDOW_DAYS);
+  const exceptions = orderBy(rows.exceptions.filter((e) => e.date >= today && e.date <= lastException), [[(e) => e.date]]);
+  const announcements = orderBy(rows.announcements.filter((a) => a.published && a.starts_at <= today && (a.ends_at == null || a.ends_at >= today)),
+    [[(a) => a.starts_at, 'desc'], [(a) => sortId(a.id), 'desc']]);
+  const events = orderBy(rows.events.filter((e) => e.published), [[(e) => e.start_date], ...BY_POSITION]);
+  const sections = orderBy(rows.sections.filter((s) => s.published), BY_POSITION);
+  const shownSections = new Set(sections.map((s) => s.id));
+  const items = orderBy(rows.items.filter((i) => i.available && shownSections.has(i.section_id)), BY_POSITION);
+  const shaped = shapeHours(rows.hours);
+  const { features } = rows;
   const data = {
     generated_at: now.iso,
     today: { date: today, weekday: now.weekday },
-    business: shapeBusinessPublic(business, today),
+    business: shapeBusinessPublic(rows.business, today),
     hours: shaped,
     hours_summary: hoursSummary(shaped),
-    exceptions: exceptions.results.map(shapeException),
-    open_now: openNow(shaped, exceptions.results, now),
-    announcements: announcements.results.map((r) => shapeAnnouncement(r)),
-    events: bucketEvents(events.results, today),
-    menu: { sections: nestMenu(sections.results, items.results) },
+    exceptions: exceptions.map(shapeException),
+    open_now: openNow(shaped, exceptions, now),
+    announcements: announcements.map((r) => shapeAnnouncement(r)),
+    events: bucketEvents(events, today),
+    menu: { sections: nestMenu(sections, items) },
     dietary: DIETARY,
     features,
   };
   // The artwork catalog only appears where it is switched on; each event then says how many pieces hang in it.
+  // A piece is public when it is published and not hanging in an exhibition that is still a draft.
   if (features.artworks) {
-    data.artworks = await publicArtworks(env, slug);
+    const eventsById = new Map(rows.events.map((e) => [e.id, e]));
+    const visible = (a) => a.published && (a.event_id == null || Boolean(eventsById.get(a.event_id)?.published));
+    const pieces = orderBy((rows.artworks || []).filter(visible), [[(a) => a.featured, 'desc'], ...BY_POSITION]);
+    const shownPieces = new Set(pieces.map((a) => a.id));
+    const byArtwork = imagesByArtwork(orderBy((rows.artworkImages || []).filter((i) => shownPieces.has(i.artwork_id)), BY_POSITION));
+    data.artworks = pieces.map((row) => shapeArtworkPublic(row, byArtwork.get(row.id) || []));
     const perEvent = new Map();
     for (const a of data.artworks) if (a.event_id != null) perEvent.set(a.event_id, (perEvent.get(a.event_id) || 0) + 1);
     for (const list of Object.values(data.events)) for (const ev of list) ev.artwork_count = perEvent.get(ev.id) || 0;
   }
+  if ('signage' in rows) data.signage = rows.signage ?? {};
   return data;
+}
+
+/**
+ * Everything a site needs for one business (with { signage: true } also its TV settings). `overlay(rows)` may
+ * change the rows before they are shaped: that is how a change-set preview shows a draft. Null for an unknown slug.
+ */
+export async function buildBundle(env, slug, now, { signage = false, overlay = null } = {}) {
+  const rows = await loadBundleRows(env, slug, now, { signage });
+  if (!rows) return null;
+  if (overlay) await overlay(rows);
+  return renderBundle(rows, now);
 }
 
 /** Every business with its hours summary and open/closed status, for the hub and the TV "family" strip. */
@@ -318,22 +378,39 @@ export async function businesses(ctx) {
   return json({ businesses: await listBusinesses(ctx.env, ctx.now) }, 200, PUBLIC_CACHE);
 }
 
+/**
+ * ?preview=<change set id> on a bundle route: the bundle as it will look once that draft is published, or null
+ * (the param is then ignored) when the id is not a live draft that touches this business.
+ */
+async function previewFor(ctx, signage) {
+  const id = ctx.url.searchParams.get('preview');
+  if (!id) return null;
+  // Imported when used: changesets.js imports the admin modules, and they import this one.
+  const { previewBundle } = await import('./changesets.js');
+  return previewBundle(ctx.env, ctx.params.slug, id, { now: ctx.now, origin: ctx.url.origin, signage });
+}
+
+const NO_STORE = { 'Cache-Control': 'no-store' };
+
 export async function bundle(ctx) {
+  const preview = await previewFor(ctx, false);
+  if (preview) return json(preview, 200, NO_STORE);
   const data = await buildBundle(ctx.env, ctx.params.slug, ctx.now);
   if (!data) throw notFound('No such business.', 'unknown_business');
   return json(data, 200, PUBLIC_CACHE);
 }
 
 export async function signage(ctx) {
-  const data = await buildBundle(ctx.env, ctx.params.slug, ctx.now);
+  const slug = ctx.params.slug;
+  const preview = await previewFor(ctx, true);
+  const data = preview || await buildBundle(ctx.env, slug, ctx.now, { signage: true });
   if (!data) throw notFound('No such business.', 'unknown_business');
-  const [setting, family] = await Promise.all([
-    first(ctx.env, 'SELECT value_json FROM settings WHERE key = ?', [`signage:${ctx.params.slug}`]),
-    listBusinesses(ctx.env, ctx.now),
-  ]);
-  data.signage = parseJson(setting?.value_json, {}) ?? {};
-  data.family = family.map((b) => ({ slug: b.slug, name: b.name, tagline: b.tagline, hours_summary: b.hours_summary }));
-  return json(data, 200, PUBLIC_CACHE);
+  const family = await listBusinesses(ctx.env, ctx.now);
+  // In a preview this business's own line in the family strip shows the draft too.
+  data.family = family.map((b) => (preview && b.slug === slug
+    ? { slug, name: data.business.name, tagline: data.business.tagline, hours_summary: data.hours_summary }
+    : { slug: b.slug, name: b.name, tagline: b.tagline, hours_summary: b.hours_summary }));
+  return json(data, 200, preview ? NO_STORE : PUBLIC_CACHE);
 }
 
 export const allBusinessRows = (env) => all(env, 'SELECT * FROM businesses ORDER BY sort_order, slug');

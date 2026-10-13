@@ -262,9 +262,11 @@ export async function get(ctx) {
   return { ...entry, entry };
 }
 
-/** POST /api/admin/history/:id/restore */
-export async function restore(ctx) {
-  const row = await loadEntry(ctx);
+/**
+ * Puts one audit_log row's `before` state back and records the restore entry. The caller has already checked
+ * that the user may edit the entry's business. Shared by History → Restore and change sets (rollback, Undo all).
+ */
+export async function restoreEntry(ctx, row) {
   if (!canRestore(row)) throw bad('This entry cannot be restored.', 'not_restorable');
   const before = parseJson(row.before_json, null);
   const after = parseJson(row.after_json, null);
@@ -273,5 +275,10 @@ export async function restore(ctx) {
     business_slug: row.business_slug, entity: row.entity, entity_id: row.entity_id, action: 'restore',
     summary: `Undid "${row.summary}"`, before: replaced, after: row.action === 'create' ? null : before,
   });
+}
+
+/** POST /api/admin/history/:id/restore */
+export async function restore(ctx) {
+  await restoreEntry(ctx, await loadEntry(ctx));
   return { ok: true };
 }

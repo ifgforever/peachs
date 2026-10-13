@@ -58,11 +58,9 @@ const star = (label = 'Featured') => h('span', { class: 'star', title: label }, 
    ------------------------------------------------------------------------- */
 const TOKEN_KEY = 'rj_admin_token';
 const BUSINESS_KEY = 'rj_admin_business';
-const API_BASE = (() => {
-  const fromQuery = new URLSearchParams(location.search).get('api');
-  const fromMeta = $('meta[name="api-base"]')?.content;
-  return (fromQuery || fromMeta || '/api').replace(/\/$/, '');
-})();
+// Only the page itself may say where the API is (<meta name="api-base">): a link with a query parameter
+// must never be able to send someone's token elsewhere.
+const API_BASE = ($('meta[name="api-base"]')?.content || '/api').replace(/\/$/, '');
 
 // localStorage can throw (private mode, blocked storage); the app must still work.
 const store = {
@@ -124,7 +122,7 @@ async function api(path, { method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };
   const token = store.get(TOKEN_KEY);
   if (token) headers.Authorization = `Bearer ${token}`;
-  const init = { method, headers };
+  const init = { method, headers, cache: 'no-store' }; // the admin always wants the latest, even for public bundles
   if (body instanceof FormData) {
     init.body = body;
   } else if (body !== undefined) {
@@ -170,13 +168,16 @@ function friendlyMessage(status, data) {
    ------------------------------------------------------------------------- */
 const pad2 = (n) => String(n).padStart(2, '0');
 
-/** 480 -> "08:00" (for <input type="time">) */
-const minToTime = (min) => (min == null || Number.isNaN(min) ? '' : `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`);
+/** 480 -> "08:00" (for <input type="time">); a closing time of 1440 (midnight) shows as "00:00". */
+const minToTime = (min) => (min == null || Number.isNaN(min) ? '' : min === 1440 ? '00:00' : `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`);
 /** "08:00" -> 480; "" -> null */
 function timeToMin(value) {
   const m = /^(\d{1,2}):(\d{2})/.exec(value || '');
   return m ? Number(m[1]) * 60 + Number(m[2]) : null;
 }
+/** A closing time: "00:00" means midnight at the end of the day (1440), which the API accepts. */
+const closeToMin = (value) => { const min = timeToMin(value); return min === 0 ? 1440 : min; };
+const CLOSE_AFTER_OPEN = 'The closing time must be after the opening time. For a day that runs until midnight, enter 00:00 as the closing time.';
 /** 480 -> "8 am", 870 -> "2:30 pm", 1440 -> "midnight" */
 function fmtMin(min) {
   if (min == null) return '';
@@ -395,7 +396,10 @@ function trackDirty(form) {
 }
 
 const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s || '');
-const isUrl = (s) => !s || /^https?:\/\/\S+$/i.test(s);
+/** A web link, or a path on this site (what an uploaded photo gets). */
+const isUrl = (s) => !s || /^(https?:\/\/\S+|\/(?!\/)\S*)$/i.test(s);
+const LINK_RULE = 'Links must start with https://';
+const PHOTO_RULE = 'Photo links must start with https:// (or be an uploaded photo).';
 
 /* -------------------------------------------------------------------------
    Page pieces: headings, empty states, error banners, tabs
@@ -700,7 +704,7 @@ function renderLogin({ message } = {}) {
         const res = await api('/auth/login', { method: 'POST', body: { email: data.email.toLowerCase(), password: data.password } });
         await afterLogin(res.token, res.user);
       } catch (err) {
-        $('.form-error', form).textContent = err.status === 401 || err.status === 400 ? 'That email and password do not match. Try again, or ask an owner to reset your password.' : err.message;
+        $('.form-error', form).textContent = err.code === 'invalid_credentials' ? 'That email and password do not match. Try again, or ask an owner to reset your password.' : err.message;
       }
     });
   });
@@ -783,7 +787,13 @@ async function screenOverview(main, { slug }) {
   const todayException = (bundle.exceptions || []).find((x) => x.date === today);
   const upcoming = bundle.events?.upcoming || [];
   const current = bundle.events?.current || [];
-  const next = current[0] || upcoming[0];
+  const next = upcoming[0];
+  const happening = counts.current_events ?? current.length;
+  // The card counts what the Events page calls "Upcoming"; events on now are mentioned in the note.
+  const eventsNote = [
+    happening ? `${happening} happening now` : null,
+    next ? `Next: ${next.title} · ${next.date_text || dateText(next.start_date, next.end_date)}` : null,
+  ].filter(Boolean).join(' · ') || 'Nothing scheduled.';
   const notice = bundle.business?.notice;
   const website = siteUrl(slug);
 
@@ -803,7 +813,7 @@ async function screenOverview(main, { slug }) {
       stat({ label: 'Right now', value: bundle.open_now?.text || 'Unknown', extraClass: bundle.open_now?.open ? 'stat--open' : 'stat--closed', note: todayException ? 'A special day is in effect today.' : null, link: { href: hashFor('hours'), label: 'Change hours' } }),
       stat({ label: `Today, ${weekdayOf(today)}`, value: todayText, note: bundle.hours_summary ? `Usual week: ${bundle.hours_summary}` : null, link: { href: hashFor('hours'), label: 'Edit hours' } }),
       stat({ label: 'New inquiries', value: String(counts.new_inquiries ?? 0), big: true, note: counts.new_inquiries ? 'Waiting for a reply.' : 'Nothing new.', link: { href: hashFor('inquiries'), label: 'Open the inbox' } }),
-      stat({ label: 'Upcoming events', value: String(counts.upcoming_events ?? upcoming.length), big: true, note: next ? `Next: ${next.title} · ${next.date_text || dateText(next.start_date, next.end_date)}` : 'Nothing scheduled.', link: { href: hashFor('events'), label: 'Manage events' } }),
+      stat({ label: 'Upcoming events', value: String(counts.upcoming_events ?? upcoming.length), big: true, note: eventsNote, link: { href: hashFor('events'), label: 'Manage events' } }),
       stat({ label: 'Site notice', value: notice ? notice.text : 'No notice showing', note: notice?.until ? `Shows until ${fmtDate(notice.until)}` : null, link: { href: hashFor('notice'), label: notice ? 'Change notice' : 'Add a notice' }, extraClass: 'stat--wide' }),
       website ? stat({ label: 'Website', value: biz.name || bundle.business?.name || slug, note: bundle.business?.tagline || null, link: { href: website, label: 'View website', external: true }, extraClass: 'stat--wide' }) : null,
     ),
@@ -870,18 +880,19 @@ async function screenHours(main, { slug }) {
     let firstBad = null;
     const hours = rows.map((r) => {
       r.error.textContent = '';
-      r.openField.removeAttribute('aria-invalid');
-      r.closeField.removeAttribute('aria-invalid');
+      [r.openField, r.closeField].forEach((f) => { f.removeAttribute('aria-invalid'); f.removeAttribute('aria-describedby'); });
       if (r.closedInput.checked) return { weekday: r.weekday, closed: 1, open_min: null, close_min: null };
       const open_min = timeToMin(r.openField.value);
-      const close_min = timeToMin(r.closeField.value);
+      const close_min = closeToMin(r.closeField.value);
       let problem = '';
       if (open_min == null || close_min == null) problem = 'Enter both an opening and a closing time, or mark the day closed.';
-      else if (open_min >= close_min) problem = 'The closing time must be after the opening time.';
+      else if (open_min >= close_min) problem = CLOSE_AFTER_OPEN;
       if (problem) {
         r.error.textContent = problem;
-        (open_min == null ? r.openField : r.closeField).setAttribute('aria-invalid', 'true');
-        firstBad = firstBad || (open_min == null ? r.openField : r.closeField);
+        const flagged = open_min == null ? r.openField : r.closeField;
+        flagged.setAttribute('aria-invalid', 'true');
+        flagged.setAttribute('aria-describedby', r.error.id); // so a screen reader hears why, not just "invalid"
+        firstBad = firstBad || flagged;
       }
       return { weekday: r.weekday, closed: 0, open_min, close_min };
     });
@@ -933,7 +944,7 @@ async function screenHours(main, { slug }) {
   append(list, [exceptions.length ? exceptions.map(exceptionRow) : emptyExceptions()]);
 
   const exDate = field({ label: 'Date', name: 'date', type: 'date', min: today, required: true });
-  const exLabel = field({ label: 'Reason (shown on the website)', name: 'label', placeholder: 'e.g. Thanksgiving', maxlength: 80 });
+  const exLabel = field({ label: 'Reason (shown on the website and TV)', name: 'label', placeholder: 'e.g. Thanksgiving', maxlength: 80 });
   const exClosed = toggle({ label: 'Closed all day', name: 'closed', checked: true });
   const exOpen = h('input', { class: 'input', type: 'time', name: 'open', 'aria-label': 'Opens at', step: 300 });
   const exClose = h('input', { class: 'input', type: 'time', name: 'close', 'aria-label': 'Closes at', step: 300 });
@@ -954,12 +965,12 @@ async function screenHours(main, { slug }) {
     const closed = $('input', exClosed).checked;
     const date = exDate.control.value;
     const open_min = closed ? null : timeToMin(exOpen.value);
-    const close_min = closed ? null : timeToMin(exClose.value);
+    const close_min = closed ? null : closeToMin(exClose.value);
     const errors = {};
     if (!date) errors.date = 'Pick a date.';
     else if (date < today) errors.date = 'Pick today or a later date.';
     if (!closed && (open_min == null || close_min == null)) errors.open = 'Enter both times, or mark the day closed.';
-    else if (!closed && open_min >= close_min) errors.close = 'The closing time must be after the opening time.';
+    else if (!closed && open_min >= close_min) errors.close = CLOSE_AFTER_OPEN;
     const timeErr = $('.field__error[id^="ex-time-err"]', exForm);
     timeErr.textContent = errors.open || errors.close || '';
     if (showErrors(exForm, { date: errors.date })) return;
@@ -1008,7 +1019,7 @@ async function screenContact(main, { slug }) {
         f({ label: 'Tagline', name: 'tagline', hint: 'One line under the name.' }),
         f({ label: 'Description', name: 'description', type: 'textarea', rows: 3 }),
         h('div', { class: 'form__row form__row--2' }, f({ label: 'Street address', name: 'address1' }), f({ label: 'Suite, floor, etc.', name: 'address2' })),
-        h('div', { class: 'form__row form__row--3' }, f({ label: 'City', name: 'city' }), f({ label: 'State', name: 'state' }), f({ label: 'ZIP', name: 'zip', inputmode: 'numeric' })),
+        h('div', { class: 'form__row form__row--3' }, f({ label: 'City', name: 'city', required: true }), f({ label: 'State', name: 'state', required: true }), f({ label: 'ZIP', name: 'zip', inputmode: 'numeric' })),
       )),
     h('div', { class: 'card' },
       h('h2', { class: 'card__title' }, 'How to reach you'),
@@ -1036,6 +1047,8 @@ async function screenContact(main, { slug }) {
     const data = readForm(form);
     const errors = {};
     if (!data.name) errors.name = 'Enter the business name.';
+    if (!data.city) errors.city = 'Enter the city.';
+    if (!data.state) errors.state = 'Enter the state.';
     if (data.public_email && !isEmail(data.public_email)) errors.public_email = 'That does not look like an email address.';
     if (data.inquiry_emails) {
       const parts = data.inquiry_emails.split(',').map((s) => s.trim()).filter(Boolean);
@@ -1043,7 +1056,7 @@ async function screenContact(main, { slug }) {
       else data.inquiry_emails = parts.join(', ');
     }
     ['website_url', 'instagram_url', 'facebook_url', 'map_url', 'order_url', 'book_url'].forEach((k) => {
-      if (!isUrl(data[k])) errors[k] = 'Links must start with https://';
+      if (!isUrl(data[k])) errors[k] = LINK_RULE;
     });
     if (showErrors(form, errors)) return;
     withBusy(saveBtn, async () => {
@@ -1221,8 +1234,8 @@ async function renderEventForm(main, slug, sub) {
     if (!data.title) errors.title = 'Give the event a title.';
     if (!data.start_date) errors.start_date = 'Pick the start date.';
     if (data.end_date && data.start_date && data.end_date < data.start_date) errors.end_date = 'The end date cannot be before the start date.';
-    if (!isUrl(data.link_url)) errors.link_url = 'Links must start with https://';
-    if (!isUrl(data.image_url)) errors.image_url = 'Photo links must start with https://';
+    if (!isUrl(data.link_url)) errors.link_url = LINK_RULE;
+    if (!isUrl(data.image_url)) errors.image_url = PHOTO_RULE;
     if (showErrors(form, errors)) return;
     withBusy(saveBtn, async () => {
       try {
@@ -1637,8 +1650,8 @@ async function renderAnnouncementForm(main, slug, sub) {
     if (!data.title) errors.title = 'Give it a title.';
     if (!data.starts_at) errors.starts_at = 'Pick a start date.';
     if (data.ends_at && data.starts_at && data.ends_at < data.starts_at) errors.ends_at = 'The end date cannot be before the start date.';
-    if (!isUrl(data.link_url)) errors.link_url = 'Links must start with https://';
-    if (!isUrl(data.image_url)) errors.image_url = 'Photo links must start with https://';
+    if (!isUrl(data.link_url)) errors.link_url = LINK_RULE;
+    if (!isUrl(data.image_url)) errors.image_url = PHOTO_RULE;
     if (showErrors(form, errors)) return;
     withBusy(saveBtn, async () => {
       try {
@@ -1725,9 +1738,14 @@ async function screenInquiries(main, { slug, sub }) {
 }
 
 async function renderInquiry(main, slug, id) {
-  // There is no single-inquiry route, so find it in the list (newest 50 of "all", then older pages).
-  const base = `/admin/businesses/${encodeURIComponent(slug)}/inquiries`;
   let q = null;
+  try {
+    q = (await api(`/admin/inquiries/${encodeURIComponent(id)}`)).inquiry || null;
+  } catch (err) {
+    if (err.status !== 404) throw err;
+  }
+  // A Worker without the single-inquiry route answers 404; then look through the list (newest 50 first).
+  const base = `/admin/businesses/${encodeURIComponent(slug)}/inquiries`;
   let before = null;
   for (let page = 0; page < 10 && !q; page++) {
     const qs = new URLSearchParams({ status: 'all', limit: '50' });
@@ -1993,7 +2011,7 @@ async function screenAccount(main) {
         toast('Password changed.');
         if (wasForced) go('overview');
       } catch (err) {
-        $('.form-error', form).textContent = err.status === 400 || err.status === 401 ? 'The current password is not right. Try again.' : err.message;
+        $('.form-error', form).textContent = err.code === 'wrong_password' ? 'The current password is not right. Try again.' : err.message;
       }
     });
   });

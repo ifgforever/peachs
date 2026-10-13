@@ -69,6 +69,7 @@ router.delete('/api/admin/announcements/:id', admin(announcements.remove));
 
 /* ---------- Admin: inquiries ---------- */
 router.get('/api/admin/businesses/:slug/inquiries', admin(inquiries.list));
+router.get('/api/admin/inquiries/:id', admin(inquiries.get));
 router.patch('/api/admin/inquiries/:id', admin(inquiries.patch));
 router.post('/api/admin/inquiries/:id/resend', admin(inquiries.resend));
 

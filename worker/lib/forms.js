@@ -1,6 +1,6 @@
 // Rome's Joy admin Worker: website form submissions → inquiries table → email.
 import { bad, json, notFound, readBody, tooMany } from './http.js';
-import { first, insertRow } from './db.js';
+import { first, insertRow, run } from './db.js';
 import { isEmail } from './validate.js';
 import { deliverInquiry } from './email.js';
 
@@ -8,6 +8,18 @@ const MAX_FIELDS = 20;
 const MAX_FIELD_LENGTH = 5000;
 const RATE_LIMIT = { count: 10, minutes: 10 };
 const KNOWN = new Set(['name', 'email', 'phone', 'message', 'website', 'source_url']);
+
+/**
+ * The absolute URL for a `_redirect` value, or null unless it is a path on this site. The value has to
+ * start with a single "/" and contain no backslash (URL parsing turns "/\evil.com" into another host),
+ * and the resolved origin still has to be ours.
+ */
+function sameSiteRedirect(value, base) {
+  if (typeof value !== 'string' || !/^\/(?![\/\\])/.test(value) || value.includes('\\')) return null;
+  let target;
+  try { target = new URL(value, base); } catch { return null; }
+  return target.origin === base.origin ? target.toString() : null;
+}
 
 const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' ? JSON.stringify(v) : String(v)).trim();
 
@@ -29,10 +41,8 @@ export async function submit(ctx) {
   }
 
   // A plain <form> can ask to land back on a same-site page.
-  const redirect = isForm && typeof values._redirect === 'string' && /^\/(?!\/)/.test(values._redirect) ? values._redirect : null;
-  const finish = (payload) => (redirect
-    ? new Response(null, { status: 303, headers: { Location: new URL(redirect, ctx.url).toString() } })
-    : json(payload));
+  const redirect = isForm ? sameSiteRedirect(values._redirect, ctx.url) : null;
+  const finish = (payload) => (redirect ? new Response(null, { status: 303, headers: { Location: redirect } }) : json(payload));
 
   // Honeypot: bots fill the hidden "website" field. Pretend it worked.
   if (values.website) return finish({ ok: true });
@@ -44,6 +54,8 @@ export async function submit(ctx) {
   if (!values.message && !email) throw bad('Please include a message or an email address.', 'missing_fields');
   if (email && !isEmail(email)) throw bad('That email address does not look right.', 'invalid_email');
 
+  // The visitor's IP is only kept for this rate limit, so it is dropped after a day.
+  await run(ctx.env, "UPDATE inquiries SET ip = NULL WHERE ip IS NOT NULL AND created_at < datetime('now', '-1 day')");
   const recent = await first(ctx.env, `SELECT COUNT(*) AS n FROM inquiries WHERE ip = ? AND created_at > datetime('now', '-${RATE_LIMIT.minutes} minutes')`, [ctx.ip]);
   if (recent.n >= RATE_LIMIT.count) throw tooMany('Too many submissions. Please try again in a few minutes.');
 

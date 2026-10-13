@@ -29,9 +29,13 @@
 //   [data-live-hours]             a <table> (rows go in its <tbody>) or a <dl>. Rows are rebuilt
 //                                 Monday → Sunday as <tr data-day><th scope="row">label</th><td>text</td>
 //                                 (or <div><dt><dd>), with .is-today + aria-current="date" on today's row
-//                                 and .is-closed on closed days. data-live-hours="grouped" merges
-//                                 consecutive days with the same hours ("Monday – Friday", "Sat & Sun").
-//                                 data-closed-text="By appointment only" replaces "Closed".
+//                                 and .is-closed on closed days. A special day (bundle.exceptions) within
+//                                 the coming week replaces that weekday's text ("Closed · Thanksgiving",
+//                                 "9 am – 1 pm · Christmas Eve") and adds .is-exception.
+//                                 data-live-hours="grouped" merges consecutive days with the same hours
+//                                 ("Monday – Friday", "Sat & Sun"); a special day is never grouped.
+//                                 data-closed-text="By appointment only" replaces "Closed" on usual
+//                                 closed days (not on a special day).
 //
 //   [data-open-dot] [data-open-label] [data-open-text] [data-open-status]
 //                                 open/closed right now: the dot and the status container get
@@ -278,32 +282,46 @@ function groupHours(rows) {
   const groups = [];
   for (const row of rows) {
     const last = groups[groups.length - 1];
-    if (last && last.text === row.text && last.closed === row.closed) last.rows.push(row);
-    else groups.push({ text: row.text, closed: row.closed, rows: [row] });
+    if (last && !last.exception && !row.exception && last.text === row.text && last.closed === row.closed) last.rows.push(row);
+    else groups.push({ text: row.text, closed: row.closed, exception: row.exception, rows: [row] });
   }
   return groups.map((g) => {
     const names = g.rows.map((r) => r.label);
     let label = names[0];
     if (names.length === 2) label = `${g.rows[0].short} & ${g.rows[1].short}`;
     else if (names.length > 2) label = `${names[0]} – ${names[names.length - 1]}`;
-    return { label, text: g.text, closed: g.closed, days: g.rows.map((r) => r.weekday) };
+    return { label, text: g.text, closed: g.closed, exception: g.exception, days: g.rows.map((r) => r.weekday) };
   });
+}
+
+/** The text for a special day: "Closed · Thanksgiving" or "9 am – 1 pm · Christmas Eve". */
+function exceptionText(ex) {
+  const hours = ex.closed ? 'Closed' : ex.text || `${minutesToText(ex.open_min)} – ${minutesToText(ex.close_min)}`;
+  return isBlank(ex.label) ? hours : `${hours} · ${ex.label}`;
 }
 
 function applyHours(root, bundle, now) {
   const rows = Array.isArray(bundle.hours) ? bundle.hours : [];
   if (!rows.length) return;
   const byDay = new Map(rows.map((r) => [Number(r.weekday), r]));
-  const ordered = WEEK_ORDER.map((d) => byDay.get(d)).filter(Boolean).map((r) => ({
-    weekday: Number(r.weekday), label: r.label || DAY_LABELS[r.weekday], short: r.short || DAY_SHORT[r.weekday],
-    closed: Boolean(r.closed), text: r.text || 'Closed',
-  }));
+  const byDate = new Map((bundle.exceptions || []).filter((e) => e && e.date).map((e) => [e.date, e]));
+  // Each weekday stands for its next occurrence (today included), so a special day in the coming week shows
+  // in its row instead of the usual hours.
+  const ordered = WEEK_ORDER.map((d) => byDay.get(d)).filter(Boolean).map((r) => {
+    const weekday = Number(r.weekday);
+    const ex = byDate.get(addDays(now.date, (weekday - now.weekday + 7) % 7));
+    const closed = ex ? Boolean(ex.closed) : Boolean(r.closed);
+    return {
+      weekday, label: r.label || DAY_LABELS[weekday], short: r.short || DAY_SHORT[weekday],
+      closed, exception: Boolean(ex), text: ex ? exceptionText(ex) : r.text || 'Closed',
+    };
+  });
   for (const el of $$('[data-live-hours]', root)) {
     const isTable = el.tagName === 'TABLE';
     const closedText = el.dataset.closedText || null;
     const entries = el.getAttribute('data-live-hours') === 'grouped'
       ? groupHours(ordered)
-      : ordered.map((r) => ({ label: r.label, text: r.text, closed: r.closed, days: [r.weekday] }));
+      : ordered.map((r) => ({ label: r.label, text: r.text, closed: r.closed, exception: r.exception, days: [r.weekday] }));
     const body = isTable ? (el.tBodies[0] || el.appendChild(document.createElement('tbody'))) : el;
     const frag = document.createDocumentFragment();
     for (const entry of entries) {
@@ -312,9 +330,10 @@ function applyHours(root, bundle, now) {
       const cell = document.createElement(isTable ? 'td' : 'dd');
       if (isTable) head.setAttribute('scope', 'row');
       head.textContent = entry.label;
-      cell.textContent = entry.closed && closedText ? closedText : entry.text;
+      cell.textContent = entry.closed && closedText && !entry.exception ? closedText : entry.text;
       row.dataset.day = entry.days.join(',');
       row.classList.toggle('is-closed', entry.closed);
+      row.classList.toggle('is-exception', Boolean(entry.exception));
       const today = entry.days.includes(now.weekday);
       row.classList.toggle('is-today', today);
       if (today) row.setAttribute('aria-current', 'date');

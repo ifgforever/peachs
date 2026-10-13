@@ -84,19 +84,20 @@ The same bundle plus `"signage": { ...settings["signage:<slug>"] or {} }` and `"
 Accepts JSON or `application/x-www-form-urlencoded` (so a plain HTML `<form>` works). Fields: `name`, `email`, `phone`, `message`, any others (stored in `fields_json`), and the honeypot `website` (must be empty). `:type` is a short word like `contact`, `quote`, `event`, `wholesale`, `apply`.
 
 - Saves an `inquiries` row, then emails every address in the business's `inquiry_emails` (if email is configured) and records `emailed_at` or `email_error`.
-- Returns `{ "ok": true, "id": 123, "emailed": true }`. If the request had `_redirect` (a same-site path) and was form-encoded, respond `303` to it instead.
+- Returns `{ "ok": true, "id": 123, "emailed": true }`. If the request had `_redirect` (a same-site path) and was form-encoded, respond `303` to it instead. `_redirect` must start with a single `/`, contain no backslash and resolve to the Worker's own origin; anything else is ignored and the JSON answer is returned.
+- The visitor's IP is stored only for the rate limit: it is cleared after a day and is never returned by the admin API.
 - Rejects: honeypot filled (returns `{ok:true}` silently), missing `message` and `email` both, any field over 5,000 characters, more than 20 fields, unknown business, or more than 10 submissions from one IP in 10 minutes (429).
 
 ## Auth
 
 - `GET /api/auth/status` → `{ "has_users": true, "email_configured": false, "media_configured": false }` (no login needed). The admin shows the bootstrap screen when `has_users` is false.
-- `POST /api/auth/bootstrap` `{ token, email, password, name }` → creates the first `owner` and returns `{ token, user }`. Only works while there are zero users and `token` equals `ADMIN_BOOTSTRAP_TOKEN`; otherwise 403.
-- `POST /api/auth/login` `{ email, password }` → `{ token, user }`. After 10 failed tries for an email or IP in 15 minutes, 429.
+- `POST /api/auth/bootstrap` `{ token, email, password, name }` → creates the first `owner` and returns `{ token, user }`. Only works while there are zero users and `token` equals `ADMIN_BOOTSTRAP_TOKEN` (compared in constant time); otherwise 403. Wrong tokens are counted: after 5 from one IP, or 20 in total, within an hour the route answers 429. `ADMIN_BOOTSTRAP_TOKEN` must be a long random value (`openssl rand -base64 32`) and can be deleted once the first owner exists.
+- `POST /api/auth/login` `{ email, password }` → `{ token, user }`. After 10 failed tries from one IP in 15 minutes (or 50 for one email from anywhere, so a known address cannot be locked out from outside), 429. A successful login clears that email's failures.
 - `POST /api/auth/logout` → `{ ok: true }`.
 - `GET /api/auth/me` → `{ user }`. `user` = `{ id, email, name, role, businesses: [slugs], must_change_password }`.
 - `POST /api/auth/change-password` `{ current_password, new_password }` (min 8 characters) → `{ ok: true }`.
 
-Passwords: PBKDF2-SHA256, 100,000 iterations, random 16-byte salt, stored as `base64(salt):base64(hash)`.
+Passwords: PBKDF2-SHA256, 100,000 iterations, random 16-byte salt, stored as `base64(salt):base64(hash)`. Session tokens are random 32-byte values; `sessions.token` holds their SHA-256 (hex), so a copy of the database does not contain usable sessions. Changing a password (self-service or by an owner/admin), changing a role or deactivating an account ends that person's other sessions.
 
 ## Permissions
 
@@ -110,7 +111,7 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 
 ## Admin: businesses and hours
 
-- `GET /api/admin/businesses` → `{ businesses: [ ...rows the user may edit, with hours_summary and counts: { new_inquiries, upcoming_events } ] }`
+- `GET /api/admin/businesses` → `{ businesses: [ ...rows the user may edit, with hours_summary and counts: { new_inquiries, upcoming_events, current_events } ] }`. The event counts cover published events only: `upcoming_events` start after today, `current_events` are on today.
 - `GET /api/admin/businesses/:slug` → `{ business, hours: [7 rows, Monday first], exceptions: [all future] }`
 - `PATCH /api/admin/businesses/:slug` with any subset of the editable columns (`name`, `short_name`, `tagline`, `description`, `address1`, `address2`, `city`, `state`, `zip`, `phone`, `public_email`, `inquiry_emails`, `website_url`, `instagram_url`, `facebook_url`, `map_url`, `order_url`, `book_url`, `hours_note`, `notice`, `notice_until`) → `{ business }`. `slug` and `sort_order` are not editable here.
 - `PUT /api/admin/businesses/:slug/hours` body `{ hours: [ { weekday, closed, open_min, close_min } × 7 ] }` → `{ hours }`. Validates 0 ≤ open_min < close_min ≤ 1440 unless closed.
@@ -140,6 +141,7 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 ## Admin: inquiries
 
 - `GET /api/admin/businesses/:slug/inquiries?status=new|handled|spam|all&limit=50&before=<id>` → `{ inquiries: [ ...with parsed fields ] }` newest first.
+- `GET /api/admin/inquiries/:id` → `{ inquiry }` (additive extra: the deep link in notification emails uses it; 404 when unknown, 403 for a business the user may not edit).
 - `PATCH /api/admin/inquiries/:id` `{ status }` → `{ inquiry }`.
 - `POST /api/admin/inquiries/:id/resend` → tries the email again → `{ emailed: true|false, error }`.
 
@@ -158,8 +160,8 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 
 ## Admin: settings and media
 
-- `GET /api/admin/settings/:key` → `{ value }` (`{}` when unset); `PUT /api/admin/settings/:key` `{ value }` (owner/admin, or an editor for `signage:<slug>` of a business they may edit).
-- `POST /api/admin/media` multipart `file` (jpeg, png, webp, gif, ≤ 8 MB) plus `business` (the slug) → `{ url }` stored in R2 under `uploads/<slug>/<timestamp>-<name>` and served at `GET /api/media/<key>` (public, long cache). 501 when `MEDIA` is not bound, 404 for an unknown slug.
+- `GET /api/admin/settings/:key` → `{ value }` (`{}` when unset); `PUT /api/admin/settings/:key` `{ value }`. Both: owner/admin, or an editor for `signage:<slug>` of a business they may edit (403 otherwise).
+- `POST /api/admin/media` multipart `file` (jpeg, png, webp, gif, ≤ 8 MB) plus `business` (the slug) → `{ url }` stored in R2 under `uploads/<slug>/<timestamp>-<name>` and served at `GET /api/media/<key>` (public, long cache). `url` is absolute (`PUBLIC_BASE_URL`, or the request's origin), so copies of the sites hosted elsewhere can show the photo. 501 when `MEDIA` is not bound, 404 for an unknown slug.
 
 ## Email
 
@@ -173,4 +175,4 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 
 ## Static files
 
-The Worker's `ASSETS` binding serves everything not under `/api/` with Cloudflare's default `html_handling` (`auto-trailing-slash`): `/peachs.html` redirects (307) to `/peachs`, `/signage/live.html?business=peachs` to `/signage/live?business=peachs` (query strings are kept), and `/admin/` serves `admin/index.html`. Files listed in `.assetsignore` are never uploaded.
+The Worker's `ASSETS` binding serves everything not under `/api/` with Cloudflare's default `html_handling` (`auto-trailing-slash`): `/peachs.html` redirects (307) to `/peachs`, `/signage/live.html?business=peachs` to `/signage/live?business=peachs` (query strings are kept), and `/admin/` serves `admin/index.html`. Files listed in `.assetsignore` are never uploaded. The root `_headers` file adds a Content-Security-Policy, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` to everything under `/admin/`.

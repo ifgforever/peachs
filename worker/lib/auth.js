@@ -7,7 +7,10 @@ import { audit } from './audit.js';
 const PBKDF2_ITERATIONS = 100000;
 const SESSION_DAYS = 30;
 const MIN_PASSWORD = 8;
-const MAX_LOGIN_TRIES = 10;
+const MAX_LOGIN_TRIES = 10;        // failures from one IP in 15 minutes
+const MAX_EMAIL_TRIES = 50;        // failures for one email in 15 minutes, from anywhere
+const MAX_BOOTSTRAP_TRIES = { ip: 5, all: 20 }; // wrong setup tokens per hour: per IP, and in total
+const BOOTSTRAP_MARK = '#bootstrap'; // login_attempts.email for bootstrap failures (never a real address)
 export const ROLES = ['owner', 'admin', 'editor'];
 
 /* -------------------------------------------------------------------------
@@ -37,6 +40,20 @@ export async function verifyPassword(password, stored) {
   return diff === 0;
 }
 
+/** SHA-256 of a string as lower-case hex. */
+async function sha256Hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** Compares two strings without leaking where they differ (both are hashed first, so lengths match). */
+async function sameSecret(a, b) {
+  const [x, y] = await Promise.all([sha256Hex(String(a)), sha256Hex(String(b))]);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x.charCodeAt(i) ^ y.charCodeAt(i);
+  return diff === 0;
+}
+
 export function checkPasswordStrength(password) {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD) {
     throw bad(`Passwords need at least ${MIN_PASSWORD} characters.`, 'weak_password');
@@ -45,16 +62,19 @@ export function checkPasswordStrength(password) {
 }
 
 /* -------------------------------------------------------------------------
-   Sessions (bearer tokens, 30 days)
+   Sessions (bearer tokens, 30 days). The client keeps the raw token; the table only holds its SHA-256,
+   so a copy of the database cannot be used to sign in.
    ------------------------------------------------------------------------- */
 function newToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return toBase64(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+const sessionKey = (token) => sha256Hex(token);
+
 export async function createSession(env, userId) {
   const token = newToken();
-  await run(env, `INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+${SESSION_DAYS} days'))`, [token, userId]);
+  await run(env, `INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+${SESSION_DAYS} days'))`, [await sessionKey(token), userId]);
   return token;
 }
 
@@ -84,8 +104,9 @@ export async function authenticate(ctx) {
   const header = ctx.request.headers.get('Authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
   if (!token) throw unauthorized();
-  const row = await first(ctx.env, `SELECT u.*, s.token AS session_token FROM sessions s JOIN users u ON u.id = s.user_id
-    WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1`, [token]);
+  const key = await sessionKey(token);
+  const row = await first(ctx.env, `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token = ? AND s.expires_at > datetime('now') AND u.active = 1`, [key]);
   if (!row) throw unauthorized('Your session has expired. Please log in again.');
   ctx.user = {
     id: row.id,
@@ -94,7 +115,7 @@ export async function authenticate(ctx) {
     role: row.role,
     businesses: parseJson(row.businesses_json, []),
     must_change_password: Boolean(row.must_change_password),
-    token,
+    session: key, // the sessions.token value of this request, for "every session but this one"
   };
   return ctx.user;
 }
@@ -138,7 +159,15 @@ export async function bootstrap(ctx) {
   const body = await readBody(ctx.request);
   const expected = ctx.env.ADMIN_BOOTSTRAP_TOKEN;
   const { n } = await first(ctx.env, 'SELECT COUNT(*) AS n FROM users');
-  if (n > 0 || !expected || typeof body.token !== 'string' || body.token !== expected) {
+  if (n > 0 || !expected) throw forbidden('Bootstrap is not available.', 'bootstrap_disabled');
+  // The token can only be guessed while no account exists, so wrong guesses are counted and capped hard.
+  const tries = await first(ctx.env, `SELECT COUNT(*) AS all_tries, SUM(ip = ?) AS ip_tries FROM login_attempts
+    WHERE email = ? AND created_at > datetime('now', '-1 hour')`, [ctx.ip, BOOTSTRAP_MARK]);
+  if ((tries.ip_tries || 0) >= MAX_BOOTSTRAP_TRIES.ip || tries.all_tries >= MAX_BOOTSTRAP_TRIES.all) {
+    throw tooMany('Too many setup attempts. Please wait an hour and try again.');
+  }
+  if (typeof body.token !== 'string' || !(await sameSecret(body.token, expected))) {
+    await run(ctx.env, 'INSERT INTO login_attempts (email, ip) VALUES (?, ?)', [BOOTSTRAP_MARK, ctx.ip]);
     throw forbidden('Bootstrap is not available.', 'bootstrap_disabled');
   }
   const email = String(body.email || '').trim().toLowerCase();
@@ -161,15 +190,20 @@ export async function login(ctx) {
   const email = String(body.email || '').trim().toLowerCase();
   const password = typeof body.password === 'string' ? body.password : '';
   if (!email || !password) throw bad('Email and password are required.', 'missing_field');
-  const tries = await first(ctx.env, `SELECT COUNT(*) AS n FROM login_attempts
-    WHERE created_at > datetime('now', '-15 minutes') AND (email = ? OR ip = ?)`, [email, ctx.ip]);
-  if (tries.n >= MAX_LOGIN_TRIES) throw tooMany('Too many login attempts. Please wait 15 minutes and try again.');
+  // Brute force is stopped per IP. The per-email cap is much looser so that someone who knows a staff
+  // address cannot lock that person out from elsewhere; a successful login clears the email's failures.
+  const tries = await first(ctx.env, `SELECT SUM(ip = ?) AS by_ip, SUM(email = ?) AS by_email FROM login_attempts
+    WHERE created_at > datetime('now', '-15 minutes') AND (email = ? OR ip = ?)`, [ctx.ip, email, email, ctx.ip]);
+  if ((tries.by_ip || 0) >= MAX_LOGIN_TRIES || (tries.by_email || 0) >= MAX_EMAIL_TRIES) {
+    throw tooMany('Too many login attempts. Please wait 15 minutes and try again.');
+  }
   const row = await first(ctx.env, 'SELECT * FROM users WHERE email = ?', [email]);
   const ok = row && row.active && await verifyPassword(password, row.password_hash);
   if (!ok) {
     await run(ctx.env, 'INSERT INTO login_attempts (email, ip) VALUES (?, ?)', [email, ctx.ip]);
     throw new ApiError(401, 'invalid_credentials', 'That email and password do not match.');
   }
+  await run(ctx.env, 'DELETE FROM login_attempts WHERE email = ?', [email]);
   await prune(ctx.env);
   await run(ctx.env, "UPDATE users SET last_login_at = datetime('now') WHERE id = ?", [row.id]);
   const token = await createSession(ctx.env, row.id);
@@ -178,7 +212,7 @@ export async function login(ctx) {
 
 export async function logout(ctx) {
   await authenticate(ctx);
-  await run(ctx.env, 'DELETE FROM sessions WHERE token = ?', [ctx.user.token]);
+  await run(ctx.env, 'DELETE FROM sessions WHERE token = ?', [ctx.user.session]);
   return { ok: true };
 }
 
@@ -198,7 +232,7 @@ export async function changePassword(ctx) {
   checkPasswordStrength(body.new_password);
   await updateRow(ctx.env, 'users', { password_hash: await hashPassword(body.new_password), must_change_password: 0 }, 'id = ?', [row.id]);
   // Other devices have to log in again with the new password.
-  await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ? AND token <> ?', [row.id, ctx.user.token]);
+  await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ? AND token <> ?', [row.id, ctx.user.session]);
   await audit(ctx, {
     entity: 'user', entity_id: row.id, action: 'update', summary: `${row.email} changed their password`,
     before: { must_change_password: Boolean(row.must_change_password) }, after: { must_change_password: false },

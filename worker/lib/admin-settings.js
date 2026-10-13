@@ -15,9 +15,11 @@ function checkKey(key) {
   return key;
 }
 
-/** GET /api/admin/settings/:key → { value } ({} when unset) */
+/** GET /api/admin/settings/:key → { value } ({} when unset) — same reach as put(). */
 export async function get(ctx) {
   const key = checkKey(ctx.params.key);
+  const slug = signageSlug(key);
+  if (!isManager(ctx.user) && !(slug && canEdit(ctx.user, slug))) throw forbidden('You can only see the TV settings of your own businesses.');
   const row = await first(ctx.env, 'SELECT value_json FROM settings WHERE key = ?', [key]);
   return { value: row ? parseJson(row.value_json, {}) : {} };
 }
@@ -72,7 +74,8 @@ export async function upload(ctx) {
   if (!name.includes('.')) name += `.${ext}`;
   const key = `uploads/${slug}/${Date.now()}-${name}`;
   await ctx.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
-  const url = `/api/media/${key}`;
+  // An absolute link, so a copy of a site hosted elsewhere (GitHub Pages) shows the photo too.
+  const url = new URL(`/api/media/${key}`, ctx.env.PUBLIC_BASE_URL || ctx.url.origin).toString();
   await audit(ctx, { business_slug: slug, entity: 'media', entity_id: key, action: 'create', summary: `Uploaded photo ${name}`, after: { key, url, size: file.size, type: file.type } });
   return { url };
 }

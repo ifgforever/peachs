@@ -92,7 +92,11 @@ export async function patch(ctx) {
   const changed = Object.keys(values).filter((k) => k !== 'must_change_password' && JSON.stringify(row[k]) !== JSON.stringify(values[k]));
   if (!changed.length) return { user: publicUserRow(row) };
   await updateRow(ctx.env, 'users', pick(values, [...changed, ...(values.must_change_password != null ? ['must_change_password'] : [])]), 'id = ?', [row.id]);
-  if (values.active === 0) await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ?', [row.id]);
+  // A reset password, a changed role or a deactivation ends the person's other sessions: whoever holds an
+  // old token (a lost phone, say) has to sign in again with the new password.
+  if (values.active === 0 || changed.includes('password_hash') || changed.includes('role')) {
+    await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ? AND token <> ?', [row.id, ctx.user.session]);
+  }
 
   let summary;
   if (changed.includes('password_hash')) summary = `Reset the password of ${row.email}`;

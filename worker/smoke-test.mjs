@@ -99,6 +99,11 @@ await step(state.hasUsers ? 'POST /api/auth/login (users already exist)' : 'POST
   if (!state.hasUsers) {
     const bad = await api('POST', '/api/auth/bootstrap', { token: 'wrong-token', email: EMAIL, password: PASSWORD, name: 'Smoke Owner' });
     expectStatus(bad, 403, 'wrong bootstrap token');
+    // Guessing is capped per IP: five wrong tokens from one address, then 429 (a different address is still fine).
+    const guesser = { 'CF-Connecting-IP': '203.0.113.77' };
+    for (let i = 0; i < 5; i++) await api('POST', '/api/auth/bootstrap', { token: `guess-${i}`, email: EMAIL, password: PASSWORD }, { headers: guesser });
+    const capped = await api('POST', '/api/auth/bootstrap', { token: BOOTSTRAP_TOKEN, email: EMAIL, password: PASSWORD }, { headers: guesser });
+    expectStatus(capped, 429, 'bootstrap guesses capped per IP');
     const res = await api('POST', '/api/auth/bootstrap', { token: BOOTSTRAP_TOKEN, email: EMAIL, password: PASSWORD, name: 'Smoke Owner' });
     expectStatus(res, 200, 'bootstrap');
     expect(res.data.token && res.data.user?.role === 'owner', 'bootstrap returns token + owner');
@@ -137,6 +142,7 @@ await step('GET /api/admin/businesses (pick a slug)', async () => {
   state.slug = chosen.slug;
   state.otherSlug = list.find((b) => b.slug !== chosen.slug)?.slug || null;
   expect(typeof chosen.hours_summary === 'string' && chosen.counts && 'new_inquiries' in chosen.counts, 'list rows carry hours_summary + counts');
+  expect(Number.isInteger(chosen.counts.upcoming_events) && Number.isInteger(chosen.counts.current_events), 'event counts are numbers');
   return `${state.slug}${state.otherSlug ? `, other=${state.otherSlug}` : ''}`;
 });
 
@@ -165,6 +171,11 @@ await step('PUT hours and read them back', async () => {
   const back = await api('GET', `/api/admin/businesses/${state.slug}`);
   const wed = back.data.hours.find((h) => h.weekday === 3);
   expect(wed.text === '8 am – 2 pm' && back.data.hours.find((h) => h.weekday === 1).text === 'Closed', 'read back');
+  const late = await api('PUT', `/api/admin/businesses/${state.slug}/hours`, { hours: TEST_HOURS.map((h) => (h.weekday === 5 ? { ...h, close_min: 1440 } : h)) });
+  expectStatus(late, 200, 'closing at midnight (1440)');
+  expect(late.data.hours.find((h) => h.weekday === 5).close_min === 1440, 'midnight close kept');
+  const again = await api('PUT', `/api/admin/businesses/${state.slug}/hours`, { hours: TEST_HOURS });
+  expectStatus(again, 200, 'put hours back');
 });
 
 await step('Hours exception: create, list, delete', async () => {
@@ -303,6 +314,11 @@ await step('POST /api/forms (JSON, urlencoded, honeypot, limits)', async () => {
   const enc = await api('POST', `/api/forms/${state.slug}/quote`, form, { auth: null, raw: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...FORM_IP } });
   expect(enc.status === 303, `urlencoded + _redirect: expected 303, got ${enc.status}`);
   expect((enc.headers.get('location') || '').endsWith('/thanks.html'), `redirect location ${enc.headers.get('location')}`);
+  for (const evil of ['/\\evil.example', '//evil.example', 'https://evil.example/']) {
+    const body = new URLSearchParams({ message: 'redirect probe', _redirect: evil }).toString();
+    const r = await api('POST', `/api/forms/${state.slug}/contact`, body, { auth: null, raw: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...FORM_IP } });
+    expect(r.status === 200 && !r.headers.get('location'), `_redirect=${evil} must not redirect (got ${r.status} ${r.headers.get('location')})`);
+  }
   const bot = await api('POST', `/api/forms/${state.slug}/contact`, { message: 'spam', website: 'http://spam.example' }, { auth: null, headers: FORM_IP });
   expectStatus(bot, 200, 'honeypot');
   expect(bot.data.ok === true && bot.data.id === undefined, 'honeypot answers ok without saving');
@@ -313,7 +329,7 @@ await step('POST /api/forms (JSON, urlencoded, honeypot, limits)', async () => {
   const long = await api('POST', `/api/forms/${state.slug}/contact`, { message: 'x'.repeat(5001) }, { auth: null, headers: FORM_IP });
   expectStatus(long, 400, 'too long');
   const after = await countInquiries();
-  expect(after === before + 2, `expected 2 new inquiries, got ${after - before}`);
+  expect(after === before + 5, `expected 5 new inquiries, got ${after - before}`);
 });
 
 await step('Inquiries list shows it; mark handled', async () => {
@@ -321,6 +337,12 @@ await step('Inquiries list shows it; mark handled', async () => {
   expectStatus(res, 200, 'inquiries');
   const mine = res.data.inquiries.find((i) => i.id === state.inquiryId);
   expect(mine && mine.name === 'Smoke Tester' && mine.fields.party_size === '6' && mine.status === 'new', 'inquiry row with parsed fields');
+  expect(!('ip' in mine), 'visitor IP is not returned');
+  const one = await api('GET', `/api/admin/inquiries/${state.inquiryId}`);
+  expectStatus(one, 200, 'single inquiry');
+  expect(one.data.inquiry.id === state.inquiryId && one.data.inquiry.fields.party_size === '6' && !('ip' in one.data.inquiry), 'single inquiry shape');
+  const missing = await api('GET', '/api/admin/inquiries/999999999');
+  expectStatus(missing, 404, 'unknown inquiry');
   const patched = await api('PATCH', `/api/admin/inquiries/${state.inquiryId}`, { status: 'handled' });
   expectStatus(patched, 200, 'mark handled');
   expect(patched.data.inquiry.status === 'handled', 'status updated');
@@ -421,6 +443,21 @@ await step('Users: create an editor who gets 403 elsewhere', async () => {
   expectStatus(change, 200, 'editor changes password');
   const me = await api('GET', '/api/auth/me', undefined, { auth: state.editorToken });
   expect(me.data.user.must_change_password === false, 'must_change_password cleared');
+  const peek = await api('GET', `/api/admin/settings/signage:${state.slug}`, undefined, { auth: state.editorToken });
+  expectStatus(peek, 403, 'editor cannot read settings of another business');
+  if (state.otherSlug) {
+    const own = await api('GET', `/api/admin/settings/signage:${state.otherSlug}`, undefined, { auth: state.editorToken });
+    expectStatus(own, 200, 'editor reads their own TV settings');
+  }
+  // An owner resetting the password ends the editor's sessions; the new password works and must be changed.
+  const reset = await api('PATCH', `/api/admin/users/${state.editorId}`, { password: 'smoke-editor-pass-3' });
+  expectStatus(reset, 200, 'admin password reset');
+  const stale = await api('GET', '/api/auth/me', undefined, { auth: state.editorToken });
+  expectStatus(stale, 401, 'old editor token after an admin reset');
+  const relogin = await api('POST', '/api/auth/login', { email: EDITOR_EMAIL, password: 'smoke-editor-pass-3' }, { auth: null });
+  expectStatus(relogin, 200, 'editor logs in with the reset password');
+  expect(relogin.data.user.must_change_password === true, 'reset password must be changed');
+  state.editorToken = relogin.data.token;
   const selfDelete = await api('DELETE', `/api/admin/users/${(await api('GET', '/api/auth/me')).data.user.id}`);
   expectStatus(selfDelete, 400, 'cannot delete self');
   return editorBusinesses.length ? `editor limited to ${editorBusinesses[0]}` : 'editor with no businesses';

@@ -25,8 +25,9 @@ async function recreate(ctx, table, values) {
   try {
     await insertStmt(ctx.env, table, values).run();
   } catch (err) {
-    const why = /FOREIGN KEY/i.test(err.message) ? 'what it belonged to is gone' : /UNIQUE/i.test(err.message) ? 'something else now uses its place' : err.message;
-    throw conflict(`It could not be recreated: ${why}.`, 'restore_conflict');
+    const why = /FOREIGN KEY/i.test(err.message) ? 'what it belonged to is gone' : /UNIQUE/i.test(err.message) ? 'something else now uses its place' : null;
+    if (!why) console.error(`Restore could not recreate a ${table} row:`, err);
+    throw conflict(`It could not be recreated: ${why || 'something about it is no longer valid'}.`, 'restore_conflict');
   }
 }
 

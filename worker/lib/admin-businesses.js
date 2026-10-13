@@ -42,13 +42,15 @@ export async function list(ctx) {
     stmt(ctx.env, 'SELECT * FROM businesses ORDER BY sort_order, slug'),
     stmt(ctx.env, 'SELECT * FROM hours'),
     stmt(ctx.env, "SELECT business_slug, COUNT(*) AS n FROM inquiries WHERE status = 'new' GROUP BY business_slug"),
-    stmt(ctx.env, 'SELECT business_slug, COUNT(*) AS n FROM events WHERE COALESCE(end_date, start_date) >= ? GROUP BY business_slug', [today]),
+    stmt(ctx.env, `SELECT business_slug, SUM(start_date > ?) AS upcoming, SUM(start_date <= ? AND COALESCE(end_date, start_date) >= ?) AS current
+      FROM events WHERE published = 1 AND COALESCE(end_date, start_date) >= ? GROUP BY business_slug`, [today, today, today, today]),
   ]);
-  const count = (rows, slug) => rows.find((r) => r.business_slug === slug)?.n || 0;
+  const count = (rows, slug, col = 'n') => rows.find((r) => r.business_slug === slug)?.[col] || 0;
   const businesses = biz.results.filter((b) => canEdit(ctx.user, b.slug)).map((b) => ({
     ...shapeBusiness(b),
     hours_summary: hoursSummary(shapeHours(hours.results.filter((h) => h.business_slug === b.slug))),
-    counts: { new_inquiries: count(inquiries.results, b.slug), upcoming_events: count(events.results, b.slug) },
+    // Published events only, as the public sites bucket them: upcoming starts after today, current is on now.
+    counts: { new_inquiries: count(inquiries.results, b.slug), upcoming_events: count(events.results, b.slug, 'upcoming'), current_events: count(events.results, b.slug, 'current') },
   }));
   return { businesses };
 }

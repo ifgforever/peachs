@@ -7,9 +7,12 @@ import { deliverInquiry } from './email.js';
 
 export const INQUIRY_STATUSES = ['new', 'handled', 'spam'];
 
-/** An inquiry with its extra fields parsed (as `fields`, and `fields_json` for readers of the contract's wording). */
+/**
+ * An inquiry with its extra fields parsed (as `fields`, and `fields_json` for readers of the contract's wording).
+ * The visitor's IP stays in the database (for the form rate limit only) and never reaches the admin.
+ */
 export function shapeInquiry(row) {
-  const { fields_json, ...rest } = withIsoTimes(row);
+  const { fields_json, ip, ...rest } = withIsoTimes(row);
   const fields = parseJson(fields_json, {});
   return { ...rest, fields, fields_json: fields };
 }
@@ -34,6 +37,12 @@ export async function list(ctx) {
   if (before) { where.push('id < ?'); binds.push(before); }
   const rows = await all(ctx.env, `SELECT * FROM inquiries WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT ?`, [...binds, limit]);
   return { inquiries: rows.map(shapeInquiry) };
+}
+
+/** GET /api/admin/inquiries/:id → { inquiry } (for the deep link in notification emails) */
+export async function get(ctx) {
+  const { row } = await loadInquiry(ctx);
+  return { inquiry: shapeInquiry(row) };
 }
 
 /** PATCH /api/admin/inquiries/:id { status } */

@@ -106,7 +106,7 @@ function publicBundle(slug) {
   };
 }
 
-const adminBusiness = (b) => ({ ...b, hours_summary: fixture.hours_summary, counts: { new_inquiries: db.inquiries.filter((q) => q.business_slug === b.slug && q.status === 'new').length, upcoming_events: db.events.filter((e) => e.business_slug === b.slug && eventStatus(e) === 'upcoming').length } });
+const adminBusiness = (b) => ({ ...b, hours_summary: fixture.hours_summary, counts: { new_inquiries: db.inquiries.filter((q) => q.business_slug === b.slug && q.status === 'new').length, upcoming_events: db.events.filter((e) => e.business_slug === b.slug && e.published && eventStatus(e) === 'upcoming').length, current_events: db.events.filter((e) => e.business_slug === b.slug && e.published && eventStatus(e) === 'current').length } });
 
 async function readBody(req) {
   const chunks = [];
@@ -137,7 +137,7 @@ route('POST', /^\/api\/auth\/bootstrap$/, (c) => {
 const publicUser = ({ id, email, name, role, businesses, must_change_password, active, last_login_at }) => ({ id, email, name, role, businesses, must_change_password, active, last_login_at });
 route('POST', /^\/api\/auth\/login$/, (c) => {
   const user = db.users.find((u) => u.email === String(c.body.email || '').toLowerCase() && u.password === c.body.password && u.active);
-  if (!user) return fail(c.res, 401, 'Wrong email or password', 'bad_login');
+  if (!user) return fail(c.res, 401, 'That email and password do not match.', 'invalid_credentials');
   const token = `tok-${Math.random().toString(36).slice(2)}`;
   db.sessions.set(token, user.id);
   user.last_login_at = now();
@@ -147,7 +147,7 @@ route('POST', /^\/api\/auth\/logout$/, (c) => json(c.res, 200, { ok: true }));
 route('GET', /^\/api\/auth\/me$/, (c) => (c.user ? json(c.res, 200, { user: publicUser(c.user) }) : fail(c.res, 401, 'Not signed in', 'unauthorized')));
 route('POST', /^\/api\/auth\/change-password$/, (c) => {
   if (!c.user) return fail(c.res, 401, 'Not signed in', 'unauthorized');
-  if (c.user.password !== c.body.current_password) return fail(c.res, 400, 'Current password is wrong', 'bad_password');
+  if (c.user.password !== c.body.current_password) return fail(c.res, 400, 'Your current password is not right.', 'wrong_password');
   if (String(c.body.new_password || '').length < 8) return fail(c.res, 400, 'Password too short', 'bad_input');
   c.user.password = c.body.new_password;
   c.user.must_change_password = 0;
@@ -302,6 +302,10 @@ admin('GET', /^\/api\/admin\/businesses\/([a-z-]+)\/inquiries$/, (c) => {
   const limit = Number(c.url.searchParams.get('limit') || 50);
   const list = db.inquiries.filter((q) => q.business_slug === c.m[1] && (status === 'all' || q.status === status) && (!before || q.id < before)).sort((a, b) => b.id - a.id).slice(0, limit);
   json(c.res, 200, { inquiries: list });
+});
+admin('GET', /^\/api\/admin\/inquiries\/(\d+)$/, (c) => {
+  const q = db.inquiries.find((x) => x.id === Number(c.m[1]));
+  return q ? json(c.res, 200, { inquiry: q }) : fail(c.res, 404, 'No such inquiry', 'not_found');
 });
 admin('PATCH', /^\/api\/admin\/inquiries\/(\d+)$/, (c) => {
   const q = db.inquiries.find((x) => x.id === Number(c.m[1]));

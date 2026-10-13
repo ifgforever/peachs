@@ -72,6 +72,7 @@
     lastError: null,
     errors: [],          // newest first, max 12
     started: Date.now(),
+    plannedDate: null,   // the Chicago date plan() last ran for
   };
 
   const scenesRoot = document.getElementById('scenes');
@@ -326,12 +327,18 @@
     const seconds = Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, Number(settings.seconds_per_scene) || DEFAULT_SECONDS));
     const scenes = [];
     const add = (id, build, factor) => scenes.push({ id, seconds: Math.round(seconds * (factor || 1)), build });
+    // The Worker filters by date when it builds the bundle, but a cached copy can outlive a holiday, so
+    // dates are checked again against today's date here (and plan() runs again when the date changes).
+    const today = chicagoNow().date;
+    state.plannedDate = today;
+    const onToday = (from, to) => (!from || from <= today) && (!to || to >= today);
 
     add('welcome', () => sceneWelcome(bundle));
-    if (bundle.business.notice && bundle.business.notice.text) add('notice', () => sceneNotice(bundle));
+    const notice = bundle.business.notice;
+    if (notice && notice.text && onToday(null, notice.until)) add('notice', () => sceneNotice(bundle));
 
     if (settingOn(settings, 'show_announcements')) {
-      (bundle.announcements || []).filter((a) => isObj(a) && a.title && a.show_on_tv !== false)
+      (bundle.announcements || []).filter((a) => isObj(a) && a.title && a.show_on_tv !== false && onToday(a.starts_at, a.ends_at))
         .forEach((a) => add('announcement-' + a.id, () => sceneAnnouncement(bundle, a)));
     }
 
@@ -354,7 +361,7 @@
       if (picks.length) add('catering', () => sceneCatering(bundle, d.catering, picks));
     }
     if (settingOn(settings, 'show_events')) {
-      const cards = eventCards(bundle, d.blanc);
+      const cards = eventCards(bundle, d.blanc, today);
       if (cards.length) add('events', () => sceneEvents(bundle, cards));
     }
     add('closing', () => sceneClosing(bundle));
@@ -590,14 +597,22 @@
   /* -------------------------------------------------------------------------
      7. Events: this business first, then what's on at Blanc Gallery
      ------------------------------------------------------------------------- */
-  function eventCards(bundle, blanc) {
-    const own = bundle.events || {};
-    const list = (own.current || []).concat(own.upcoming || []).filter((e) => isObj(e) && e.title).slice(0, 3)
+  /** current + upcoming events of a bundle with their status worked out for `today` (past ones dropped). */
+  function liveEvents(events, today) {
+    const list = ((events && events.current) || []).concat((events && events.upcoming) || []).filter((e) => isObj(e) && e.title && e.start_date);
+    return list
+      .map((e) => Object.assign({}, e, { status: (e.end_date || e.start_date) < today ? 'past' : e.start_date > today ? 'upcoming' : 'current' }))
+      .filter((e) => e.status !== 'past')
+      .sort((a, b) => (a.start_date < b.start_date ? -1 : a.start_date > b.start_date ? 1 : 0));
+  }
+
+  function eventCards(bundle, blanc, today) {
+    const list = liveEvents(bundle.events, today).slice(0, 3)
       .map((e) => ({ event: e, where: e.location || bundle.business.short_name || bundle.business.name, family: false }));
     if (blanc && blanc.events && blanc.business) {
-      const ev = blanc.events || {};
-      const current = (ev.current || []).filter((e) => isObj(e) && e.title);
-      const pick = current.find((e) => e.kind === 'exhibition') || current[0] || (ev.upcoming || []).find((e) => isObj(e) && e.title);
+      const theirs = liveEvents(blanc.events, today);
+      const current = theirs.filter((e) => e.status === 'current');
+      const pick = current.find((e) => e.kind === 'exhibition') || current[0] || theirs.find((e) => e.status === 'upcoming');
       if (pick) list.push({ event: pick, where: 'At ' + blanc.business.name, family: true, address: blanc.business.address && blanc.business.address.line1 });
     }
     return list.slice(0, 4);
@@ -708,7 +723,10 @@
   }
 
   function renderHud() {
-    $('[data-hud-clock]').textContent = chicagoNow().time;
+    const now = chicagoNow();
+    // A new day: plan the scenes again so a long-lived cache rolls over without a fetch.
+    if (state.data && state.plannedDate && now.date !== state.plannedDate) plan();
+    $('[data-hud-clock]').textContent = now.time;
     $('[data-hud-updated]').textContent = state.lastOkAt ? 'updated ' + ago(state.lastOkAt) : '';
     const chip = $('[data-hud-status]');
     chip.hidden = !(state.lastError && (!state.lastOkAt || Date.now() - state.lastOkAt > OFFLINE_AFTER_MS));

@@ -78,7 +78,7 @@ seed again on purpose.
 ### 3. Set the secrets
 
 ```sh
-npx wrangler@4 secret put ADMIN_BOOTSTRAP_TOKEN   # a long random phrase; needed once, to create the first owner
+npx wrangler@4 secret put ADMIN_BOOTSTRAP_TOKEN   # needed once, to create the first owner; paste the output of: openssl rand -base64 32
 npx wrangler@4 secret put RESEND_API_KEY          # optional, for emailing inquiries (see "Connecting email")
 npx wrangler@4 secret put EMAIL_FROM              # optional, e.g. Rome's Joy Websites <no-reply@romesjoy.com>
 ```
@@ -112,8 +112,10 @@ Variables and Secrets) instead of with `secret put`.
    New people get a temporary password you tell them; they must choose their own
    the first time they sign in.
 
-The setup token stops working as soon as the first account exists, so there is no
-need to remove it.
+The setup token stops working as soon as the first account exists (and wrong guesses
+are limited to a handful per hour before that). You can still remove it afterwards with
+`npx wrangler@4 secret delete ADMIN_BOOTSTRAP_TOKEN`; it is only needed again if every
+account is ever deleted.
 
 ### Connecting email (Resend)
 

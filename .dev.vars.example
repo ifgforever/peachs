@@ -1,0 +1,6 @@
+# Copy to .dev.vars for local development (never commit .dev.vars).
+# In production set these with: npx wrangler secret put <NAME>
+ADMIN_BOOTSTRAP_TOKEN=change-me-before-deploying
+# Optional: outgoing email via Resend (https://resend.com). Without these, inquiries are saved but not emailed.
+RESEND_API_KEY=
+EMAIL_FROM=Rome's Joy Websites <no-reply@example.com>

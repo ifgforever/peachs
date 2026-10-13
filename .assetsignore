@@ -1,6 +1,11 @@
 .git
 .github
 .wrangler
+node_modules
 wrangler.jsonc
 .assetsignore
+.dev.vars
+.dev.vars.example
+worker
 signage/render.mjs
+signage/build

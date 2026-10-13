@@ -1,8 +1,27 @@
-// Cloudflare Workers Builds config: serve this repo as a static site.
+// Cloudflare Workers config: one Worker serves the static sites and the /api/* admin backend.
+// Setup steps are in admin/README.md.
 {
   "name": "peachs",
+  "main": "worker/index.js",
   "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
-    "directory": "."
-  }
+    "directory": ".",
+    "binding": "ASSETS",
+    // Only these paths run the Worker; everything else is served straight from the files.
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "romesjoy-admin",
+      "database_id": "3545d6c2-619a-497b-8f15-1c30b71e6014"
+    }
+  ],
+  // Optional photo uploads. Create the bucket (npx wrangler r2 bucket create romesjoy-media) and uncomment.
+  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "romesjoy-media" }],
+  "vars": {
+    "PUBLIC_BASE_URL": ""
+  },
+  "observability": { "enabled": true }
 }

@@ -80,7 +80,7 @@ From the repo root, run `python3 -m http.server 8765`, then `node signage/entran
 
 Open **peachs.tvinstallchicago.workers.dev/tv** in the TV's web browser and press OK. The entrance loop plays full screen, with sound, and repeats until you turn it off. The two other buttons play Screen 2 and Screen 3 (or open `/tv/?screen=2` or `/tv/?screen=3`). This needs Wi-Fi the whole time.
 
-For a demo without Wi-Fi, use the page's **Save this video to the device** link (or download `signage/peachs-entrance-loop-tv.mp4`), then play the file in VLC with Repeat turned on.
+For a demo without Wi-Fi, save the video onto the device first, then play it in VLC with Repeat mode set to "Repeat single" (during playback press Up, choose Repeat mode, press OK once so the icon shows a 1). **peachs.tvinstallchicago.workers.dev/loop** downloads the 1080p entrance loop as a file; type it into the Downloader app on a Fire TV, or a browser on an Android box. The TV page's **Save this video to the device** link does the same. Fire TV sticks that run Vega OS (Settings > My Fire TV > About shows "OS" without "Fire") can't install Downloader or the regular VLC, so use the web page there.
 
 ## Putting a video on a BrightSign player
 

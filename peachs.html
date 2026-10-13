@@ -27,6 +27,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;display=swap">
   <link rel="stylesheet" href="assets/css/styles.css">
+  <!-- Live content: hours, contact, notice, menu from the admin API. Empty = same origin; static text is the fallback. -->
+  <meta name="live-api" content="">
 
   <!-- Import-map polyfill for older Safari (iOS < 16.4); no-op in browsers that support import maps -->
   <script async src="https://cdn.jsdelivr.net/npm/es-module-shims@1.10.0/dist/es-module-shims.js" crossorigin="anonymous"></script>
@@ -83,6 +85,7 @@
   </script>
 
   <script type="module" src="assets/js/main.js"></script>
+  <script type="module" src="assets/js/live.js" data-business="peachs"></script>
 </head>
 <body id="top">
   <!-- Icon sprite -->
@@ -110,13 +113,18 @@
         <span class="status-dot" aria-hidden="true"></span>
         <span data-open-text>Wed – Sun · 8am – 2pm</span>
       </p>
-      <a class="topbar__link topbar__address" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">
-        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg>4652 S. King Drive<span class="visually-hidden"> (opens Google Maps in a new tab)</span>
+      <a class="topbar__link topbar__address" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url">
+        <svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><span data-live="address-line1">4652 S. King Drive</span><span class="visually-hidden"> (opens Google Maps in a new tab)</span>
       </a>
-      <a class="topbar__link" href="tel:+17739665801">
-        <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>773.966.5801
+      <a class="topbar__link" href="tel:+17739665801" data-live="phone-href">
+        <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg><span data-live="phone">773.966.5801</span>
       </a>
     </div>
+  </div>
+
+  <!-- Notice banner: filled from the admin (business.notice) and hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="notice__inner wrap"><strong class="notice__label">Heads up</strong> <span data-field="text"></span></p>
   </div>
 
   <!-- 2. Header -->
@@ -138,11 +146,11 @@
           <li><a href="#catering" data-nav-link>Catering</a></li>
           <li><a href="#press" data-nav-link>Press</a></li>
           <li><a href="#visit" data-nav-link>Visit</a></li>
-          <li class="nav__mobile-extra"><a href="tel:+17739665801">Call 773.966.5801</a></li>
+          <li class="nav__mobile-extra"><a href="tel:+17739665801" data-live="phone-href">Call <span data-live="phone">773.966.5801</span></a></li>
         </ul>
       </nav>
 
-      <a class="btn btn--primary btn--sm header-cta" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">
+      <a class="btn btn--primary btn--sm header-cta" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener" data-live="order-url">
         Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span>
       </a>
     </div>
@@ -163,13 +171,13 @@
           </h1>
           <p class="hero__sub">Home of 7-Up pancakes, peach bourbon French toast and shrimp &amp; grits, done the Southern way.</p>
           <div class="hero__ctas">
-            <a class="btn btn--primary" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">
+            <a class="btn btn--primary" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener" data-live="order-url">
               Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span>
               <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg>
             </a>
             <a class="btn btn--ghost" href="#menu">See the Menu</a>
           </div>
-          <p class="hero__hours"><span>Wed – Sun</span><span aria-hidden="true">·</span><span>8am – 2pm</span><span aria-hidden="true">·</span><span>4652 S. King Drive</span></p>
+          <p class="hero__hours"><span data-live="hours-summary">Wed – Sun · 8am – 2pm</span><span aria-hidden="true">·</span><span data-live="address-line1">4652 S. King Drive</span></p>
         </div>
         <div class="hero__cue" aria-hidden="true">
           <span>Scroll to stack</span>
@@ -327,7 +335,7 @@
     </section>
 
     <!-- 7. Full menu -->
-    <section class="section menu" id="menu" aria-labelledby="menu-title">
+    <section class="section menu" id="menu" aria-labelledby="menu-title" data-live-menu>
       <div class="wrap">
         <header class="section-head section-head--split" data-reveal>
           <div>
@@ -410,8 +418,8 @@
             <h2 class="display catering__title" id="catering-title">Let us cater your <em class="accent">next event.</em></h2>
             <p class="catering__lede">All servings come in half pans and feed approximately <strong>10–12 people</strong>. Breakfast for the office, brunch for the family, cobbler for everybody.</p>
             <div class="catering__ctas">
-              <a class="btn btn--primary" href="tel:+17739665801"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>Call 773.966.5801</a>
-              <a class="btn btn--light" href="mailto:ordering@romesjoy.com?subject=Catering%20inquiry%20for%20Peach%E2%80%99s%20on%2047th"><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Email ordering@romesjoy.com</a>
+              <a class="btn btn--primary" href="tel:+17739665801" data-live="phone-href"><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>Call <span data-live="phone">773.966.5801</span></a>
+              <a class="btn btn--light" href="mailto:ordering@romesjoy.com?subject=Catering%20inquiry%20for%20Peach%E2%80%99s%20on%2047th" data-live="email" data-live-prefix="Email "><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg>Email ordering@romesjoy.com</a>
               <a class="btn btn--link-light" href="menus/peachs-catering-menu.webp" target="_blank" rel="noopener">View full catering menu<span class="visually-hidden"> (opens in a new tab)</span> <svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></a>
             </div>
           </header>
@@ -551,15 +559,15 @@
             <div class="visit__block">
               <h3 class="visit__label">Address</h3>
               <address class="visit__address">
-                4652 S. King Drive<br>Chicago, IL 60653<br><span class="visit__hood">Bronzeville</span>
+                <span data-live="address-line1">4652 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span><br><span class="visit__hood">Bronzeville</span>
               </address>
-              <a class="btn btn--dark btn--sm" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg>Get directions<span class="visually-hidden"> (opens Google Maps in a new tab)</span></a>
+              <a class="btn btn--dark btn--sm" href="https://www.google.com/maps/search/?api=1&amp;query=Peach%27s+4652+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url"><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg>Get directions<span class="visually-hidden"> (opens Google Maps in a new tab)</span></a>
               <p class="visit__transit"><svg class="icon" aria-hidden="true"><use href="#i-train"/></svg>Near the CTA Green Line 47th St station</p>
             </div>
 
             <div class="visit__block">
               <h3 class="visit__label" id="hours-label">Hours</h3>
-              <table class="hours" aria-labelledby="hours-label" data-hours>
+              <table class="hours" aria-labelledby="hours-label" data-hours data-live-hours>
                 <tbody>
                   <tr data-day="1"><th scope="row">Monday</th><td>Closed</td></tr>
                   <tr data-day="2"><th scope="row">Tuesday</th><td>Closed</td></tr>
@@ -574,11 +582,12 @@
 
             <div class="visit__block">
               <h3 class="visit__label">Call</h3>
-              <p><a class="visit__phone" href="tel:+17739665801">773.966.5801</a></p>
+              <p><a class="visit__phone" href="tel:+17739665801" data-live="phone phone-href">773.966.5801</a></p>
+              <p class="visit__note" data-live="hours-note" hidden></p>
               <h3 class="visit__label">How to eat</h3>
               <ul class="services" role="list">
                 <li>Dine in</li>
-                <li><a href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></li>
+                <li><a href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener" data-live="order-url">Order pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></li>
                 <li>Curbside</li>
                 <li><a href="#catering">Catering</a></li>
               </ul>
@@ -587,8 +596,8 @@
             <div class="visit__block">
               <h3 class="visit__label">Follow along</h3>
               <ul class="socials" role="list">
-                <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg><span>Instagram</span></a></li>
-                <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg><span>Facebook</span></a></li>
+                <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener" data-live="instagram-url"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg><span>Instagram</span></a></li>
+                <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener" data-live="facebook-url"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg><span>Facebook</span></a></li>
                 <li><a href="https://twitter.com/peachson47th" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg><span>X</span></a></li>
                 <li><a href="https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html" target="_blank" rel="noopener"><svg class="icon" aria-hidden="true"><use href="#i-tripadvisor"/></svg><span>Tripadvisor</span></a></li>
               </ul>
@@ -629,16 +638,16 @@
         </nav>
         <div class="footer__visit">
           <h2 class="footer__heading">Visit</h2>
-          <p>4652 S. King Drive<br>Chicago, IL 60653</p>
+          <p><span data-live="address-line1">4652 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></p>
           <p>Wed – Sun<br>8am – 2pm</p>
-          <p><a href="tel:+17739665801">773.966.5801</a></p>
-          <p><a class="btn btn--primary btn--sm" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener">Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></p>
+          <p><a href="tel:+17739665801" data-live="phone phone-href">773.966.5801</a></p>
+          <p><a class="btn btn--primary btn--sm" href="https://order.toasttab.com/online/peachs-restaurant-king-dr" target="_blank" rel="noopener" data-live="order-url">Order Pickup<span class="visually-hidden"> (opens Toast in a new tab)</span></a></p>
         </div>
         <div class="footer__social">
           <h2 class="footer__heading">Social</h2>
           <ul class="socials socials--footer" role="list">
-            <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener" aria-label="Instagram"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
-            <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener" aria-label="Facebook"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
+            <li><a href="https://www.instagram.com/peachson47th/" target="_blank" rel="noopener" aria-label="Instagram" data-live="instagram-url"><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg></a></li>
+            <li><a href="https://www.facebook.com/Peachson47th/" target="_blank" rel="noopener" aria-label="Facebook" data-live="facebook-url"><svg class="icon" aria-hidden="true"><use href="#i-facebook"/></svg></a></li>
             <li><a href="https://twitter.com/peachson47th" target="_blank" rel="noopener" aria-label="X (Twitter)"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></a></li>
             <li><a href="https://www.tripadvisor.com/Restaurant_Review-g35805-d11697799-Reviews-Peach_s_Restaurant-Chicago_Illinois.html" target="_blank" rel="noopener" aria-label="Tripadvisor"><svg class="icon" aria-hidden="true"><use href="#i-tripadvisor"/></svg></a></li>
           </ul>

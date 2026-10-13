@@ -253,6 +253,7 @@ section[id] { scroll-margin-top: calc(var(--header-h) + 8px); }
 .dish__price { font-family: var(--f-display); font-weight: 700; font-size: 1.25rem; white-space: nowrap; }
 .dish__desc { color: var(--muted); font-size: 0.93rem; margin-top: 4px; }
 .dish__allergens { font-size: 0.8rem; color: var(--muted); margin-top: 4px; font-style: italic; }
+.dish__portion { font-weight: 500; color: var(--muted); white-space: nowrap; }
 .tag {
   display: inline-block; vertical-align: 2px; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
   font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; background: var(--gold-soft); color: var(--gold-ink);
@@ -356,6 +357,12 @@ html:not(.js) .menu-panel[hidden] { display: block !important; border-top: 1px s
 .form-actions { display: grid; gap: 10px; justify-items: start; }
 .form-error { color: #9B2C10; font-weight: 700; font-size: 0.95rem; }
 .form-status { padding: 14px 16px; border-radius: var(--radius-sm); background: var(--gold-soft); font-size: 0.95rem; }
+.quote-form.is-sending { opacity: 0.75; }
+
+/* Notice banner (text from the admin; hidden until there is one) */
+.notice { background: var(--gold); color: var(--ink); font-size: 0.95rem; line-height: 1.35; }
+.notice__inner { margin: 0; padding-block: 10px; }
+.notice strong { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; margin-right: 0.5em; }
 
 /* ---------- Partner ---------- */
 .partner { background: var(--ink-2); color: var(--paper); padding-block: clamp(48px, 7vw, 88px); }

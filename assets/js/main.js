@@ -1,5 +1,6 @@
 // Peach's on 47th: site behaviour (no build step, ES module).
 import { MENU_SECTIONS, DIETARY, FINE_PRINT, formatPrice } from './menu-data.js';
+import { initLive } from './live.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -100,8 +101,11 @@ function addPlayButton(mountHero, stageEl) {
 
 /* -------------------------------------------------------------------------
    Open / closed status (America/Chicago), hours table "today"
+   The hard-coded HOURS are the static fallback; once live.js has a bundle from the admin API it owns
+   the badge and the hours table (see assets/js/live.js) and this code steps aside.
    ------------------------------------------------------------------------- */
 const HOURS = { open: 8 * 60, close: 14 * 60, days: [3, 4, 5, 6, 0] }; // Wed–Sun 8:00–14:00
+let liveHours = false;
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const chicagoFmt = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Chicago', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
@@ -127,6 +131,7 @@ export function openStatus({ day, minutes }) {
 }
 
 function renderStatus() {
+  if (liveHours) return;
   const now = chicagoNow();
   const status = openStatus(now);
   const el = $('[data-open-status]');
@@ -264,6 +269,7 @@ const statusEl = $('[data-menu-status]');
 const chips = $$('[data-filter]');
 const STAR = '<svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>';
 const state = { index: 0, filter: 'all' };
+let sections = MENU_SECTIONS; // swapped for the admin's menu when the API answers (see renderLiveMenu)
 
 const matches = (item) => state.filter === 'all' || (item.tags || []).includes(state.filter);
 const filterLabel = () => (state.filter === 'all' ? '' : DIETARY[state.filter].toLowerCase());
@@ -273,6 +279,7 @@ function renderPrice(item) {
     const sizes = item.prices.map((p) => `<div><dt>${esc(p.label)}</dt><dd>${formatPrice(p.value)}</dd></div>`).join('');
     return `<dl class="mi__sizes" aria-label="Prices by size">${sizes}</dl>`;
   }
+  if (item.price == null) return ''; // market price / not priced on the admin menu
   return `<p class="mi__price">${formatPrice(item.price)}</p>`;
 }
 
@@ -293,7 +300,7 @@ function renderItem(item) {
 }
 
 function renderTabs() {
-  tablist.innerHTML = MENU_SECTIONS.map((s, i) => `
+  tablist.innerHTML = sections.map((s, i) => `
     <button type="button" role="tab" class="tab" id="tab-${s.id}" aria-controls="menu-panel"
       aria-selected="${i === state.index}" tabindex="${i === state.index ? 0 : -1}" data-index="${i}">
       <span class="tab__label">${esc(s.short)}</span>${s.star ? STAR : ''}<span class="tab__count" hidden></span>
@@ -305,7 +312,7 @@ function updateTabs() {
     const selected = i === state.index;
     tab.setAttribute('aria-selected', String(selected));
     tab.tabIndex = selected ? 0 : -1;
-    const count = MENU_SECTIONS[i].items.filter(matches).length;
+    const count = sections[i].items.filter(matches).length;
     const badge = $('.tab__count', tab);
     if (state.filter === 'all') {
       badge.hidden = true;
@@ -317,11 +324,11 @@ function updateTabs() {
       tab.classList.toggle('is-empty', count === 0);
     }
   });
-  panel.setAttribute('aria-labelledby', `tab-${MENU_SECTIONS[state.index].id}`);
+  panel.setAttribute('aria-labelledby', `tab-${sections[state.index].id}`);
 }
 
 function renderPanel() {
-  const section = MENU_SECTIONS[state.index];
+  const section = sections[state.index];
   const visible = section.items.filter(matches);
   const note = section.note ? `<p class="panel-head__note">${esc(section.note)}</p>` : '';
   const count = state.filter === 'all'
@@ -336,7 +343,7 @@ function renderPanel() {
   if (visible.length) {
     body = `<ul class="menu-items" role="list">${visible.map(renderItem).join('')}</ul>`;
   } else {
-    const others = MENU_SECTIONS
+    const others = sections
       .map((s, i) => ({ s, i, n: s.items.filter(matches).length }))
       .filter((x) => x.n > 0 && x.i !== state.index);
     const suggestion = others.length
@@ -364,7 +371,7 @@ function scrollTabIntoView(tab) {
 }
 
 function selectTab(index, { focus = false } = {}) {
-  state.index = (index + MENU_SECTIONS.length) % MENU_SECTIONS.length;
+  state.index = (index + sections.length) % sections.length;
   updateTabs();
   renderPanel();
   const tab = $$('[role="tab"]', tablist)[state.index];
@@ -403,7 +410,7 @@ if (tablist && panel) {
       selectTab(0, { focus: true });
     } else if (e.key === 'End') {
       e.preventDefault();
-      selectTab(MENU_SECTIONS.length - 1, { focus: true });
+      selectTab(sections.length - 1, { focus: true });
     }
   });
   chips.forEach((chip) => chip.addEventListener('click', () => setFilter(chip.dataset.filter)));
@@ -418,3 +425,54 @@ if (tablist && panel) {
 }
 
 $$('[data-fineprint]').forEach((el) => { el.textContent = FINE_PRINT[el.dataset.fineprint] || ''; });
+
+/* -------------------------------------------------------------------------
+   Live content from the admin API (assets/js/live.js)
+   The menu is re-rendered from bundle.menu in the same shape menu-data.js uses; an empty or missing
+   menu keeps the static one. Hours and the open badge are hydrated by live.js itself.
+   ------------------------------------------------------------------------- */
+const asPrice = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? undefined : Number(v));
+
+function sectionsFromBundle(menu) {
+  return (menu?.sections || [])
+    .filter((s) => Array.isArray(s.items) && s.items.length)
+    .map((s) => ({
+      id: `live-${s.id}`,
+      title: s.title,
+      short: s.short_title || s.title,
+      note: s.description || undefined,
+      items: s.items.map((i) => {
+        const prices = Array.isArray(i.prices) && i.prices.length
+          ? i.prices.map((p) => ({ label: p.label, value: asPrice(p.value) })).filter((p) => p.value !== undefined)
+          : null;
+        return {
+          name: i.name,
+          portion: i.portion || undefined,
+          price: prices ? undefined : asPrice(i.price),
+          prices: prices || undefined,
+          desc: i.description || i.desc || undefined,
+          tags: (i.tags || []).filter((t) => DIETARY[t]),
+          star: Boolean(i.featured ?? i.star),
+        };
+      }),
+    }));
+}
+
+function renderLiveMenu(menu) {
+  const next = sectionsFromBundle(menu);
+  if (!next.length || !tablist || !panel) return;
+  const current = sections[state.index]?.title;
+  sections = next;
+  const keep = sections.findIndex((s) => s.title === current);
+  state.index = keep >= 0 ? keep : 0;
+  renderTabs();
+  updateTabs();
+  renderPanel();
+}
+
+initLive('peachs', {
+  renderMenu: renderLiveMenu,
+  onBundle(bundle) {
+    liveHours = Array.isArray(bundle.hours) && bundle.hours.length > 0;
+  },
+});

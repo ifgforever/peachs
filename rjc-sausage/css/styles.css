@@ -334,6 +334,12 @@ h3 { font-family: var(--f-sans); font-stretch: 85%; font-weight: 800; font-size:
 .form__error { color: #FFB4A6; font-weight: 700; }
 .form__note { font-size: .9375rem; color: #CFC4B6; }
 .form__note a { color: var(--mustard); }
+.form.is-sending { opacity: .75; }
+
+/* Notice banner (text from the admin; hidden until there is one) */
+.notice { background: var(--mustard); color: var(--ink); font-size: .95rem; line-height: 1.35; border-bottom: 2px solid var(--ink); }
+.notice__inner { margin: 0; padding-block: 10px; }
+.notice strong { font-weight: 800; font-stretch: 85%; text-transform: uppercase; letter-spacing: .08em; font-size: .85rem; margin-right: .5em; }
 
 /* ---------- Footer ---------- */
 .site-footer { background: var(--paper); border-top: 3px solid var(--ink); }

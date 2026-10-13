@@ -171,6 +171,13 @@ em { font-style: italic; }
   .visit-strip { grid-template-columns: 2fr 1.4fr 1fr; align-items: center; }
   .visit-strip p:last-child { text-align: right; }
 }
+.hero__empty { max-width: 60ch; }
+.hero__empty .hero__title { margin-top: .5rem; }
+
+/* Notice banner (text from the admin; hidden until there is one) */
+.notice { background: var(--accent); color: var(--white); font-size: .9375rem; line-height: 1.35; }
+.notice__inner { margin: 0; padding-block: 10px; }
+.notice strong { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; font-weight: 600; margin-right: .5em; }
 
 /* ---------- About the show ---------- */
 .show__grid { display: grid; gap: 8px; }
@@ -190,6 +197,22 @@ em { font-style: italic; }
 .names { font-size: .875rem; color: var(--ink-soft); padding-top: 1rem; border-top: 1px solid var(--line); }
 @media (min-width: 900px) {
   .feature { grid-template-columns: 5fr 7fr; gap: 72px; align-items: center; }
+}
+
+/* Upcoming exhibitions and events from the admin */
+.upcoming { margin-bottom: clamp(56px, 8vw, 104px); }
+.upcoming__item { padding: 20px 0; border-top: 1px solid var(--line); display: grid; gap: 6px; }
+.upcoming__item:last-child { border-bottom: 1px solid var(--line); }
+.upcoming__date { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); margin: 0; }
+.upcoming__title { font-family: var(--f-display); font-size: 1.75rem; line-height: 1.1; margin: 0; }
+.upcoming__meta { font-weight: 500; margin: 0; }
+.upcoming__desc { max-width: 58ch; color: var(--ink-soft); margin: 0; }
+.upcoming__where { font-size: .875rem; color: var(--ink-soft); margin: 0; }
+.upcoming .text-link { justify-self: start; }
+@media (min-width: 760px) {
+  .upcoming__item { grid-template-columns: 1fr 2fr; column-gap: 48px; }
+  .upcoming__item > :not(.upcoming__date) { grid-column: 2; }
+  .upcoming__date { grid-row: 1 / span 6; }
 }
 
 .cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 48px 32px; grid-template-columns: 1fr; }

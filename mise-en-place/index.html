@@ -79,6 +79,9 @@
     ]
   }
   </script>
+  <!-- Live content from the admin API: contact details, notice. Empty = same origin; the static text is the fallback. -->
+  <meta name="live-api" content="">
+  <script type="module" src="../assets/js/live.js" data-business="mise-en-place"></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to main content</a>
@@ -111,6 +114,11 @@
       </nav>
     </div>
   </header>
+
+  <!-- Notice banner: text from the admin, hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="wrap notice__inner"><strong>Notice</strong> <span data-field="text"></span></p>
+  </div>
 
   <main id="main" tabindex="-1">
 
@@ -335,15 +343,67 @@
           <h2 id="apply-title">Sign up for the next session.</h2>
           <p class="apply__lead">If you are 16 to 36 and want a real start in kitchens, catering or hospitality, reach out. Tell us a little about yourself and we’ll share the next session dates.</p>
           <div class="apply__ctas">
-            <a class="btn btn--primary" href="https://miseenplacechicago.org/contact-us/" target="_blank" rel="noopener">Sign up with the contact form</a>
-            <a class="btn btn--light" href="tel:+17733734320">Call 773.373.4320</a>
+            <a class="btn btn--light" href="tel:+17733734320" data-live="phone-href">Call <span data-live="phone">773.373.4320</span></a>
+            <a class="btn btn--light" href="https://www.facebook.com/miseenplacechi/" target="_blank" rel="noopener" data-live="facebook-url">Message us on Facebook</a>
           </div>
+          <ol class="steps" role="list">
+            <li><span class="steps__n" aria-hidden="true">1</span><div><strong>Reach out</strong><span>Send the form, call, or message us on Facebook.</span></div></li>
+            <li><span class="steps__n" aria-hidden="true">2</span><div><strong>Get the session details</strong><span>We’ll follow up with dates and what to expect.</span></div></li>
+            <li><span class="steps__n" aria-hidden="true">3</span><div><strong>Start Tier One</strong><span>Begin in the classroom, then move into the kitchen and onto real events.</span></div></li>
+          </ol>
         </div>
-        <ol class="steps" role="list">
-          <li><span class="steps__n" aria-hidden="true">1</span><div><strong>Reach out</strong><span>Use the contact form, call, or message us on Facebook.</span></div></li>
-          <li><span class="steps__n" aria-hidden="true">2</span><div><strong>Get the session details</strong><span>We’ll follow up with dates and what to expect.</span></div></li>
-          <li><span class="steps__n" aria-hidden="true">3</span><div><strong>Start Tier One</strong><span>Begin in the classroom, then move into the kitchen and onto real events.</span></div></li>
-        </ol>
+
+        <!-- main.js posts this to the admin API (saved + emailed); with no API it opens an email instead. -->
+        <form class="apply-form" id="apply-form" novalidate aria-labelledby="apply-form-title">
+          <h3 class="apply-form__title" id="apply-form-title">Tell us about yourself</h3>
+          <p class="apply-form__hint">Fields marked * are required. We reply with the next session dates.</p>
+          <div class="apply-form__row">
+            <div class="field">
+              <label for="a-name">Name *</label>
+              <input id="a-name" name="name" type="text" autocomplete="name" required>
+            </div>
+            <div class="field">
+              <label for="a-email">Email *</label>
+              <input id="a-email" name="email" type="email" autocomplete="email" required>
+            </div>
+          </div>
+          <div class="apply-form__row">
+            <div class="field">
+              <label for="a-phone">Phone</label>
+              <input id="a-phone" name="phone" type="tel" autocomplete="tel">
+            </div>
+            <div class="field">
+              <label for="a-age">Age</label>
+              <select id="a-age" name="age">
+                <option value="">Choose one</option>
+                <option>16 – 20</option>
+                <option>21 – 26</option>
+                <option>27 – 36</option>
+                <option>Over 36</option>
+              </select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="a-interest">Most interested in</label>
+            <select id="a-interest" name="interest">
+              <option>Cooking and kitchens</option>
+              <option>Front of house and hospitality</option>
+              <option>Catering and events</option>
+              <option>Not sure yet</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="a-msg">A little about you *</label>
+            <textarea id="a-msg" name="message" rows="4" placeholder="Where you’re at now, what you want to learn, when you could start…" required></textarea>
+          </div>
+          <div class="visually-hidden">
+            <label for="a-website">Leave this field empty</label>
+            <input id="a-website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
+          <p class="apply-form__error" role="alert" data-form-error hidden></p>
+          <p class="apply-form__status" role="status" data-form-status hidden></p>
+          <button class="btn btn--primary" type="submit">Send my application</button>
+        </form>
       </div>
     </section>
 
@@ -436,14 +496,14 @@
           <address class="contact__card">
             <strong>Mise En Place Chicago (MSPC)</strong>
             <span>Parkway Ballroom</span>
-            <span>4455 S. King Drive</span>
-            <span>Chicago, IL 60653</span>
-            <a href="tel:+17733734320">773.373.4320</a>
+            <span data-live="address-line1">4455 S. King Drive</span>
+            <span data-live="address-city">Chicago, IL 60653</span>
+            <a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a>
           </address>
           <div class="contact__links">
-            <a class="btn btn--ghost btn--sm" href="https://www.google.com/maps/search/?api=1&amp;query=4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener">Directions</a>
-            <a class="btn btn--ghost btn--sm" href="https://www.facebook.com/miseenplacechi/" target="_blank" rel="noopener">Facebook</a>
-            <a class="btn btn--ghost btn--sm" href="https://miseenplacechicago.org/contact-us/" target="_blank" rel="noopener">Contact form</a>
+            <a class="btn btn--ghost btn--sm" href="https://www.google.com/maps/search/?api=1&amp;query=4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url">Directions</a>
+            <a class="btn btn--ghost btn--sm" href="https://www.facebook.com/miseenplacechi/" target="_blank" rel="noopener" data-live="facebook-url">Facebook</a>
+            <a class="btn btn--ghost btn--sm" href="#apply-form">Apply online</a>
           </div>
         </div>
         <figure class="contact__media">
@@ -474,6 +534,6 @@
     </div>
   </footer>
 
-  <script src="js/main.js" defer></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

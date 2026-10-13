@@ -62,7 +62,8 @@ export async function upload(ctx) {
   const form = await ctx.request.formData();
   const file = form.get('file');
   const slug = String(form.get('business') || form.get('slug') || '').trim();
-  if (!slug || !canEdit(ctx.user, slug)) throw forbidden('Choose one of your businesses for the upload.');
+  if (!slug || !(await first(ctx.env, 'SELECT slug FROM businesses WHERE slug = ?', [slug]))) throw notFound('No such business.', 'unknown_business');
+  if (!canEdit(ctx.user, slug)) throw forbidden('Choose one of your businesses for the upload.');
   if (!(file && typeof file === 'object' && typeof file.arrayBuffer === 'function')) throw bad('No file was attached.', 'missing_field');
   const ext = IMAGE_TYPES[file.type];
   if (!ext) throw bad('Photos must be JPEG, PNG, WebP or GIF.', 'unsupported_type');

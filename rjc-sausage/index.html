@@ -80,6 +80,9 @@
     ]
   }
   </script>
+  <!-- Live content from the admin API: contact details, notice. Empty = same origin; the static text is the fallback. -->
+  <meta name="live-api" content="">
+  <script type="module" src="../assets/js/live.js" data-business="rjc-sausage"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -144,6 +147,11 @@
       </nav>
     </div>
   </header>
+
+  <!-- Notice banner: text from the admin, hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="wrap notice__inner"><strong>Notice</strong> <span data-field="text"></span></p>
+  </div>
 
   <main id="main" tabindex="-1">
     <!-- ============ Hero ============ -->
@@ -360,7 +368,7 @@
             <h3>Want R.J.C. on your shelves or your menu?</h3>
             <p>Grocers, restaurants, schools and caterers: tell us what you need and we'll follow up.</p>
             <a class="btn btn--red" href="#wholesale">Become a partner</a>
-            <p class="where__call">Or call <a href="tel:+17733734320">773-373-4320</a></p>
+            <p class="where__call">Or call <a href="tel:+17733734320" data-live="phone phone-href">773-373-4320</a></p>
           </aside>
         </div>
       </div>
@@ -374,8 +382,8 @@
           <h2 id="wholesale-title">Put halal chicken sausage on your menu</h2>
           <p>Tell us about your kitchen or store and the volumes you're planning. We'll get back to you about product specs, pricing and delivery.</p>
           <ul class="contact-list" role="list">
-            <li><svg class="icon"><use href="#i-phone"/></svg><a href="tel:+17733734320">773-373-4320</a></li>
-            <li><svg class="icon"><use href="#i-pin"/></svg><address>4455 S. King Drive<br>Chicago, IL 60653</address></li>
+            <li><svg class="icon"><use href="#i-phone"/></svg><a href="tel:+17733734320" data-live="phone phone-href">773-373-4320</a></li>
+            <li><svg class="icon"><use href="#i-pin"/></svg><address><span data-live="address-line1">4455 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></address></li>
           </ul>
         </div>
 
@@ -426,9 +434,13 @@
             <label for="f-msg">Tell us about your needs <span class="opt">(optional)</span></label>
             <textarea id="f-msg" name="message" rows="4" placeholder="Expected volume, delivery area, start date…"></textarea>
           </div>
+          <div class="visually-hidden">
+            <label for="f-website">Leave this field empty</label>
+            <input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
           <p class="form__error" id="form-error" role="alert" hidden>Please fill in business name, type, your name and a valid email.</p>
           <button class="btn btn--mustard" type="submit">Send inquiry <svg class="icon"><use href="#i-arrow"/></svg></button>
-          <p class="form__note" id="form-note" aria-live="polite">Opens your email app with the details filled in.</p>
+          <p class="form__note" id="form-note" role="status">We reply within one business day. If it can't be sent from here, your email app opens with the details filled in.</p>
         </form>
       </div>
     </section>
@@ -443,8 +455,8 @@
       </div>
       <div>
         <p class="site-footer__h">Visit &amp; call</p>
-        <address>4455 S. King Drive<br>Chicago, IL 60653</address>
-        <p><a href="tel:+17733734320">773-373-4320</a></p>
+        <address><span data-live="address-line1">4455 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></address>
+        <p><a href="tel:+17733734320" data-live="phone phone-href">773-373-4320</a></p>
       </div>
       <div>
         <p class="site-footer__h">Family</p>
@@ -458,6 +470,6 @@
     </div>
   </footer>
 
-  <script src="js/main.js" defer></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

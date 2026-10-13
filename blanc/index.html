@@ -24,6 +24,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Inter:wght@400;500;600&amp;display=swap">
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Live content from the admin API: hours, contact details, notice, exhibitions and events. Empty = same origin; the static markup is the fallback. -->
+  <meta name="live-api" content="">
+  <script type="module" src="../assets/js/live.js" data-business="blanc"></script>
 
   <script type="application/ld+json">
   {
@@ -129,7 +132,7 @@
           <li><a href="#artists">Artists</a></li>
           <li><a href="#visit">Visit</a></li>
         </ul>
-        <a class="icon-link" href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener" aria-label="Blanc on Instagram (opens in a new tab)">
+        <a class="icon-link" href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener" aria-label="Blanc on Instagram (opens in a new tab)" data-live="instagram-url">
           <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="17.4" cy="6.6" r="1.1" fill="currentColor"/></svg>
         </a>
         <a class="btn btn--small" href="#visit">Plan a visit</a>
@@ -137,11 +140,39 @@
     </div>
   </header>
 
+  <!-- Notice banner: text from the admin, hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="wrap notice__inner"><strong>Notice</strong> <span data-field="text"></span></p>
+  </div>
+
   <main id="main">
 
-    <!-- ============ NOW / HERO ============ -->
+    <!-- ============ NOW / HERO ============
+         The static show below is the fallback. With the admin API the current exhibition (or the next
+         upcoming one) is rendered from the <template> in its place. -->
     <section class="hero" id="now" aria-labelledby="hero-title">
-      <div class="wrap hero__grid">
+      <div class="wrap hero__grid" data-live-events="current,upcoming" data-live-limit="1">
+        <template>
+          <div class="hero__text">
+            <p class="eyebrow"><span class="status" data-field="status" data-text-current="On view now" data-text-upcoming="Coming up" data-text-past="Recently on view">On view now</span></p>
+            <h1 class="hero__title" id="hero-title" data-field="title"></h1>
+            <p class="hero__artists" data-field="subtitle"></p>
+            <p class="hero__lede" data-field="description"></p>
+            <dl class="hero__facts">
+              <div data-field-group><dt data-field="kind">Exhibition</dt><dd data-field="date_text"></dd></div>
+              <div data-field-group><dt>Time</dt><dd data-field="time_text"></dd></div>
+              <div data-field-group><dt>Where</dt><dd data-field="location"></dd></div>
+            </dl>
+            <div class="actions">
+              <a class="btn" data-field="link" target="_blank" rel="noopener">Details</a>
+              <a class="btn btn--ghost" href="#visit">Hours &amp; directions</a>
+            </div>
+          </div>
+          <figure class="hero__art">
+            <img data-field="image" width="1400" height="788" alt="">
+            <figcaption data-field="title"></figcaption>
+          </figure>
+        </template>
         <div class="hero__text">
           <p class="eyebrow"><span class="status" data-exhibit-status data-start="2026-10-24" data-weeks="6">Opening October 24</span></p>
           <h1 class="hero__title" id="hero-title">What Shall I Do With My <em>Dead?</em></h1>
@@ -161,12 +192,17 @@
           <figcaption>What Shall I Do With My Dead? · Raja’Nee &amp; Jalen Hamilton</figcaption>
         </figure>
       </div>
+      <div class="wrap hero__empty" data-live-events-empty hidden>
+        <p class="eyebrow"><span class="status">Between exhibitions</span></p>
+        <h1 class="hero__title">A Culture of <em>Conversation</em></h1>
+        <p class="hero__lede">The next exhibition is on its way. Follow @blancgallerychicago for the announcement, or visit by appointment.</p>
+      </div>
 
       <div class="wrap">
         <div class="visit-strip" role="group" aria-label="Gallery hours at a glance">
-          <p><span class="dot" data-open-dot aria-hidden="true"></span><strong data-open-label>Open Saturday &amp; Sunday</strong> <span class="muted">11 am – 3 pm, and by appointment</span></p>
-          <p><a href="https://www.google.com/maps/search/?api=1&amp;query=Blanc+Gallery+4445+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">4445 S. King Drive, Bronzeville</a></p>
-          <p><a href="tel:+17733734320">773.373.4320</a></p>
+          <p><span class="dot" data-open-dot aria-hidden="true"></span><strong data-open-text>Open Saturday &amp; Sunday</strong> <span class="muted"><span data-live="hours-summary">11 am – 3 pm</span><span data-live="hours-note" data-live-prefix=", ">, and by appointment</span></span></p>
+          <p><a href="https://www.google.com/maps/search/?api=1&amp;query=Blanc+Gallery+4445+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url"><span data-live="address-line1">4445 S. King Drive</span>, Bronzeville</a></p>
+          <p><a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a></p>
         </div>
       </div>
     </section>
@@ -192,7 +228,35 @@
           <p class="section-sub">Recent shows at Blanc. Each one is a single, sustained conversation around a compelling theme.</p>
         </div>
 
-        <article class="feature">
+        <!-- Upcoming exhibitions and events from the admin (no static fallback: hidden until there are some) -->
+        <div class="upcoming" data-live-events="upcoming" hidden>
+          <h3 class="kicker" data-live-keep>Coming up</h3>
+          <template>
+            <article class="upcoming__item">
+              <p class="upcoming__date"><span data-field="date_text"></span><span data-field="time_text" data-live-prefix=" · "></span></p>
+              <h4 class="upcoming__title" data-field="title"></h4>
+              <p class="upcoming__meta" data-field="subtitle"></p>
+              <p class="upcoming__desc" data-field="description"></p>
+              <p class="upcoming__where" data-field="location"></p>
+              <a class="text-link" data-field="link">Details <span aria-hidden="true">→</span></a>
+            </article>
+          </template>
+        </div>
+
+        <!-- Most recent show: the static one is the fallback, the template renders the latest past event from the admin -->
+        <article class="feature" data-live-events="past" data-live-limit="1">
+          <template>
+            <figure class="feature__art">
+              <img data-field="image" width="640" height="800" loading="lazy" alt="">
+            </figure>
+            <div class="feature__text">
+              <p class="eyebrow">Most recent · <span data-field="date_text"></span></p>
+              <h3 class="feature__title" data-field="title"></h3>
+              <p class="meta" data-field="subtitle"></p>
+              <p data-field="description"></p>
+              <p data-field-group><a class="text-link" data-field="link" target="_blank" rel="noopener">Exhibition details <span aria-hidden="true">→</span></a></p>
+            </div>
+          </template>
           <figure class="feature__art">
             <img src="img/permanent-rebellion.webp" width="640" height="800" loading="lazy" alt="Exhibition poster for This Could Be//The Permanent Rebellion: strips of white fabric stitched onto brown paper, with the artists’ names in gold type.">
           </figure>
@@ -206,7 +270,18 @@
           </div>
         </article>
 
-        <ul class="cards" role="list">
+        <!-- Past shows: the static cards are the fallback, the template renders the admin's past events (after the featured one) -->
+        <ul class="cards" role="list" data-live-events="past" data-live-offset="1">
+          <template>
+            <li class="card">
+              <a data-field="link" data-link-keep target="_blank" rel="noopener">
+                <img data-field="image" width="600" height="403" loading="lazy" alt="">
+                <span class="card__date" data-field="date_text"></span>
+                <span class="card__title" data-field="title"></span>
+                <span class="card__meta" data-field="subtitle"></span>
+              </a>
+            </li>
+          </template>
           <li class="card">
             <a href="https://blancchicago.com/portfolio/from-memory-to-movement-emmett-at-85/" target="_blank" rel="noopener">
               <img class="pos-low" src="img/emmett-at-85.webp" width="640" height="800" loading="lazy" alt="Poster for From Memory to Movement: Emmett at 85, a halftone portrait of Emmett Till in electric blue.">
@@ -375,7 +450,7 @@
           <article class="program">
             <h3>Do Well / Do Good</h3>
             <p>Each cycle, Blanc identifies two local non-profits whose work intersects with the concerns of the artists, and hosts events that highlight their missions and help them raise awareness and funding.</p>
-            <p class="muted small">Non-profit partners: call <a href="tel:+17733734320">773.373.4320</a> to start a conversation.</p>
+            <p class="muted small">Non-profit partners: call <a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a> to start a conversation.</p>
           </article>
           <article class="program program--events">
             <h3>Private events</h3>
@@ -433,19 +508,19 @@
           <h2 class="section-title" id="visit-title">Visit Blanc</h2>
           <p class="lead">Admission is always free. Viewing is also available by appointment.</p>
           <div class="actions">
-            <a class="btn" href="https://www.google.com/maps/dir/?api=1&amp;destination=4445+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener">Get directions<span class="sr-only"> (opens Google Maps in a new tab)</span></a>
-            <a class="btn btn--ghost" href="tel:+17733734320">Call to book a viewing</a>
+            <a class="btn" href="https://www.google.com/maps/dir/?api=1&amp;destination=4445+S+King+Dr+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url">Get directions<span class="sr-only"> (opens Google Maps in a new tab)</span></a>
+            <a class="btn btn--ghost" href="tel:+17733734320" data-live="phone-href">Call to book a viewing</a>
           </div>
         </div>
         <dl class="visit__facts">
           <div>
             <dt>Address</dt>
-            <dd>4445 S. King Drive<br>Chicago, IL 60653<br><span class="muted small">In Bronzeville, alongside the Parkway Ballroom</span></dd>
+            <dd><span data-live="address-line1">4445 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span><br><span class="muted small">In Bronzeville, alongside the Parkway Ballroom</span></dd>
           </div>
           <div>
             <dt>Hours</dt>
             <dd>
-              <table class="hours">
+              <table class="hours" data-live-hours="grouped" data-closed-text="By appointment only">
                 <caption class="sr-only">Gallery hours</caption>
                 <tbody>
                   <tr data-day="6"><th scope="row">Saturday</th><td>11 am – 3 pm</td></tr>
@@ -453,12 +528,12 @@
                   <tr><th scope="row">Monday – Friday</th><td>By appointment only</td></tr>
                 </tbody>
               </table>
-              <span class="muted small">Hours are fixed unless otherwise noted on our Instagram.</span>
+              <span class="muted small"><span data-live="hours-note" data-live-prefix="Hours: " hidden></span> Hours are fixed unless otherwise noted on our Instagram.</span>
             </dd>
           </div>
           <div>
             <dt>Phone</dt>
-            <dd><a href="tel:+17733734320">773.373.4320</a></dd>
+            <dd><a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a></dd>
           </div>
           <div>
             <dt>Parking</dt>
@@ -476,7 +551,7 @@
           <p>Openings, artist talks and new exhibitions, first. Join the Blanc mailing list or follow <strong>@blancgallerychicago</strong> for hours updates and news from the gallery.</p>
           <div class="actions">
             <a class="btn" href="https://lp.constantcontactpages.com/su/2FJ0bpq/blancsignup" target="_blank" rel="noopener">Join the mailing list<span class="sr-only"> (opens in a new tab)</span></a>
-            <a class="btn btn--ghost" href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener">Follow on Instagram<span class="sr-only"> (opens in a new tab)</span></a>
+            <a class="btn btn--ghost" href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener" data-live="instagram-url">Follow on Instagram<span class="sr-only"> (opens in a new tab)</span></a>
           </div>
         </div>
         <a class="follow__tiles" href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener" aria-label="See more on Instagram, @blancgallerychicago (opens in a new tab)">
@@ -500,12 +575,12 @@
           <p class="muted small">A Culture of Conversation</p>
         </div>
         <address>
-          4445 S. King Drive, Chicago, IL 60653<br>
-          <a href="tel:+17733734320">773.373.4320</a><br>
-          Sat &amp; Sun 11 am – 3 pm, and by appointment
+          <span data-live="address-line1">4445 S. King Drive</span>, <span data-live="address-city">Chicago, IL 60653</span><br>
+          <a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a><br>
+          <span data-live="hours-summary">Sat &amp; Sun 11 am – 3 pm</span><span data-live="hours-note" data-live-prefix=", ">, and by appointment</span>
         </address>
         <ul class="footer-links" role="list">
-          <li><a href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener">Instagram</a></li>
+          <li><a href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener" data-live="instagram-url">Instagram</a></li>
           <li><a href="https://lp.constantcontactpages.com/su/2FJ0bpq/blancsignup" target="_blank" rel="noopener">Newsletter</a></li>
           <li><a href="https://linktr.ee/blancgallerychicago" target="_blank" rel="noopener">Linktree</a></li>
           <li><a href="../romesjoy/">A Rome’s Joy company</a></li>

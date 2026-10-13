@@ -45,7 +45,7 @@
   var now = chicagoNow();
   var weekend = now.day === 0 || now.day === 6;
   var isOpen = weekend && now.minutes >= 660 && now.minutes < 900;
-  var label = document.querySelector('[data-open-label]');
+  var label = document.querySelector('[data-open-text]'); // live.js rewrites the same element from the admin's hours
   var dot = document.querySelector('[data-open-dot]');
   if (label) {
     if (isOpen) label.textContent = 'Open now';

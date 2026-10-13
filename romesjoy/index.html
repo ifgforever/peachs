@@ -23,6 +23,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap">
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Live content from the admin API: contact details, notice, announcements. Empty = same origin; the static text is the fallback. -->
+  <meta name="live-api" content="">
+  <script type="module" src="../assets/js/live.js" data-business="romesjoy"></script>
   <link rel="preload" as="image" href="img/chef-rome-garden.webp">
 
   <script type="application/ld+json">
@@ -131,8 +134,13 @@
   <div class="topbar">
     <div class="wrap topbar__inner">
       <a href="../" class="topbar__back"><span aria-hidden="true">←</span> All concepts</a>
-      <a href="tel:+17733734320" class="topbar__phone">773.373.4320</a>
+      <a href="tel:+17733734320" class="topbar__phone" data-live="phone phone-href">773.373.4320</a>
     </div>
+  </div>
+
+  <!-- Notice banner: text from the admin, hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="wrap notice__inner"><strong>Notice</strong> <span data-field="text"></span></p>
   </div>
 
   <header class="site-header" data-header>
@@ -200,6 +208,17 @@
           <h2 id="news-title" class="news__title">Chef Rome &amp; team, in partnership with <em>Bon Appétit</em>, will lead food services at the Obama Presidential Center.</h2>
           <p class="news__sub">Together, Rome’s Joy Companies and Bon Appétit Management Company launched <strong>BAMJoy</strong>, which leads food service operations at the Obama Presidential Center. Here is what Chicago’s press has said.</p>
         </div>
+
+        <!-- Announcements from the admin (family-wide and Rome's Joy), hidden until there are some -->
+        <ul class="announcements" role="list" aria-label="Announcements" data-live-announcements hidden>
+          <template>
+            <li class="announcement">
+              <h3 class="announcement__title" data-field="title"></h3>
+              <p class="announcement__body" data-field="body"></p>
+              <a class="announcement__link" data-field="link">Read more</a>
+            </li>
+          </template>
+        </ul>
 
         <article class="news-feature">
           <div class="news-feature__media">
@@ -497,22 +516,22 @@
           <dl class="contact__list">
             <div>
               <dt>Visit</dt>
-              <dd><address>Rome’s Joy Companies<br>4455 S King Drive<br>Chicago, IL 60653</address>
-                <a href="https://www.google.com/maps/search/?api=1&amp;query=4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener" class="link-ext">Open in Google Maps<span class="visually-hidden"> (opens in a new tab)</span><span aria-hidden="true"> ↗</span></a></dd>
+              <dd><address><span data-live="name">Rome’s Joy Companies</span><br><span data-live="address-line1">4455 S King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></address>
+                <a href="https://www.google.com/maps/search/?api=1&amp;query=4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener" class="link-ext" data-live="map-url">Open in Google Maps<span class="visually-hidden"> (opens in a new tab)</span><span aria-hidden="true"> ↗</span></a></dd>
             </div>
             <div>
               <dt>Call</dt>
-              <dd><a href="tel:+17733734320" class="contact__big">773.373.4320</a></dd>
+              <dd><a href="tel:+17733734320" class="contact__big" data-live="phone phone-href">773.373.4320</a></dd>
             </div>
             <div>
               <dt>Email</dt>
-              <dd><a href="mailto:ordering@romesjoy.com" class="contact__big">ordering@romesjoy.com</a></dd>
+              <dd><a href="mailto:ordering@romesjoy.com" class="contact__big" data-live="email">ordering@romesjoy.com</a></dd>
             </div>
           </dl>
         </div>
 
         <form class="form" action="mailto:ordering@romesjoy.com" method="post" enctype="text/plain" data-mailto-form novalidate>
-          <p class="form__note" id="form-note"><strong>Preview form:</strong> sending opens your email app with a message addressed to ordering@romesjoy.com. Nothing is stored on this site.</p>
+          <p class="form__note" id="form-note">We read every message and reply within one business day. If it can’t be sent from here, your email app opens with the message ready to go.</p>
           <div class="form__row">
             <div class="field">
               <label for="f-name">Name <span aria-hidden="true">*</span></label>
@@ -546,8 +565,13 @@
             <label for="f-msg">Message <span aria-hidden="true">*</span></label>
             <textarea id="f-msg" name="message" rows="5" required></textarea>
           </div>
+          <div class="visually-hidden">
+            <label for="f-website">Leave this field empty</label>
+            <input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
+          </div>
           <p class="form__error" role="alert" data-form-error hidden></p>
-          <button type="submit" class="btn btn--solid">Send via email</button>
+          <p class="form__status" role="status" data-form-status hidden></p>
+          <button type="submit" class="btn btn--solid">Send message</button>
         </form>
       </div>
     </section>
@@ -557,8 +581,8 @@
     <div class="wrap footer__grid">
       <div class="footer__brand">
         <img src="img/rjc-logo.png" alt="Rome’s Joy Companies" width="120" height="67" class="footer__logo">
-        <address>4455 S King Drive · Chicago, IL 60653<br><a href="tel:+17733734320">773.373.4320</a> · <a href="mailto:ordering@romesjoy.com">ordering@romesjoy.com</a></address>
-        <p class="footer__social">Instagram: <a href="https://www.instagram.com/rjc.events/" target="_blank" rel="noopener">@rjc.events</a> · <a href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener">@blancgallerychicago</a></p>
+        <address><span data-live="address-line1">4455 S King Drive</span> · <span data-live="address-city">Chicago, IL 60653</span><br><a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a> · <a href="mailto:ordering@romesjoy.com" data-live="email">ordering@romesjoy.com</a></address>
+        <p class="footer__social">Instagram: <a href="https://www.instagram.com/rjc.events/" target="_blank" rel="noopener" data-live="instagram-url">@rjc.events</a> · <a href="https://www.instagram.com/blancgallerychicago/" target="_blank" rel="noopener">@blancgallerychicago</a></p>
       </div>
       <nav aria-label="Our companies" class="footer__nav">
         <h2 class="footer__h">Companies</h2>
@@ -588,6 +612,6 @@
     </div>
   </footer>
 
-  <script src="js/main.js" defer></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

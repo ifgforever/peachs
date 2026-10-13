@@ -565,10 +565,9 @@
             <label for="f-msg">Message <span aria-hidden="true">*</span></label>
             <textarea id="f-msg" name="message" rows="5" required></textarea>
           </div>
-          <div class="visually-hidden">
-            <label for="f-website">Leave this field empty</label>
-            <input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
-          </div>
+          <!-- Honeypot: people never see this; bots that fill it are dropped by the API -->
+          <label class="visually-hidden" for="f-website">Leave this field empty</label>
+          <input class="visually-hidden" id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
           <p class="form__error" role="alert" data-form-error hidden></p>
           <p class="form__status" role="status" data-form-status hidden></p>
           <button type="submit" class="btn btn--solid">Send message</button>

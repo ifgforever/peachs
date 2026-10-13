@@ -729,10 +729,9 @@
             <textarea id="q-notes" name="Additional information" rows="4" aria-describedby="q-notes-hint"></textarea>
             <p class="hint" id="q-notes-hint">Food preferences, dietary needs or allergies, service style, budget.</p>
           </div>
-          <div class="visually-hidden">
-            <label for="q-website">Leave this field empty</label>
-            <input id="q-website" name="website" type="text" tabindex="-1" autocomplete="off">
-          </div>
+          <!-- Honeypot: people never see this; bots that fill it are dropped by the API -->
+          <label class="visually-hidden" for="q-website">Leave this field empty</label>
+          <input class="visually-hidden" id="q-website" name="website" type="text" tabindex="-1" autocomplete="off">
           <p class="form-error" role="alert" data-form-error hidden></p>
           <div class="form-actions">
             <button class="btn btn--gold btn--lg" type="submit">Send my request</button>

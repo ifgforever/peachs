@@ -336,12 +336,12 @@ h3 { font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; text-transform:
 @media (min-width: 600px) { .apply-form__row { grid-template-columns: 1fr 1fr; } }
 .apply-form .field { display: grid; gap: 6px; min-width: 0; }
 .apply-form label { font-weight: 700; font-size: 0.92rem; color: var(--paper); }
-.apply-form input, .apply-form select, .apply-form textarea {
+.apply-form .field input, .apply-form .field select, .apply-form .field textarea {
   width: 100%; min-height: 48px; padding: 10px 14px; border: 1.5px solid rgba(245,241,230,.35); border-radius: 8px;
   background: var(--paper-2); color: var(--ink); font: inherit; font-size: 1rem;
 }
 .apply-form textarea { resize: vertical; }
-.apply-form input:focus-visible, .apply-form select:focus-visible, .apply-form textarea:focus-visible { outline: 3px solid var(--sage); outline-offset: 2px; }
+.apply-form .field input:focus-visible, .apply-form .field select:focus-visible, .apply-form .field textarea:focus-visible { outline: 3px solid var(--sage); outline-offset: 2px; }
 .apply-form [aria-invalid="true"] { border-color: var(--tomato-light); box-shadow: 0 0 0 2px var(--tomato-light); }
 .apply-form__error { color: #FFB4A6; font-weight: 700; }
 .apply-form__status { background: var(--sage); color: var(--ink); padding: 12px 14px; border-radius: 8px; font-weight: 600; }

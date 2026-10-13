@@ -165,6 +165,7 @@ em { font-style: italic; }
 }
 .visit-strip p { margin: 0; }
 .visit-strip a { text-decoration: none; border-bottom: 1px solid var(--line-strong); }
+.visit-strip .muted { display: inline-block; } /* a long hours summary wraps as a unit, not mid-phrase */
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); margin-right: 8px; vertical-align: middle; }
 .dot.is-open { background: var(--open); box-shadow: 0 0 0 4px rgba(31, 122, 62, .15); }
 @media (min-width: 760px) {

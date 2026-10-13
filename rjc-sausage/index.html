@@ -434,10 +434,9 @@
             <label for="f-msg">Tell us about your needs <span class="opt">(optional)</span></label>
             <textarea id="f-msg" name="message" rows="4" placeholder="Expected volume, delivery area, start date…"></textarea>
           </div>
-          <div class="visually-hidden">
-            <label for="f-website">Leave this field empty</label>
-            <input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
-          </div>
+          <!-- Honeypot: people never see this; bots that fill it are dropped by the API -->
+          <label class="visually-hidden" for="f-website">Leave this field empty</label>
+          <input class="visually-hidden" id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
           <p class="form__error" id="form-error" role="alert" hidden>Please fill in business name, type, your name and a valid email.</p>
           <button class="btn btn--mustard" type="submit">Send inquiry <svg class="icon"><use href="#i-arrow"/></svg></button>
           <p class="form__note" id="form-note" role="status">We reply within one business day. If it can't be sent from here, your email app opens with the details filled in.</p>

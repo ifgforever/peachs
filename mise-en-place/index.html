@@ -396,10 +396,9 @@
             <label for="a-msg">A little about you *</label>
             <textarea id="a-msg" name="message" rows="4" placeholder="Where you’re at now, what you want to learn, when you could start…" required></textarea>
           </div>
-          <div class="visually-hidden">
-            <label for="a-website">Leave this field empty</label>
-            <input id="a-website" name="website" type="text" tabindex="-1" autocomplete="off">
-          </div>
+          <!-- Honeypot: people never see this; bots that fill it are dropped by the API -->
+          <label class="visually-hidden" for="a-website">Leave this field empty</label>
+          <input class="visually-hidden" id="a-website" name="website" type="text" tabindex="-1" autocomplete="off">
           <p class="apply-form__error" role="alert" data-form-error hidden></p>
           <p class="apply-form__status" role="status" data-form-status hidden></p>
           <button class="btn btn--primary" type="submit">Send my application</button>

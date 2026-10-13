@@ -19,7 +19,9 @@
 //                                 hours-summary · hours-note · tagline · name · short-name
 //                   A null value leaves the static text alone, except hours-note and address-line2, which
 //                   hide the element (a stale note is worse than none). data-live-prefix="…" is prepended.
-//                   "email" on an <a href="mailto:…"> also rewrites the href (keeping any ?subject=).
+//                   "email" also rewrites the href of the element's own or enclosing <a href="mailto:…">
+//                   (keeping any ?subject=), so a span inside an icon button works.
+//                   Every element that received a value gets data-live-set, a hook for CSS tweaks.
 //     href keys  →  setAttribute('href'):  phone-href · order-url · book-url · instagram-url ·
 //                                 facebook-url · map-url · website-url
 //                   A null value hides the element. Only http(s), tel and mailto URLs are accepted.
@@ -252,14 +254,18 @@ function applyFields(root, bundle) {
           continue;
         }
         el.textContent = (el.dataset.livePrefix || '') + value;
+        el.setAttribute('data-live-set', '');
         if (HIDE_WHEN_EMPTY.has(key)) show(el);
-        if (key === 'email' && el.tagName === 'A' && /^mailto:/i.test(el.getAttribute('href') || '')) {
-          const query = (el.getAttribute('href') || '').split('?')[1];
-          el.setAttribute('href', `mailto:${value}${query ? `?${query}` : ''}`);
+        if (key === 'email') {
+          const anchor = el.closest('a[href^="mailto:" i]');
+          if (anchor) {
+            const query = anchor.getAttribute('href').split('?')[1];
+            anchor.setAttribute('href', `mailto:${value}${query ? `?${query}` : ''}`);
+          }
         }
       } else if (HREF_KEYS[key]) {
         const value = safeUrl(HREF_KEYS[key](business));
-        if (value) { el.setAttribute('href', value); show(el); } else hide(el);
+        if (value) { el.setAttribute('href', value); el.setAttribute('data-live-set', ''); show(el); } else hide(el);
       }
     }
   }

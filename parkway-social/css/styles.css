@@ -203,6 +203,8 @@ main:focus { outline: none; }
 .facts dt { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--brass); font-weight: 600; }
 .facts dd { font-family: var(--f-display); font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.4rem); line-height: 1.2; margin-top: 4px; }
 .facts dd span { font-family: var(--f-sans); font-size: .95rem; color: rgba(244, 238, 227, .8); }
+/* The live hours summary ("Mon – Fri · 8:30 am – 5 pm") is longer than the static "8:30–5", so size it like a sentence. */
+.facts dd[data-live-set] { font-family: var(--f-sans); font-size: 1.05rem; font-weight: 500; line-height: 1.35; margin-top: 8px; }
 
 /* ---------- Story ---------- */
 .story__grid { display: grid; gap: clamp(32px, 6vw, 80px); align-items: center; }

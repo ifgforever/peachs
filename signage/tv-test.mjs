@@ -124,10 +124,50 @@ function blancBundle() {
   return b;
 }
 
+/* Blanc's own screen: the artwork catalog is on, with a current exhibition and pieces in it. The titles and
+   artists are made up for the test; the photos are the Blanc site's own images. */
+const art = (id, fields, image) => ({
+  id, event_id: 11, title: 'Untitled', artist: null, year: null, medium: null, dimensions: null, description: null,
+  status: 'available', status_text: 'Available', price: null, price_text: null, featured: false,
+  images: image ? [{ id: id * 10, url: image, thumb_url: image, alt: null, width: null, height: null }] : [],
+  ...fields,
+});
+const BLANC_ARTWORKS = [
+  art(31, { title: 'Untitled (Blue Hour)', artist: 'A. Fixture', year: '2026', medium: 'Archival pigment print', dimensions: '24 × 30 in.', price: 1800, price_text: '$1,800', featured: true }, '/blanc/img/emmett-at-85.webp'),
+  art(32, { title: 'Litany for the Block, No. 2', artist: 'J. Sample', year: '2025', medium: 'Acrylic and collage on panel', dimensions: '36 × 48 in.', status: 'sold', status_text: 'Sold' }, '/blanc/img/litany-install-1.webp'),
+  art(33, { title: 'FIXTURE: photo that does not exist', artist: 'Nobody', price_text: 'Price on request' }, '/blanc/img/does-not-exist.webp'),
+  art(34, { title: 'A Very Long Title That Keeps Going So the Wall Label Has to Wrap Over Several Lines', artist: 'R. Placeholder-Longname', year: 'c. 1998', medium: 'Oil, graphite and gold leaf on linen', dimensions: '60 × 40 × 2 in.', status: 'reserved', status_text: 'Reserved', price: 950.5, price_text: '$950.50' }, '/blanc/img/water-lines-install.webp'),
+  art(35, { title: 'Panorama with Seven Figures, Late in the Afternoon', artist: 'T. Example and the Southside Collective', year: '2019–2023', medium: 'Single-channel video, colour, sound (still)', dimensions: 'Dimensions variable; 16:9 projection', status: 'not_for_sale', status_text: 'Not for sale' }, '/blanc/img/whatshall.webp'),
+  art(36, { event_id: null, title: 'FIXTURE: collection piece, not in the show', artist: 'Nobody', featured: true }, '/blanc/img/founders.webp'),
+  art(37, { title: 'FIXTURE: in the show but no photo', artist: 'Nobody' }, null),
+];
+
+function blancSignageBundle() {
+  const b = blancBundle();
+  b.events.current = [{ id: 11, kind: 'exhibition', title: 'Field Notes on Light', subtitle: 'New work by five Chicago artists (test fixture)', description: null, start_date: '2026-09-19', end_date: '2026-11-01', start_time: null, end_time: null, date_text: 'Sep 19 – Nov 1, 2026', time_text: null, location: 'Blanc Gallery', link_url: null, link_label: null, image_url: null, featured: true, status: 'current', artwork_count: 5 }];
+  b.events.upcoming = blancBundle().events.current.map((e) => ({ ...e, status: 'upcoming', artwork_count: 0 })).concat(b.events.upcoming);
+  b.features = { artworks: true };
+  b.artworks = clone(BLANC_ARTWORKS);
+  b.signage = { seconds_per_scene: 12 };
+  b.family = FAMILY;
+  return b;
+}
+
+/* More pieces than one pass shows (20): 45 in the current show, so the window rotates. */
+function bigGalleryBundle() {
+  const b = blancSignageBundle();
+  const photos = ['emmett-at-85', 'litany-install-1', 'water-lines-install', 'whatshall', 'space-1', 'space-2'];
+  b.artworks = Array.from({ length: 45 }, (_, i) => art(100 + i, { title: 'Piece ' + (i + 1), artist: 'A. Fixture' }, `/blanc/img/${photos[i % photos.length]}.webp?n=${i}`));
+  return b;
+}
+
 const API = {
   '/api/public/signage/peachs': signageBundle,
   '/api/public/catering': cateringBundle,
-  '/api/public/blanc': blancBundle,
+  // The real API includes Blanc's catalog in its bundle; Peach's screen must ignore it.
+  '/api/public/blanc': () => ({ ...blancBundle(), features: { artworks: true }, artworks: clone(BLANC_ARTWORKS) }),
+  '/api/public/signage/blanc': blancSignageBundle,
+  '/api/public/signage/big-gallery': bigGalleryBundle,
 };
 
 /* -------------------------------------------------------------------------
@@ -312,6 +352,125 @@ try {
   await waitReady(page4);
   assert.match(await page4.evaluate(() => document.getElementById('brand').textContent), /Parkway Social/);
   await other.close();
+
+  /* ---- 7. Blanc: exhibition title card, then one artwork per scene ---- */
+  const BLANC = PAGE.replace('live.html?', 'live.html?business=blanc&');
+  const gallery = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  const g = await openPage(gallery);
+  await g.goto(BLANC, { waitUntil: 'load' });
+  await waitReady(g);
+  await g.evaluate(() => document.fonts.ready);
+  const gScenes = await g.evaluate(() => window.__tv.scenes());
+  console.log('blanc scenes:', gScenes.join(', '));
+  assert.deepEqual(gScenes, ['welcome', 'exhibition', 'artwork-31', 'artwork-32', 'artwork-33', 'artwork-34', 'artwork-35', 'catering', 'events', 'closing'], 'blanc scene plan: the show\'s pieces with a photo, nothing from the collection');
+
+  // Walk one pass the way the timer would (n = next), recording what actually reaches the screen.
+  // Artwork prices never reach the TV, in any scene (the catering card's menu prices are not artwork prices).
+  const PRICE = /1,800|950\.50|price on request/i;
+  const walk = async (pg, label) => {
+    await pg.evaluate(() => window.__tv.goto('welcome'));
+    await settle(pg);
+    const seen = [await pg.evaluate(() => window.__tv.current())];
+    while (seen[seen.length - 1] !== 'closing' && seen.length < 20) {
+      const prev = seen[seen.length - 1];
+      await pg.evaluate(() => window.__tv.next());
+      await pg.waitForFunction((p) => window.__tv.current() !== p, prev, { timeout: 20000 });
+      await settle(pg);
+      const id = await pg.evaluate(() => window.__tv.current());
+      seen.push(id);
+      const on = await pg.evaluate(() => {
+        const s = document.querySelector('#scenes .scene.is-on');
+        const img = s.querySelector('.art__img');
+        const label = s.querySelector('.art__label');
+        const box = (n) => { const r = n.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+        return {
+          text: s.textContent, cls: s.className, dot: Boolean(s.querySelector('.art__dot')),
+          img: img ? { ok: img.complete && img.naturalWidth > 0, alt: img.alt, anim: getComputedStyle(img).animationName, box: box(img) } : null,
+          label: label ? box(label) : null,
+          hud: box(document.querySelector('.hud')),
+          titleClipped: label ? [].some.call(label.querySelectorAll('.art__meta, .art__artist, .art__sold'), (n) => n.getBoundingClientRect().bottom > 1080) : false,
+        };
+      });
+      assert.doesNotMatch(on.text, PRICE, `${label}: no prices on the TV (${id})`);
+      if (id === 'exhibition') {
+        assert.match(on.text, /Now showing/);
+        assert.match(on.text, /Field Notes on Light/);
+        assert.match(on.text, /Sep 19 – Nov 1, 2026/);
+      }
+      if (id === 'exhibition' || id.startsWith('artwork-')) assert.doesNotMatch(on.text, /\$/, `${id}: no dollar amounts in the gallery scenes`);
+      if (id.startsWith('artwork-')) {
+        assert.ok(on.img && on.img.ok, `${label}: ${id} photo loaded before it was shown`);
+        assert.ok(on.img.alt, `${id} has alt text`);
+        assert.equal(on.dot, id === 'artwork-32', `${id}: the red dot only on the sold piece`);
+        if (id === 'artwork-32') assert.match(on.text, /Sold/);
+        assert.doesNotMatch(on.text, /Reserved|Not for sale|Available/, 'no sale status other than Sold');
+        const a = on.img.box;
+        const l = on.label;
+        assert.ok(a.r <= l.l || l.r <= a.l || a.b <= l.t || l.b <= a.t, `${id}: label beside or under the photo, not over it`);
+        assert.ok(!on.titleClipped, `${id}: label fits on screen`);
+        const hud = on.hud;
+        const textBoxes = await pg.evaluate(() => [].map.call(document.querySelectorAll('#scenes .scene.is-on .art__label p, #scenes .scene.is-on .art__label h2'), (n) => { const r = n.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; }));
+        assert.ok(textBoxes.every((t) => t.r <= hud.l || t.b <= hud.t), `${id}: label text clear of the corner clock`);
+        assert.equal(/s-art--wide/.test(on.cls), id === 'artwork-35', `${id}: wide layout only for the wide photo`);
+      }
+      await shot(pg, `${label}-${id}`);
+    }
+    return seen;
+  };
+  const seen = await walk(g, 'blanc');
+  assert.deepEqual(seen, ['welcome', 'exhibition', 'artwork-31', 'artwork-32', 'artwork-34', 'artwork-35', 'catering', 'events', 'closing'], 'the broken photo (artwork-33) is skipped');
+  const gState = await g.evaluate(() => window.__tv.state());
+  assert.ok(gState.errors.some((e) => /does-not-exist/.test(e.message)), 'the broken photo is noted in the debug errors');
+  assert.doesNotMatch(await g.evaluate(() => document.body.textContent), PRICE, 'no prices anywhere on the page');
+  // Ken Burns runs, and stops under prefers-reduced-motion.
+  await g.evaluate(() => window.__tv.goto('artwork-31'));
+  await settle(g);
+  assert.equal(await g.evaluate(() => getComputedStyle(document.querySelector('#scenes .scene.is-on .art__img')).animationName), 'kenburns');
+  await g.emulateMedia({ reducedMotion: 'reduce' });
+  assert.equal(await g.evaluate(() => getComputedStyle(document.querySelector('#scenes .scene.is-on .art__img')).animationName), 'none', 'no zoom with reduced motion');
+  await g.emulateMedia({ reducedMotion: 'no-preference' });
+  const known = await g.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('romesjoy-tv:blanc:images')).images));
+  assert.equal(known.length, 4, 'the four photos that loaded are remembered');
+  assert.ok(!known.some((u) => /does-not-exist/.test(u)), 'the broken one is not');
+  assert.deepEqual(g.errors, [], 'no console errors on the Blanc screen');
+
+  /* ---- 8. Blanc offline: cached bundle, remembered photos only ---- */
+  const g2 = await openPage(gallery, { apiDown: true });
+  await g2.goto(BLANC, { waitUntil: 'load' });
+  await waitReady(g2);
+  await g2.evaluate(() => document.fonts.ready);
+  assert.equal((await g2.evaluate(() => window.__tv.state())).source, 'cache');
+  assert.deepEqual(await g2.evaluate(() => window.__tv.scenes()), ['welcome', 'exhibition', 'artwork-31', 'artwork-32', 'artwork-34', 'artwork-35', 'catering', 'events', 'closing'], 'offline: only photos loaded before');
+  const seenOffline = await walk(g2, 'blanc-offline');
+  assert.deepEqual(seenOffline, ['welcome', 'exhibition', 'artwork-31', 'artwork-32', 'artwork-34', 'artwork-35', 'catering', 'events', 'closing']);
+  assert.deepEqual(g2.errors, [], 'no console errors offline');
+  await g2.close();
+
+  /* ---- 9. Offline and the photos are gone too: skipped, never a blank wall ---- */
+  const g3 = await openPage(gallery, { apiDown: true });
+  await g3.route('**/blanc/img/**', (route) => route.abort('connectionfailed'));
+  await g3.goto(BLANC, { waitUntil: 'load' });
+  await waitReady(g3);
+  const seenNoPhotos = await walk(g3, 'blanc-no-photos');
+  assert.deepEqual(seenNoPhotos, ['welcome', 'catering', 'events', 'closing'], 'no title card and no artwork scenes when no photo loads');
+  assert.equal(await g3.evaluate(() => document.querySelectorAll('#scenes .scene.is-on').length), 1, 'a scene is always on');
+  await gallery.close();
+
+  /* ---- 10. More than 20 pieces: 20 per pass, the next 20 on the next pass ---- */
+  const bigCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const big = await openPage(bigCtx);
+  await big.goto(PAGE.replace('live.html?', 'live.html?business=big-gallery&'), { waitUntil: 'load' });
+  await waitReady(big);
+  const window1 = (await big.evaluate(() => window.__tv.scenes())).filter((id) => id.startsWith('artwork-'));
+  assert.deepEqual(window1, Array.from({ length: 20 }, (_, i) => 'artwork-' + (100 + i)), 'first pass: pieces 1–20');
+  await big.evaluate(() => { window.__tv.goto('closing'); window.__tv.next(); });
+  const window2 = (await big.evaluate(() => window.__tv.scenes())).filter((id) => id.startsWith('artwork-'));
+  assert.deepEqual(window2, Array.from({ length: 20 }, (_, i) => 'artwork-' + (120 + i)), 'second pass: pieces 21–40');
+  await big.evaluate(() => { window.__tv.goto('closing'); window.__tv.next(); });
+  const window3 = (await big.evaluate(() => window.__tv.scenes())).filter((id) => id.startsWith('artwork-'));
+  assert.deepEqual(window3, Array.from({ length: 20 }, (_, i) => 'artwork-' + (100 + (40 + i) % 45)), 'third pass wraps: 41–45 then 1–15');
+  assert.deepEqual(big.errors, [], 'no console errors with a big show');
+  await bigCtx.close();
 } catch (e) {
   problems.push(e);
 } finally {

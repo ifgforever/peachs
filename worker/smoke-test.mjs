@@ -7,6 +7,8 @@
 // defaults to the first one the owner may edit). Prints PASS/FAIL per step and exits 1 on any failure.
 // Form posts carry a random CF-Connecting-IP so repeated runs do not trip the per-IP limit on a local server
 // (Cloudflare replaces that header in production, so it has no effect there).
+// The artwork steps use the business whose features.artworks is on (Blanc, from the artworks migration).
+import { crc32, deflateSync } from 'node:zlib';
 
 const BASE = (process.argv[2] || 'http://localhost:8787').replace(/\/+$/, '');
 const BOOTSTRAP_TOKEN = process.env.ADMIN_BOOTSTRAP_TOKEN || 'local-dev-token';
@@ -52,6 +54,28 @@ async function step(name, fn) {
   }
 }
 
+/** A real width×height RGB PNG (peach coloured), generated so the upload step needs no fixture file. */
+function tinyPng(width, height) {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8; // bits per channel
+  header[9] = 2; // RGB
+  const rowLength = 1 + width * 3; // a filter byte, then the pixels
+  const pixels = Buffer.alloc(rowLength * height);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) pixels.set([0xf4, 0xa2, 0x61], y * rowLength + 1 + x * 3);
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header), chunk('IDAT', deflateSync(pixels)), chunk('IEND', Buffer.alloc(0))]);
+}
+
 const chicagoToday = (offsetDays = 0) => {
   const d = new Date(Date.now() + offsetDays * 86400000);
   const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d).map((p) => [p.type, p.value]));
@@ -60,7 +84,8 @@ const chicagoToday = (offsetDays = 0) => {
 
 /* ---------- state shared between steps ---------- */
 const state = { slug: null, otherSlug: null, originalHours: null, businessEntryId: null, originalTagline: null,
-  events: {}, sectionId: null, itemIds: [], announcementIds: [], inquiryId: null, editorId: null, editorToken: null, exceptionId: null };
+  events: {}, sectionId: null, itemIds: [], announcementIds: [], inquiryId: null, editorId: null, editorToken: null, exceptionId: null,
+  artSlug: null, plainSlug: null, artEventId: null, artworkIds: {}, imageIds: [], artEditorId: null, draftShowId: null };
 
 const TEST_HOURS = [
   { weekday: 1, closed: true }, { weekday: 2, closed: true },
@@ -463,12 +488,328 @@ await step('Users: create an editor who gets 403 elsewhere', async () => {
   return editorBusinesses.length ? `editor limited to ${editorBusinesses[0]}` : 'editor with no businesses';
 });
 
+/* ---------- Artwork catalog ---------- */
+const artworkIdsIn = (res) => (res.data?.artworks || []).map((a) => a.id);
+/** The later artwork steps build on the first one's pieces; fail them with one clear reason when it did not get that far. */
+const needCatalog = () => expect(state.artworkIds.portrait, 'needs the pieces from the first artwork step, which failed');
+
+await step('Artworks: feature flag, counts, create tied to an event, filters', async () => {
+  const list = await api('GET', '/api/admin/businesses');
+  expectStatus(list, 200, 'businesses');
+  const rows = list.data.businesses;
+  expect(rows.every((b) => b.features && typeof b.features === 'object' && Number.isInteger(b.counts.artworks) && Number.isInteger(b.counts.artworks_available)), 'rows carry features + artwork counts');
+  const gallery = rows.find((b) => b.features.artworks === true);
+  expect(gallery, 'No business has features.artworks; run worker/migrations/2026-10-13-artworks.sql (it switches Blanc on).');
+  state.artSlug = gallery.slug;
+  state.plainSlug = rows.find((b) => !b.features.artworks)?.slug || null;
+  const ev = await api('POST', `/api/admin/businesses/${state.artSlug}/events`, { title: 'Smoke exhibition', kind: 'exhibition', start_date: chicagoToday(-1), end_date: chicagoToday(20) });
+  expectStatus(ev, 200, 'create exhibition');
+  state.artEventId = ev.data.event.id;
+
+  const base = `/api/admin/businesses/${state.artSlug}/artworks`;
+  expectStatus(await api('POST', base, { artist: 'Nobody' }), 400, 'missing title rejected');
+  expectStatus(await api('POST', base, { title: 'Bad price', price: -5 }), 400, 'negative price rejected');
+  expectStatus(await api('POST', base, { title: 'Bad display', price_display: 'loud' }), 400, 'unknown price_display rejected');
+  expectStatus(await api('POST', base, { title: 'Bad status', status: 'gone' }), 400, 'unknown status rejected');
+  expectStatus(await api('POST', base, { title: 'Bad event', event_id: 999999999 }), 400, 'unknown event rejected');
+  if (state.plainSlug) {
+    const theirs = (await api('GET', `/api/admin/businesses/${state.plainSlug}/events`)).data.events[0];
+    if (theirs) expectStatus(await api('POST', base, { title: 'Other event', event_id: theirs.id }), 400, 'event of another business rejected');
+  }
+
+  const make = async (body) => {
+    const res = await api('POST', base, body);
+    expectStatus(res, 200, `create ${body.title}`);
+    return res.data.artwork;
+  };
+  const portrait = await make({ title: 'Smoke Portrait', artist: 'Smoke Artist', year: '2026', medium: 'Archival pigment print', dimensions: '24 × 30 in.', price: 1800, price_display: 'show', event_id: state.artEventId, featured: true });
+  const study = await make({ title: 'Smoke Study 100%', price: 950.5, price_display: 'show', event_id: state.artEventId });
+  const draft = await make({ title: 'Smoke Draft', published: false });
+  state.artworkIds = { portrait: portrait.id, study: study.id, draft: draft.id };
+  expect(portrait.event_id === state.artEventId && portrait.event_title === 'Smoke exhibition' && portrait.status === 'available'
+    && portrait.featured === true && portrait.published === true && portrait.price === 1800 && Array.isArray(portrait.images) && portrait.images.length === 0, `artwork shape ${JSON.stringify(portrait)}`);
+  expect(draft.price_display === 'on_request' && draft.status === 'available' && draft.event_id === null && draft.published === false, 'defaults');
+
+  const ids = state.artworkIds;
+  const byEvent = artworkIdsIn(await api('GET', `${base}?event_id=${state.artEventId}`));
+  expect(byEvent.includes(ids.portrait) && byEvent.includes(ids.study) && !byEvent.includes(ids.draft), 'event_id filter');
+  const loose = artworkIdsIn(await api('GET', `${base}?event_id=none`));
+  expect(loose.includes(ids.draft) && !loose.includes(ids.portrait), 'event_id=none filter');
+  const search = artworkIdsIn(await api('GET', `${base}?q=${encodeURIComponent('smoke ARTIST')}`));
+  expect(search.includes(ids.portrait) && !search.includes(ids.study), 'q matches the artist, case-insensitively');
+  const literal = artworkIdsIn(await api('GET', `${base}?q=${encodeURIComponent('y 100%')}`));
+  expect(literal.includes(ids.study) && !literal.includes(ids.portrait), 'q matches % literally');
+  const wildcard = artworkIdsIn(await api('GET', `${base}?q=${encodeURIComponent('Smoke_')}`));
+  expect(!wildcard.some((id) => Object.values(ids).includes(id)), 'q does not treat _ as a wildcard');
+  const sold = artworkIdsIn(await api('GET', `${base}?status=sold`));
+  expect(!sold.includes(ids.portrait), 'status filter');
+  expectStatus(await api('GET', `${base}?status=gone`), 400, 'unknown status filter');
+
+  const after = (await api('GET', '/api/admin/businesses')).data.businesses.find((b) => b.slug === state.artSlug).counts;
+  expect(after.artworks === gallery.counts.artworks + 3 && after.artworks_available === gallery.counts.artworks_available + 3, `counts ${JSON.stringify(after)}`);
+  return state.artSlug;
+});
+
+await step('Artwork images: add 2 by URL, validate, reorder, alt text, at most 12', async () => {
+  needCatalog();
+  const { portrait, study } = state.artworkIds;
+  const add = (id, body) => api('POST', `/api/admin/artworks/${id}/images`, body);
+  const a = await add(portrait, { url: 'https://example.com/smoke-a-full.webp', thumb_url: 'https://example.com/smoke-a-thumb.webp', alt: 'Smoke portrait, front', width: 2000, height: 1500 });
+  expectStatus(a, 200, 'add image 1');
+  const b = await add(portrait, { url: '/api/media/uploads/smoke/b-full.webp', alt: 'Smoke portrait, detail' });
+  expectStatus(b, 200, 'add image 2');
+  state.imageIds = [a.data.image.id, b.data.image.id];
+  expect(a.data.image.width === 2000 && a.data.image.artwork_id === portrait && a.data.image.sort_order < b.data.image.sort_order, 'image shape, appended last');
+  // Links are judged the way a browser resolves them: encoded dot segments, "https:host" and "//host" are refused too.
+  for (const url of ['http://insecure.example/x.jpg', 'javascript:alert(1)', '/admin/x.jpg', '/api/media/../admin/index.html',
+    '/api/media/%2e%2e/%2e%2e/admin/', '/api/media/.%2E/x', 'https:evil.example', '//evil.example/api/media/x', `${BASE}/api/media/%2e%2e/admin/`]) {
+    expectStatus(await add(portrait, { url }), 400, `url ${url} rejected`);
+  }
+  expectStatus(await add(portrait, { alt: 'no link' }), 400, 'missing url');
+
+  const re = await api('POST', `/api/admin/artworks/${portrait}/images/reorder`, { ids: [b.data.image.id, a.data.image.id] });
+  expectStatus(re, 200, 'reorder images');
+  expectStatus(await api('POST', `/api/admin/artworks/${portrait}/images/reorder`, { ids: [999999999] }), 400, 'foreign image in reorder');
+  const alt = await api('PATCH', `/api/admin/artwork-images/${a.data.image.id}`, { alt: 'Smoke portrait, front view' });
+  expectStatus(alt, 200, 'edit alt text');
+  const got = await api('GET', `/api/admin/artworks/${portrait}`);
+  expectStatus(got, 200, 'get artwork');
+  const imgs = got.data.artwork.images;
+  expect(imgs.length === 2 && imgs[0].id === b.data.image.id && imgs[1].alt === 'Smoke portrait, front view', `images ${JSON.stringify(imgs)}`);
+
+  const order = await api('POST', `/api/admin/businesses/${state.artSlug}/artworks/reorder`, { ids: [study, portrait] });
+  expectStatus(order, 200, 'reorder artworks');
+  const listed = artworkIdsIn(await api('GET', `/api/admin/businesses/${state.artSlug}/artworks`));
+  expect(listed.indexOf(study) < listed.indexOf(portrait), 'admin list follows the new order');
+  expectStatus(await api('POST', `/api/admin/businesses/${state.artSlug}/artworks/reorder`, { ids: [999999999] }), 400, 'foreign artwork in reorder');
+
+  for (let i = 1; i <= 12; i++) expectStatus(await add(study, { url: `https://example.com/smoke-study-${i}.webp` }), 200, `study photo ${i}`);
+  const thirteenth = await add(study, { url: 'https://example.com/smoke-study-13.webp' });
+  expectStatus(thirteenth, 409, 'a 13th photo');
+  expect(thirteenth.data.code === 'too_many_images', `code ${thirteenth.data.code}`);
+});
+
+await step('Public bundle: artworks, status_text, price_text, artwork_count', async () => {
+  needCatalog();
+  const { portrait, study, draft } = state.artworkIds;
+  const pub = await api('GET', `/api/public/${state.artSlug}`);
+  expectStatus(pub, 200, 'public bundle');
+  const b = pub.data;
+  expect(b.features?.artworks === true && Array.isArray(b.artworks), 'features + artworks');
+  const p = b.artworks.find((x) => x.id === portrait);
+  const s = b.artworks.find((x) => x.id === study);
+  expect(p && s && !b.artworks.some((x) => x.id === draft), 'published pieces only');
+  expect(b.artworks.indexOf(p) < b.artworks.indexOf(s), 'featured first');
+  expect(p.price === 1800 && p.price_text === '$1,800' && p.status === 'available' && p.status_text === 'Available' && p.event_id === state.artEventId
+    && p.artist === 'Smoke Artist' && p.dimensions === '24 × 30 in.' && p.featured === true, `portrait ${JSON.stringify(p)}`);
+  expect(s.price_text === '$950.50', `study price_text ${s.price_text}`);
+  expect(p.images.length === 2 && p.images[0].id === state.imageIds[1] && p.images[0].thumb_url === p.images[0].url
+    && p.images[1].thumb_url === 'https://example.com/smoke-a-thumb.webp' && p.images[1].width === 2000 && p.images[1].height === 1500, `images ${JSON.stringify(p.images)}`);
+  expect(!('published' in p) && !('price_display' in p) && !('sort_order' in p.images[0]), 'no admin-only columns');
+  const ev = b.events.current.find((e) => e.id === state.artEventId);
+  expect(ev && ev.artwork_count === 2, `artwork_count ${ev?.artwork_count}`);
+  const sig = await api('GET', `/api/public/signage/${state.artSlug}`);
+  expect(sig.data.features?.artworks === true && sig.data.artworks.some((x) => x.id === portrait), 'signage bundle carries features + artworks');
+  if (state.plainSlug) {
+    const plain = await api('GET', `/api/public/${state.plainSlug}`);
+    expect(plain.data.features && !plain.data.features.artworks && !('artworks' in plain.data), 'no catalog where the feature is off');
+    expect([...plain.data.events.current, ...plain.data.events.upcoming].every((e) => !('artwork_count' in e)), 'no artwork_count where the feature is off');
+  }
+});
+
+await step('Price rules: sold hides the price, on request, hidden; audit summaries', async () => {
+  needCatalog();
+  const { portrait, study } = state.artworkIds;
+  const sold = await api('PATCH', `/api/admin/artworks/${portrait}`, { status: 'sold' });
+  expectStatus(sold, 200, 'mark sold');
+  expect(sold.data.artwork.status === 'sold' && sold.data.artwork.price === 1800, 'the admin still sees the price');
+  expectStatus(await api('PATCH', `/api/admin/artworks/${study}`, { price: 1200 }), 200, 'change price');
+  expectStatus(await api('PATCH', `/api/admin/artworks/${study}`, { price_display: '' }), 400, 'empty price_display rejected');
+  const find = async () => (await api('GET', `/api/public/${state.artSlug}`)).data.artworks;
+  let pub = await find();
+  const p = pub.find((x) => x.id === portrait);
+  expect(p.status_text === 'Sold' && p.price === null && p.price_text === null, `sold piece ${JSON.stringify({ price: p.price, price_text: p.price_text })}`);
+  expect(pub.find((x) => x.id === study).price_text === '$1,200', 'new price shows');
+  expectStatus(await api('PATCH', `/api/admin/artworks/${study}`, { price_display: 'on_request' }), 200, 'on request');
+  pub = await find();
+  let s = pub.find((x) => x.id === study);
+  expect(s.price_text === 'Price on request' && s.price === null, `on request ${JSON.stringify({ price: s.price, price_text: s.price_text })}`);
+  expectStatus(await api('PATCH', `/api/admin/artworks/${study}`, { price_display: 'hidden', status: 'reserved' }), 200, 'hidden + reserved');
+  pub = await find();
+  s = pub.find((x) => x.id === study);
+  expect(s.price_text === null && s.price === null && s.status_text === 'Reserved', 'hidden price, reserved');
+  const hist = await api('GET', `/api/admin/businesses/${state.artSlug}/history?limit=20`);
+  const summaries = hist.data.entries.map((e) => e.summary);
+  expect(summaries.includes("Marked 'Smoke Portrait' sold"), 'sold summary');
+  expect(summaries.includes("Changed the price of 'Smoke Study 100%' to $1,200"), 'price summary');
+  expect(summaries.includes("Edited 'Smoke Study 100%'"), 'edit summary');
+});
+
+await step('Artwork inquiry form stores the canonical title', async () => {
+  needCatalog();
+  const { portrait, draft } = state.artworkIds;
+  const res = await api('POST', `/api/forms/${state.artSlug}/artwork`, {
+    name: 'Smoke Collector', email: 'collector@example.com', message: 'Is this piece still available?',
+    artwork_id: String(portrait), artwork_title: 'A title the page made up', artwork_artist: 'Someone else',
+  }, { auth: null, headers: FORM_IP });
+  expectStatus(res, 200, 'artwork form');
+  const inq = (await api('GET', `/api/admin/inquiries/${res.data.id}`)).data.inquiry;
+  const f = inq.fields;
+  expect(inq.form_type === 'artwork' && f.artwork_id === String(portrait) && f.artwork_title === 'Smoke Portrait'
+    && f.artwork_artist === 'Smoke Artist' && f.artwork_status === 'Sold', `fields ${JSON.stringify(f)}`);
+  // Any other id (here a draft piece) keeps only artwork_id: a visitor's title, artist and status are dropped.
+  const spoof = { artwork_title: 'Typed by the visitor', artwork_artist: 'Fake', artwork_status: 'Sold' };
+  const other = await api('POST', `/api/forms/${state.artSlug}/artwork`, { email: 'collector@example.com', artwork_id: String(draft), ...spoof }, { auth: null, headers: FORM_IP });
+  expectStatus(other, 200, 'unpublished piece');
+  const otherFields = (await api('GET', `/api/admin/inquiries/${other.data.id}`)).data.inquiry.fields;
+  expect(otherFields.artwork_id === String(draft) && !Object.keys(spoof).some((k) => k in otherFields), `unpublished piece fields ${JSON.stringify(otherFields)}`);
+  // The same goes for every other form type.
+  const contact = await api('POST', `/api/forms/${state.artSlug}/contact`, { email: 'collector@example.com', message: 'Hello', ...spoof, artwork_id: String(portrait) }, { auth: null, headers: FORM_IP });
+  expectStatus(contact, 200, 'contact form');
+  const contactFields = (await api('GET', `/api/admin/inquiries/${contact.data.id}`)).data.inquiry.fields;
+  expect(!Object.keys(spoof).some((k) => k in contactFields), `contact form fields ${JSON.stringify(contactFields)}`);
+  for (const id of [res.data.id, other.data.id, contact.data.id]) await api('PATCH', `/api/admin/inquiries/${id}`, { status: 'handled' });
+});
+
+await step('Artworks: an editor of another business gets 403', async () => {
+  if (state.role === 'editor') return 'skipped (logged in as an editor)';
+  needCatalog();
+  const email = `smoke-art-editor-${Date.now()}@example.com`;
+  const created = await api('POST', '/api/admin/users', { email, name: 'Smoke Art Editor', role: 'editor', businesses: state.plainSlug ? [state.plainSlug] : [], password: EDITOR_PASSWORD });
+  expectStatus(created, 200, 'create editor');
+  state.artEditorId = created.data.user.id;
+  const login = await api('POST', '/api/auth/login', { email, password: EDITOR_PASSWORD }, { auth: null });
+  expectStatus(login, 200, 'editor login');
+  const { portrait } = state.artworkIds;
+  const [imageId] = state.imageIds;
+  const tries = [
+    ['GET', `/api/admin/businesses/${state.artSlug}/artworks`],
+    ['POST', `/api/admin/businesses/${state.artSlug}/artworks`, { title: 'nope' }],
+    ['POST', `/api/admin/businesses/${state.artSlug}/artworks/reorder`, { ids: [portrait] }],
+    ['GET', `/api/admin/artworks/${portrait}`],
+    ['PATCH', `/api/admin/artworks/${portrait}`, { status: 'available' }],
+    ['DELETE', `/api/admin/artworks/${portrait}`],
+    ['POST', `/api/admin/artworks/${portrait}/images`, { url: 'https://example.com/nope.webp' }],
+    ['POST', `/api/admin/artworks/${portrait}/images/reorder`, { ids: state.imageIds }],
+    ['PATCH', `/api/admin/artwork-images/${imageId}`, { alt: 'nope' }],
+    ['DELETE', `/api/admin/artwork-images/${imageId}`],
+  ];
+  for (const [method, path, body] of tries) expectStatus(await api(method, path, body, { auth: login.data.token }), 403, `${method} ${path} as an editor of another business`);
+  const still = (await api('GET', `/api/admin/artworks/${portrait}`)).data.artwork;
+  expect(still.status === 'sold' && still.images.length === 2, 'nothing changed');
+  return `${tries.length} routes refused`;
+});
+
+await step('Delete an artwork, then History → Restore brings its photos back', async () => {
+  needCatalog();
+  const { portrait, study } = state.artworkIds;
+  expectStatus(await api('DELETE', `/api/admin/artworks/${portrait}`), 200, 'delete artwork');
+  expectStatus(await api('GET', `/api/admin/artworks/${portrait}`), 404, 'gone');
+  let pub = (await api('GET', `/api/public/${state.artSlug}`)).data;
+  expect(!pub.artworks.some((x) => x.id === portrait) && pub.events.current.find((e) => e.id === state.artEventId).artwork_count === 1, 'gone from the public bundle');
+  const history = async () => (await api('GET', `/api/admin/businesses/${state.artSlug}/history?limit=50`)).data.entries;
+  let entries = await history();
+  const del = entries.find((e) => e.entity === 'artwork' && e.action === 'delete' && e.entity_id === String(portrait));
+  expect(del && del.summary === "Deleted artwork 'Smoke Portrait' (2 photos)" && del.can_restore, `delete entry ${JSON.stringify(del)}`);
+  expectStatus(await api('POST', `/api/admin/history/${del.id}/restore`), 200, 'restore');
+  const back = await api('GET', `/api/admin/artworks/${portrait}`);
+  expectStatus(back, 200, 'back');
+  const art = back.data.artwork;
+  expect(art.status === 'sold' && art.event_id === state.artEventId && art.images.map((i) => i.id).join() === [state.imageIds[1], state.imageIds[0]].join(), `restored ${JSON.stringify(art)}`);
+  pub = (await api('GET', `/api/public/${state.artSlug}`)).data;
+  expect(pub.artworks.find((x) => x.id === portrait)?.images.length === 2 && pub.events.current.find((e) => e.id === state.artEventId).artwork_count === 2, 'public again, with photos');
+  expectStatus(await api('POST', `/api/admin/history/${del.id}/restore`), 409, 'restoring twice');
+
+  // A removed photo comes back on its own too, and the artwork order can be undone.
+  expectStatus(await api('DELETE', `/api/admin/artwork-images/${state.imageIds[0]}`), 200, 'remove photo');
+  entries = await history();
+  const photo = entries.find((e) => e.entity === 'artwork_image' && e.action === 'delete' && e.entity_id === String(state.imageIds[0]));
+  expect(photo?.summary === "Removed a photo from 'Smoke Portrait'", `photo entry ${photo?.summary}`);
+  expectStatus(await api('POST', `/api/admin/history/${photo.id}/restore`), 200, 'restore photo');
+  expect((await api('GET', `/api/admin/artworks/${portrait}`)).data.artwork.images.length === 2, 'photo back');
+  const reorder = entries.find((e) => e.entity === 'artwork' && e.summary.startsWith('Reordered the artworks'));
+  expect(reorder?.can_restore, 'reorder entry is restorable');
+  expectStatus(await api('POST', `/api/admin/history/${reorder.id}/restore`), 200, 'undo reorder');
+  const listed = artworkIdsIn(await api('GET', `/api/admin/businesses/${state.artSlug}/artworks`));
+  expect(listed.indexOf(portrait) < listed.indexOf(study), 'original order back');
+});
+
+await step('A draft exhibition hides its pieces; deleting and restoring a show keeps them in it', async () => {
+  needCatalog();
+  const ev = await api('POST', `/api/admin/businesses/${state.artSlug}/events`, { title: 'Smoke unannounced show', kind: 'exhibition', start_date: chicagoToday(30), published: false });
+  expectStatus(ev, 200, 'draft exhibition');
+  const showId = ev.data.event.id;
+  state.draftShowId = showId;
+  const made = await api('POST', `/api/admin/businesses/${state.artSlug}/artworks`, { title: 'Smoke Secret Piece', price: 5000, price_display: 'show', event_id: showId });
+  expectStatus(made, 200, 'piece in the draft show');
+  const secret = made.data.artwork.id;
+  state.artworkIds.secret = secret;
+  expectStatus(await api('POST', `/api/admin/artworks/${secret}/images`, { url: 'https://example.com/smoke-secret.webp' }), 200, 'its photo');
+  const bundle = async () => (await api('GET', `/api/public/${state.artSlug}`)).data;
+  let pub = await bundle();
+  expect(!pub.artworks.some((x) => x.id === secret) && !JSON.stringify(pub).includes('smoke-secret.webp'), 'a piece in a draft show is not public, nor its photo');
+  const sig = (await api('GET', `/api/public/signage/${state.artSlug}`)).data;
+  expect(!sig.artworks.some((x) => x.id === secret), 'nor on the TV');
+  // An inquiry naming it is an ordinary one (the visitor cannot have seen it).
+  const inq = await api('POST', `/api/forms/${state.artSlug}/artwork`, { email: 'collector@example.com', artwork_id: String(secret), artwork_title: 'Smoke Secret Piece' }, { auth: null, headers: FORM_IP });
+  expectStatus(inq, 200, 'inquiry naming it');
+  expect(!('artwork_title' in (await api('GET', `/api/admin/inquiries/${inq.data.id}`)).data.inquiry.fields), 'no catalog facts for a hidden piece');
+  await api('PATCH', `/api/admin/inquiries/${inq.data.id}`, { status: 'handled' });
+  // Publishing the show publishes its pieces.
+  expectStatus(await api('PATCH', `/api/admin/events/${showId}`, { published: true }), 200, 'publish the show');
+  pub = await bundle();
+  expect(pub.artworks.find((x) => x.id === secret)?.price_text === '$5,000' && pub.events.upcoming.find((e) => e.id === showId)?.artwork_count === 1, 'public once the show is');
+  // Deleting the show leaves the piece "not in a show"; History → Restore hangs it back.
+  expectStatus(await api('DELETE', `/api/admin/events/${showId}`), 200, 'delete the show');
+  expect((await api('GET', `/api/admin/artworks/${secret}`)).data.artwork.event_id === null, 'piece stays, out of any show');
+  const del = (await api('GET', `/api/admin/businesses/${state.artSlug}/history?limit=20`)).data.entries.find((e) => e.entity === 'event' && e.action === 'delete' && e.entity_id === String(showId));
+  expect(del?.can_restore, 'event delete entry');
+  expect((await api('GET', `/api/admin/history/${del.id}`)).data.entry.before.artwork_ids?.join() === String(secret), 'the entry keeps the piece ids');
+  expectStatus(await api('POST', `/api/admin/history/${del.id}/restore`), 200, 'restore the show');
+  expect((await api('GET', `/api/admin/artworks/${secret}`)).data.artwork.event_id === showId, 'piece back in the show');
+  pub = await bundle();
+  expect(pub.events.upcoming.find((e) => e.id === showId)?.artwork_count === 1, 'and counted on the site again');
+});
+
+await step('Media upload: a generated PNG as variant=full', async () => {
+  needCatalog();
+  const png = tinyPng(3, 2);
+  const upload = async (fields, name = 'Smoke Upload.png') => {
+    const fd = new FormData();
+    fd.append('business', state.artSlug);
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+    fd.append('file', new Blob([png], { type: 'image/png' }), name);
+    const res = await fetch(`${BASE}/api/admin/media`, { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd });
+    return { status: res.status, data: await res.json() };
+  };
+  const res = await upload({ variant: 'full', width: '3', height: '2' });
+  if (res.status === 501) return 'skipped (MEDIA is not bound)';
+  expectStatus(res, 200, 'upload');
+  const { url, key, width, height } = res.data;
+  expect(new RegExp(`^uploads/${state.artSlug}/\\d+-smoke-upload-full\\.png$`).test(key) && width === 3 && height === 2 && url.endsWith(`/api/media/${key}`), `upload answer ${JSON.stringify(res.data)}`);
+  const file = await fetch(`${BASE}/api/media/${key}`);
+  expect(file.status === 200 && file.headers.get('content-type') === 'image/png', `serve: ${file.status} ${file.headers.get('content-type')}`);
+  expect(Buffer.from(await file.arrayBuffer()).equals(png), 'same bytes back');
+  const hist = (await api('GET', `/api/admin/businesses/${state.artSlug}/history?limit=20`)).data.entries;
+  expect(!hist.some((e) => e.entity === 'media' && e.entity_id === key), 'a sized copy writes no History entry of its own');
+  expectStatus(await upload({ variant: 'huge' }), 400, 'unknown variant');
+  expectStatus(await upload({ variant: 'thumb', width: 'wide' }), 400, 'bad width');
+  // The answer's link can go straight onto a piece.
+  const img = await api('POST', `/api/admin/artworks/${state.artworkIds.draft}/images`, { url, thumb_url: url, alt: 'A peach-coloured square', width, height });
+  expectStatus(img, 200, 'uploaded photo added to a piece');
+  return key;
+});
+
 await step('Cleanup: remove test rows', async () => {
   const errors = [];
   const tryDelete = async (path, auth = token) => { const r = await api('DELETE', path, undefined, { auth }); if (r.status !== 200) errors.push(`${path} → ${r.status}`); };
   if (state.sectionId) await tryDelete(`/api/admin/menu/sections/${state.sectionId}`);
   for (const id of state.announcementIds) await tryDelete(`/api/admin/announcements/${id}`);
   if (state.editorId) await tryDelete(`/api/admin/users/${state.editorId}`);
+  for (const id of Object.values(state.artworkIds)) await tryDelete(`/api/admin/artworks/${id}`);
+  if (state.artEventId) await tryDelete(`/api/admin/events/${state.artEventId}`);
+  if (state.draftShowId) await tryDelete(`/api/admin/events/${state.draftShowId}`);
+  if (state.artEditorId) await tryDelete(`/api/admin/users/${state.artEditorId}`);
   if (state.originalHours && state.originalHours.length === 7) {
     const r = await api('PUT', `/api/admin/businesses/${state.slug}/hours`, { hours: state.originalHours });
     if (r.status !== 200) errors.push(`restore hours → ${r.status} ${JSON.stringify(r.data)}`);

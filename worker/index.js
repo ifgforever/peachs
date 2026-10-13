@@ -9,6 +9,7 @@ import * as pub from './lib/public.js';
 import * as forms from './lib/forms.js';
 import * as businesses from './lib/admin-businesses.js';
 import * as events from './lib/admin-events.js';
+import * as artworks from './lib/admin-artworks.js';
 import * as menu from './lib/admin-menu.js';
 import * as announcements from './lib/admin-announcements.js';
 import * as inquiries from './lib/admin-inquiries.js';
@@ -48,6 +49,18 @@ router.get('/api/admin/businesses/:slug/events', admin(events.list));
 router.post('/api/admin/businesses/:slug/events', admin(events.create));
 router.patch('/api/admin/events/:id', admin(events.patch));
 router.delete('/api/admin/events/:id', admin(events.remove));
+
+/* ---------- Admin: artwork catalog (Blanc) ---------- */
+router.get('/api/admin/businesses/:slug/artworks', admin(artworks.list));
+router.post('/api/admin/businesses/:slug/artworks', admin(artworks.create));
+router.post('/api/admin/businesses/:slug/artworks/reorder', admin(artworks.reorder));
+router.get('/api/admin/artworks/:id', admin(artworks.get));
+router.patch('/api/admin/artworks/:id', admin(artworks.patch));
+router.delete('/api/admin/artworks/:id', admin(artworks.remove));
+router.post('/api/admin/artworks/:id/images', admin(artworks.addImage));
+router.post('/api/admin/artworks/:id/images/reorder', admin(artworks.reorderImages));
+router.patch('/api/admin/artwork-images/:id', admin(artworks.patchImage));
+router.delete('/api/admin/artwork-images/:id', admin(artworks.removeImage));
 
 /* ---------- Admin: menu ---------- */
 router.get('/api/admin/businesses/:slug/menu', admin(menu.list));

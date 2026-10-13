@@ -3,6 +3,7 @@ import { bad, json, notFound, readBody, tooMany } from './http.js';
 import { first, insertRow, run } from './db.js';
 import { isEmail } from './validate.js';
 import { deliverInquiry } from './email.js';
+import { ARTWORK_STATUS_TEXT, PUBLIC_ARTWORK_SQL } from './public.js';
 
 const MAX_FIELDS = 20;
 const MAX_FIELD_LENGTH = 5000;
@@ -19,6 +20,35 @@ function sameSiteRedirect(value, base) {
   let target;
   try { target = new URL(value, base); } catch { return null; }
   return target.origin === base.origin ? target.toString() : null;
+}
+
+/** The piece of this business that an "artwork" form names in artwork_id, if the website shows it (see public.js), or null. */
+export async function findArtwork(env, slug, artworkId) {
+  if (!/^\d{1,15}$/.test(artworkId || '')) return null;
+  try {
+    return await first(env, `SELECT a.id, a.title, a.artist, a.status FROM artworks a LEFT JOIN events e ON e.id = a.event_id
+      WHERE a.id = ? AND a.business_slug = ? AND ${PUBLIC_ARTWORK_SQL}`, [Number(artworkId), slug]);
+  } catch (err) {
+    if (/no such table/i.test(String(err?.message))) return null; // before the artworks migration: an ordinary form
+    throw err;
+  }
+}
+
+/**
+ * The fields to store. Title, artist and status of a piece are only ever the Worker's: for a piece the website shows
+ * they come from the catalog (first), and otherwise (any other id, any other form type) whatever the page sent for
+ * them is dropped, so a visitor cannot put words in the inbox that read like catalog facts.
+ */
+function storedFields(extra, artwork) {
+  const { artwork_id, artwork_title, artwork_artist, artwork_status, ...rest } = extra;
+  if (!artwork) return artwork_id ? { artwork_id, ...rest } : rest;
+  return {
+    artwork_id: String(artwork.id),
+    artwork_title: artwork.title,
+    ...(artwork.artist ? { artwork_artist: artwork.artist } : {}),
+    artwork_status: ARTWORK_STATUS_TEXT[artwork.status] || artwork.status,
+    ...rest,
+  };
 }
 
 const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' ? JSON.stringify(v) : String(v)).trim();
@@ -64,6 +94,7 @@ export async function submit(ctx) {
     if (KNOWN.has(key) || key.startsWith('_') || !value) continue;
     extra[key] = value;
   }
+  const artwork = type === 'artwork' ? await findArtwork(ctx.env, slug, extra.artwork_id) : null;
   const id = await insertRow(ctx.env, 'inquiries', {
     business_slug: slug,
     form_type: type,
@@ -71,11 +102,11 @@ export async function submit(ctx) {
     email,
     phone: values.phone || null,
     message: values.message || null,
-    fields_json: JSON.stringify(extra),
+    fields_json: JSON.stringify(storedFields(extra, artwork)),
     source_url: values.source_url || ctx.request.headers.get('Referer') || null,
     ip: ctx.ip,
   });
   const inquiry = await first(ctx.env, 'SELECT * FROM inquiries WHERE id = ?', [id]);
-  const result = await deliverInquiry(ctx.env, business, inquiry);
+  const result = await deliverInquiry(ctx.env, business, inquiry, artwork);
   return finish({ ok: true, id, emailed: result.sent });
 }

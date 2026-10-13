@@ -91,13 +91,27 @@ export async function patch(ctx) {
   return { event: shape(await first(ctx.env, 'SELECT * FROM events WHERE id = ?', [row.id]), ctx) };
 }
 
-/** DELETE /api/admin/events/:id */
+/** Ids of the artworks hanging in an event ([] before the artworks migration has run). */
+async function artworkIdsIn(env, eventId) {
+  try {
+    return (await all(env, 'SELECT id FROM artworks WHERE event_id = ? ORDER BY id', [eventId])).map((r) => r.id);
+  } catch (err) {
+    if (/no such table/i.test(String(err?.message))) return [];
+    throw err;
+  }
+}
+
+/**
+ * DELETE /api/admin/events/:id — its artworks stay, "not in a show" (the database clears their event_id). The
+ * History entry keeps their ids as before.artwork_ids, so Restore hangs them back in the show.
+ */
 export async function remove(ctx) {
   const row = await loadEvent(ctx);
+  const artworkIds = await artworkIdsIn(ctx.env, row.id);
   await run(ctx.env, 'DELETE FROM events WHERE id = ?', [row.id]);
   await audit(ctx, {
     business_slug: row.business_slug, entity: 'event', entity_id: row.id, action: 'delete',
-    summary: `Deleted ${row.kind} ${quote(row.title)}`, before: row,
+    summary: `Deleted ${row.kind} ${quote(row.title)}`, before: artworkIds.length ? { ...row, artwork_ids: artworkIds } : row,
   });
   return { ok: true };
 }

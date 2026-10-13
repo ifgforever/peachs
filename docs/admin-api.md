@@ -199,13 +199,14 @@ Tables `artworks` and `artwork_images` (see `worker/schema.sql`; existing databa
 ```
 Rules:
 - Only `published = 1` artworks, ordered by `featured DESC, sort_order, id`. Images ordered by `sort_order, id`. Artworks with zero images are still listed.
+- A piece whose exhibition is still a draft (`events.published = 0`) is left out too, with its photos and price, until the show is published: a gallery can prepare an unannounced show without putting it online. The admin marks such pieces "Hidden: its exhibition is a draft".
 - `status_text`: available → "Available", reserved → "Reserved", sold → "Sold", not_for_sale → "Not for sale".
 - `price_text`: when `price_display = 'show'` and `price` is set → formatted USD without cents when whole ("$1,800", "$950.50"); `on_request` → "Price on request"; `hidden` → `null`. When `status = 'sold'` or `'not_for_sale'`, `price` and `price_text` are always `null` (never show what a sold piece went for).
 - `event_id` lets a page group pieces under the exhibition from `events`; `null` = not tied to a show ("From the collection").
 - Each event object in `events.current|upcoming|past` gains `artwork_count` (published artworks linked to it) when the feature is on.
 
 ### Forms
-`POST /api/forms/:slug/artwork` is an ordinary form submission (rules above) whose extra fields include `artwork_id` and `artwork_title`. When `artwork_id` is a published artwork of that business, the Worker stores the canonical title, artist and status in `fields_json` (ignoring client-sent title), and the email subject becomes `Inquiry about "<title>" by <artist> · <Business>`. The inquiry `form_type` is `artwork`.
+`POST /api/forms/:slug/artwork` is an ordinary form submission (rules above) whose extra fields include `artwork_id` and `artwork_title`. When `artwork_id` is a published artwork of that business (one the public bundle lists), the Worker stores the canonical title, artist and status in `fields_json` (ignoring client-sent title), and the email subject becomes `Inquiry about "<title>" by <artist> · <Business>`. The inquiry `form_type` is `artwork`.
 
 ### Admin
 All routes check the artwork's (or image's) business with `canEdit`; 403 otherwise. Every write is audited (entities `artwork`, `artwork_image`) and restorable via History.
@@ -222,3 +223,14 @@ All routes check the artwork's (or image's) business with `canEdit`; 403 otherwi
 
 ### Photo upload (shared by events, announcements, artworks)
 The admin shrinks photos **in the browser** before uploading: it draws the file onto a canvas and makes a full-size copy (longest side ≤ 2000 px) and a thumbnail (≤ 640 px), as WebP at quality 0.85 (JPEG 0.88 if the browser cannot encode WebP), keeping the orientation the photo was taken in (`createImageBitmap(file, { imageOrientation: 'from-image' })`). It uploads each with `POST /api/admin/media` (multipart `file`, `business`, and `variant` = `full` | `thumb`). The Worker stores them under `uploads/<slug>/<timestamp>-<name>-<variant>.<ext>` and answers `{ url, key, width, height }` (width/height echoed from optional form fields). HEIC files the browser cannot decode get a plain-language error ("This photo format isn't supported by this browser. On iPhone, set Camera → Formats → Most Compatible, or upload a JPEG.").
+
+### Notes where the contract left room (as built)
+- Public `price` is a number only when `price_text` shows an amount; under `on_request` or `hidden` it is `null`. A public image without `thumb_url` gets `url` as its thumbnail (the admin shape returns the stored value).
+- `counts.artworks_available` counts `status = 'available'`, published or not. The admin list is ordered `sort_order, id`; the public list puts featured pieces first.
+- Reorder may send a subset of ids (e.g. one exhibition's pieces); each gets its position. The history entry stores `{ order: { id: sort_order } }` with `entity_id` null and restores it exactly.
+- Photo links also accept absolute links to this Worker's own `/api/media/...` (its origin or `PUBLIC_BASE_URL`), which is what uploads return. Links are judged as a browser resolves them: a path must already be in plain form (no `..` segments, encoded or not), an absolute link must start with `https://` (or `http://` for this Worker's own media), and absolute links are stored normalized (`URL.href`).
+- The artwork form stores `artwork_status` as readable text ("Sold"). `artwork_title`, `artwork_artist` and `artwork_status` are only ever written by the Worker: for an `artwork_id` that is not a piece the website shows (or on any other form type) the visitor's values for them are dropped, `artwork_id` is kept, and the email keeps the generic subject. The admin inbox names the piece only when `form_type` is `artwork` and `artwork_status` is present. "Resend email" uses the artwork subject too while the piece is still public.
+- Uploads without `variant` keep the old key shape `<timestamp>-<name>.<ext>`; the extension always comes from the file type. A bad `variant`, `width` or `height` is a 400.
+- Before the migration has run, `GET /api/admin/businesses`, the public and signage bundles (even with `features.artworks` switched on: no `artworks` then) and artwork forms still work (no catalog, ordinary inquiry); the artwork routes answer 500 `database_missing`.
+- Deleting an event clears `event_id` on its artworks (they stay, "not in a show"). Its History entry keeps their ids as `before.artwork_ids`, and Restore links back those still not in another show.
+- Uploads sent with a `variant` write no History entry of their own (the artwork photo, or the saved event or announcement link, records the change); uploads without one still write "Uploaded photo …".

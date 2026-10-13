@@ -55,8 +55,8 @@
 //                                 title · subtitle · description · date_text · time_text · location ·
 //                                 link · image · kind · status. data-live-limit / data-live-offset
 //                                 slice the list. Hidden when empty; a sibling [data-live-events-empty]
-//                                 is shown instead. Clone roots get .is-current/.is-upcoming/.is-past and
-//                                 .is-featured.
+//                                 is shown instead. Clone roots get .is-current/.is-upcoming/.is-past,
+//                                 .is-featured and data-event-id (so a page script can add to one event).
 //
 //   Clone fields: [data-field="…"] inside the template. A null value hides the element, or its
 //   [data-field-group] ancestor when it has one (so a <dt>/<dd> pair hides together). "link" on an <a>
@@ -68,6 +68,8 @@
 //   [data-live-menu]              marks a page with a menu; bundle.menu is handed to options.renderMenu.
 //
 //   document receives a "live:hydrated" CustomEvent ({ slug, bundle, fromCache }) after each hydration.
+//   A classic page script that loads after the first (cached) hydration can catch up with
+//   import(liveScript.src).then((live) => live.liveBundle(slug)), then listen for the event.
 //
 // Every value goes in through textContent or setAttribute: API data never reaches innerHTML.
 
@@ -419,6 +421,7 @@ function fillEvent(frag, ev) {
   for (const node of frag.children) {
     node.classList.add(`is-${ev.status}`);
     if (ev.featured) node.classList.add('is-featured');
+    if (ev.id != null) node.setAttribute('data-event-id', String(ev.id));
   }
 }
 
@@ -457,7 +460,7 @@ function applyAnnouncements(root, bundle) {
 }
 
 /** Re-buckets by today's date so a cached bundle does not keep yesterday's "upcoming". */
-function bucketEvents(events, today) {
+export function bucketEvents(events, today) {
   const all = [];
   for (const key of ['current', 'upcoming', 'past']) for (const ev of events?.[key] || []) all.push(ev);
   const out = { current: [], upcoming: [], past: [] };

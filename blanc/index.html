@@ -126,6 +126,7 @@
       <nav class="site-nav" id="site-nav" aria-label="Main">
         <ul>
           <li><a href="#now">Now</a></li>
+          <li data-artworks-nav hidden><a href="#artworks">Artworks</a></li>
           <li><a href="#exhibitions">Exhibitions</a></li>
           <li><a href="#about">About</a></li>
           <li><a href="#programs">Programs</a></li>
@@ -217,6 +218,19 @@
           <p>The exhibition features quilts and textile works that physically stitch together photographs, fabric, and archival materials: an embodied practice that transforms fragmented histories into living narratives and centers intimacy, memory, and relational knowledge.</p>
           <p class="muted small">Jalen Hamilton’s first solo exhibition, <em>To Whom This Ground Belongs</em>, opened at Blanc in 2022. He co-facilitated Blanc’s Deeply Curious Residency (III).</p>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ ARTWORKS ============
+         The catalog from the admin (features.artworks). There is no static fallback: the section and its
+         nav link stay hidden until the live data has at least one piece. js/main.js renders the groups. -->
+    <section class="section artworks" id="artworks" aria-labelledby="artworks-title" data-artworks hidden>
+      <div class="wrap">
+        <div class="section-head">
+          <h2 class="section-title" id="artworks-title">Artworks</h2>
+          <p class="section-sub">Works on view now, coming up and from past exhibitions. Choose a piece to see it larger and to ask the gallery about it.</p>
+        </div>
+        <div class="art-groups" data-artworks-groups></div>
       </div>
     </section>
 
@@ -593,6 +607,84 @@
       </div>
     </div>
   </footer>
+
+  <!-- Artwork viewer: filled by js/main.js from the live data (text only, never markup) -->
+  <dialog class="viewer" id="art-viewer" aria-modal="true" aria-labelledby="viewer-title">
+    <div class="viewer__layout">
+      <div class="viewer__top">
+        <p class="viewer__count" data-viewer-count aria-live="polite"></p>
+        <button class="viewer__close" type="button" data-viewer-close>Close<span class="sr-only"> the artwork viewer</span><span class="viewer__x" aria-hidden="true">&times;</span></button>
+      </div>
+      <div class="viewer__stage" data-viewer-stage>
+        <img class="viewer__img" data-viewer-img alt="">
+        <p class="viewer__noimg" data-viewer-noimg hidden>Photo coming soon</p>
+        <button class="viewer__step viewer__step--prev" type="button" data-viewer-prev aria-label="Previous image">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+        <button class="viewer__step viewer__step--next" type="button" data-viewer-next aria-label="Next image">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+      </div>
+      <ul class="viewer__thumbs" role="list" aria-label="Photos of this piece" data-viewer-thumbs></ul>
+      <div class="viewer__caption">
+        <p class="eyebrow viewer__show" data-viewer-show></p>
+        <p class="viewer__artist" data-viewer-artist></p>
+        <h2 class="viewer__title" id="viewer-title" data-viewer-title></h2>
+        <p class="viewer__details" data-viewer-details></p>
+        <p class="viewer__sale" data-viewer-sale></p>
+        <div class="viewer__desc" data-viewer-desc></div>
+        <button class="btn viewer__ask" type="button" data-viewer-ask>Ask about this piece</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Artwork inquiry: posts to the admin's Inquiries (form type "artwork") -->
+  <dialog class="ask" id="art-ask" aria-modal="true" aria-labelledby="ask-title">
+    <div class="ask__panel">
+      <div class="ask__head">
+        <h2 class="ask__title" id="ask-title" data-ask-title>Ask about this piece</h2>
+        <button class="ask__close" type="button" data-ask-close aria-label="Close">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+        </button>
+      </div>
+      <p class="ask__piece" data-ask-piece></p>
+      <form class="ask__form" data-ask-form>
+        <div class="field">
+          <label for="ask-name">Your name</label>
+          <input id="ask-name" name="name" type="text" autocomplete="name" required maxlength="200">
+        </div>
+        <div class="field">
+          <label for="ask-email">Email</label>
+          <input id="ask-email" name="email" type="email" autocomplete="email" required maxlength="200">
+        </div>
+        <div class="field">
+          <label for="ask-phone">Phone <span class="field__opt">(optional)</span></label>
+          <input id="ask-phone" name="phone" type="tel" autocomplete="tel" maxlength="40">
+        </div>
+        <div class="field">
+          <label for="ask-message">Message</label>
+          <textarea id="ask-message" name="message" rows="4" required maxlength="4000"></textarea>
+        </div>
+        <!-- Left empty by people; bots fill it in -->
+        <div class="field--hp" aria-hidden="true">
+          <label for="ask-website">Website</label>
+          <input id="ask-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+        <p class="ask__error" role="alert" data-ask-error hidden></p>
+        <div class="actions">
+          <button class="btn" type="submit">Send</button>
+          <button class="btn btn--ghost" type="button" data-ask-close>Cancel</button>
+        </div>
+      </form>
+      <div class="ask__done" data-ask-done tabindex="-1" hidden>
+        <p class="ask__done-title">Thank you.</p>
+        <p data-ask-done-text></p>
+        <div class="actions">
+          <button class="btn" type="button" data-ask-close>Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 
   <script src="js/main.js" defer></script>
 </body>

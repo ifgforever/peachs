@@ -29,13 +29,19 @@ export async function sendEmail(env, { to, subject, text, html, replyTo }) {
   }
 }
 
-const FORM_LABELS = { contact: 'contact', quote: 'quote request', event: 'event inquiry', wholesale: 'wholesale inquiry', apply: 'job application' };
+const FORM_LABELS = { contact: 'contact', quote: 'quote request', event: 'event inquiry', wholesale: 'wholesale inquiry', apply: 'job application', artwork: 'artwork inquiry' };
 
-/** Builds the staff notification for an inquiries row: every field, the business, Chicago time, admin link. */
-export function inquiryEmail(env, business, inquiry) {
+/** 'Inquiry about "Untitled" by Raja'Nee Hamilton · Blanc Gallery' */
+export const artworkSubject = (artwork, business) => `Inquiry about "${artwork.title}"${artwork.artist ? ` by ${artwork.artist}` : ''} · ${business.name}`;
+
+/**
+ * Builds the staff notification for an inquiries row: every field, the business, Chicago time, admin link.
+ * `artwork` (the published piece an artwork form names, see forms.js findArtwork) gives the subject its title.
+ */
+export function inquiryEmail(env, business, inquiry, artwork = null) {
   const kind = FORM_LABELS[inquiry.form_type] || `${inquiry.form_type} form`;
   const who = inquiry.name || inquiry.email || 'someone';
-  const subject = `${business.name}: new ${kind} from ${who}`;
+  const subject = artwork ? artworkSubject(artwork, business) : `${business.name}: new ${kind} from ${who}`;
   const when = chicagoLong(inquiry.created_at ? new Date(`${inquiry.created_at.replace(' ', 'T')}Z`) : new Date());
   const rows = [
     ['Business', business.name],
@@ -73,9 +79,9 @@ export function inquiryEmail(env, business, inquiry) {
 }
 
 /** Emails an inquiry to the business's inboxes and records the result on the row. */
-export async function deliverInquiry(env, business, inquiry) {
+export async function deliverInquiry(env, business, inquiry, artwork = null) {
   const to = String(business.inquiry_emails || '').split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
-  const result = to.length ? await sendEmail(env, { to, ...inquiryEmail(env, business, inquiry) }) : { sent: false, reason: 'no_recipients' };
+  const result = to.length ? await sendEmail(env, { to, ...inquiryEmail(env, business, inquiry, artwork) }) : { sent: false, reason: 'no_recipients' };
   if (result.sent) {
     await run(env, "UPDATE inquiries SET emailed_at = datetime('now'), email_error = NULL WHERE id = ?", [inquiry.id]);
   } else {

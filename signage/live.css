@@ -8,6 +8,8 @@
    Text pairs checked for WCAG AA at display sizes: espresso on cream 15.9:1 ·
    cream on espresso 15.9:1 · butter on espresso 11.6:1 · orange-ink on cream 5.3:1 ·
    espresso on butter 11.6:1 · espresso on peach 9.4:1
+   Gallery scenes (dark wall #1E1C1A, lightest spot #2B2825): wall-ink 14.8:1 / 12.8:1 ·
+   wall-soft 8.5:1 / 7.3:1 · wall-faint 5.6:1 / 4.8:1 · sold dot 4.6:1 (graphic, next to the word "Sold")
    ========================================================================== */
 
 :root {
@@ -31,6 +33,15 @@
   --f-display: 'Bebas Neue', 'Oswald', Impact, 'Arial Narrow', sans-serif;
   --f-serif: 'Fraunces', Georgia, 'Times New Roman', serif;
   --f-sans: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --f-gallery: 'Instrument Serif', 'Fraunces', Georgia, 'Times New Roman', serif;   /* Blanc Gallery's display face */
+
+  /* Gallery wall (artwork scenes): a dark, warm grey so the work carries the colour */
+  --wall: #1E1C1A;
+  --wall-ink: #F3EFE8;
+  --wall-soft: #BDB6AC;
+  --wall-faint: #9A9389;
+  --wall-line: rgba(243, 239, 232, 0.16);
+  --sold: #E5533F;
 
   --gutter: 120px;
   --fade: 900ms;
@@ -214,6 +225,100 @@ img { display: block; max-width: 100%; }
 .s-notice .text { margin-top: 44px; max-width: 1560px; font-family: var(--f-serif); font-weight: 500; font-size: 92px; line-height: 1.12; letter-spacing: -0.01em; }
 .s-notice .text.is-long { font-size: 68px; line-height: 1.2; }
 .s-notice .until { margin-top: 44px; font-size: 36px; font-weight: 600; color: var(--espresso-2); }
+
+/* ---------- 2b. Gallery: exhibition title card and one artwork per scene ---------- */
+.s-gallery {
+  --spot: 50% 42%;                         /* where the soft "gallery light" falls on the wall */
+  background: var(--wall) radial-gradient(110% 90% at var(--spot), #2B2825 0%, var(--wall) 58%, #161513 100%);
+  color: var(--wall-ink);
+}
+.g-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.7em;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--wall-faint);
+}
+.g-eyebrow::before { content: ''; flex: none; width: 40px; height: 2px; background: currentColor; }
+
+.s-exhibition { display: flex; flex-direction: column; justify-content: center; padding: 0 160px 40px; }
+.s-exhibition .g-eyebrow { font-size: 30px; color: var(--wall-soft); }
+.g-title { margin-top: 40px; max-width: 1560px; font-family: var(--f-gallery); font-weight: 400; font-size: 168px; line-height: 1; letter-spacing: -0.01em; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.g-title.is-long { font-size: 124px; line-height: 1.04; -webkit-line-clamp: 4; }
+.g-sub { margin-top: 40px; max-width: 1400px; font-size: 42px; line-height: 1.3; color: var(--wall-soft); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.g-dates { margin-top: 30px; font-size: 40px; font-weight: 600; letter-spacing: 0.01em; }
+.g-house { position: absolute; left: 160px; bottom: 100px; font-size: 24px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: var(--wall-faint); }
+
+/* The photo hangs in a box on the wall: right of the label ("side"), or above it for wide work ("wide").
+   live.js sizes the image to fit; the box sizes here must match ART_BOX in live.js. */
+.s-art { padding: 0; }
+.s-art--side { --spot: 65% 50%; }
+.s-art--wide { --spot: 50% 38%; }
+.art__wall { position: absolute; display: flex; align-items: center; justify-content: center; }
+.s-art--side .art__wall { left: 676px; top: 72px; width: 1148px; height: 904px; }
+.s-art--wide .art__wall { left: 96px; top: 64px; width: 1728px; height: 676px; }
+.art__img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  box-shadow: 0 36px 70px -30px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(243, 239, 232, 0.05);
+  /* Ken Burns: a slow, small zoom over the scene's time (live.js sets the duration and origin) */
+  animation: kenburns 14s linear both;
+  will-change: transform;
+}
+@keyframes kenburns { from { transform: scale(1); } to { transform: scale(1.045); } }
+@media (prefers-reduced-motion: reduce) {
+  .art__img { animation: none; }
+}
+
+/* Wall label */
+.art__label { position: absolute; }
+.s-art--side .art__label { left: 96px; top: 80px; bottom: 112px; width: 500px; display: flex; flex-direction: column; justify-content: space-between; }
+.s-art--wide .art__label { left: 96px; right: 96px; top: 774px; }    /* ends above the corner clock */
+.art__title {
+  font-family: var(--f-gallery);
+  font-style: italic;
+  font-weight: 400;
+  font-size: 68px;
+  line-height: 1.04;
+  letter-spacing: -0.005em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+.art__title.is-long { font-size: 54px; }
+.art__artist { margin-top: 20px; font-size: 34px; font-weight: 600; line-height: 1.25; }
+.art__facts { margin-top: 30px; padding-top: 26px; border-top: 2px solid var(--wall-line); }
+.art__meta { font-size: 28px; line-height: 1.4; color: var(--wall-soft); }
+.art__meta + .art__meta { margin-top: 6px; }
+.art__sold { display: flex; align-items: center; gap: 14px; margin-top: 22px; font-size: 28px; font-weight: 600; }
+.art__dot { flex: none; width: 22px; height: 22px; border-radius: 50%; background: var(--sold); }
+.art__show .g-eyebrow { font-size: 22px; }
+.art__showname {
+  margin-top: 14px;
+  font-family: var(--f-gallery);
+  font-size: 34px;
+  line-height: 1.15;
+  color: var(--wall-soft);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+/* Wide: one line for the show, then title and artist with the facts beside them, under the photo */
+.s-art--wide .art__show { display: flex; align-items: center; gap: 22px; }
+.s-art--wide .art__showname { margin: 0; font-size: 30px; -webkit-line-clamp: 1; }
+.s-art--wide .art__text { display: flex; align-items: flex-end; gap: 64px; margin-top: 22px; }
+.s-art--wide .art__main { min-width: 0; max-width: 1060px; }
+.s-art--wide .art__title { font-size: 60px; -webkit-line-clamp: 2; }
+.s-art--wide .art__title.is-long { font-size: 48px; }
+.s-art--wide .art__artist { margin-top: 12px; }
+.s-art--wide .art__facts { flex: none; max-width: 640px; margin: 0 0 4px; padding: 0 0 0 40px; border-top: 0; border-left: 2px solid var(--wall-line); }
+.s-art--wide .art__sold { margin-top: 12px; }
 
 /* ---------- 3. Announcements ---------- */
 .s-announce { background: var(--espresso); color: var(--cream); display: flex; align-items: center; }

@@ -7,6 +7,7 @@ import { assertCanEdit, requireBusiness, requireManager } from './auth.js';
 import { audit } from './audit.js';
 import { BUSINESS_EDITABLE, saveHours } from './admin-businesses.js';
 import { EVENT_COLUMNS } from './admin-events.js';
+import { ARTWORK_COLUMNS, IMAGE_COLUMNS, MAX_IMAGES, sortStatements } from './admin-artworks.js';
 import { ITEM_COLUMNS, SECTION_COLUMNS, orderStatements } from './admin-menu.js';
 import { ANNOUNCEMENT_COLUMNS } from './admin-announcements.js';
 import { USER_COLUMNS, isLastActiveOwner } from './admin-users.js';
@@ -47,7 +48,7 @@ function tableRestorer(table, columns, hooks = {}) {
     if (entry.action === 'delete') {
       if (current) throw alreadyBack();
       await recreate(ctx, table, { id, ...pick(before || {}, columns) });
-      if (hooks.afterRecreate) await hooks.afterRecreate(ctx, before);
+      if (hooks.afterRecreate) await hooks.afterRecreate(ctx, before, entry);
       return null;
     }
     if (!current) throw conflict('That item was already removed.', 'restore_target_missing');
@@ -56,6 +57,49 @@ function tableRestorer(table, columns, hooks = {}) {
     return snapshot;
   };
 }
+
+/** Reorder entries of the catalog keep { order: { id: sort_order } }; putting them back returns the order they replace. */
+async function restoreOrder(ctx, table, before, scopeSql, scopeBind) {
+  const ids = Object.keys(before.order).map(Number);
+  if (!ids.length) throw bad('There is nothing to restore in this entry.', 'not_restorable');
+  // json_each rather than one ? per id: D1 binds at most 100 values, and a catalog can hold more pieces than that.
+  const rows = await all(ctx.env, `SELECT id, sort_order FROM ${table} WHERE ${scopeSql} AND id IN (SELECT value FROM json_each(?))`, [scopeBind, JSON.stringify(ids)]);
+  if (!rows.length) throw missing();
+  await batch(ctx.env, sortStatements(ctx.env, table, before.order, scopeSql, scopeBind));
+  return { ...before, order: Object.fromEntries(rows.map((r) => [r.id, r.sort_order])) };
+}
+
+const isReorder = (entry, before) => entry.action === 'update' && before?.order && typeof before.order === 'object';
+
+const artworkRows = tableRestorer('artworks', ARTWORK_COLUMNS, {
+  // A piece whose exhibition has been deleted since comes back "from the collection" instead of failing.
+  async check(ctx, entry, current, before) {
+    if (before?.event_id != null && !(await first(ctx.env, 'SELECT id FROM events WHERE id = ? AND business_slug = ?', [before.event_id, entry.business_slug]))) {
+      before.event_id = null;
+    }
+  },
+  // A deleted piece comes back with its photos (same ids and order); removing a created piece takes its photos along.
+  async afterRecreate(ctx, before) {
+    const images = Array.isArray(before?.images) ? before.images : [];
+    for (const image of images) await recreate(ctx, 'artwork_images', { id: image.id, ...pick(image, IMAGE_COLUMNS) });
+  },
+  async beforeRemove(ctx, current) {
+    const images = await all(ctx.env, 'SELECT * FROM artwork_images WHERE artwork_id = ? ORDER BY sort_order, id', [current.id]);
+    await run(ctx.env, 'DELETE FROM artwork_images WHERE artwork_id = ?', [current.id]);
+    return { ...current, images };
+  },
+});
+
+const artworkImageRows = tableRestorer('artwork_images', IMAGE_COLUMNS, {
+  // A deleted photo only comes back onto its own piece, and only while that piece has room for it.
+  async check(ctx, entry, current, before) {
+    if (entry.action !== 'delete' || current) return;
+    const piece = await first(ctx.env, 'SELECT id FROM artworks WHERE id = ? AND business_slug = ?', [Number(before?.artwork_id) || 0, entry.business_slug]);
+    if (!piece) throw conflict('It could not be recreated: the piece it belonged to is gone.', 'restore_conflict');
+    const { n } = await first(ctx.env, 'SELECT COUNT(*) AS n FROM artwork_images WHERE artwork_id = ?', [piece.id]);
+    if (n >= MAX_IMAGES) throw conflict(`That piece already has ${MAX_IMAGES} photos. Remove one first.`, 'too_many_images');
+  },
+});
 
 const RESTORERS = {
   async business(ctx, entry, before) {
@@ -76,7 +120,15 @@ const RESTORERS = {
   },
 
   hours_exception: tableRestorer('hours_exceptions', EXCEPTION_COLUMNS),
-  event: tableRestorer('events', EVENT_COLUMNS),
+  event: tableRestorer('events', EVENT_COLUMNS, {
+    // A deleted exhibition gets its artworks back, apart from any staff have since put in another show.
+    async afterRecreate(ctx, before, entry) {
+      const ids = (Array.isArray(before?.artwork_ids) ? before.artwork_ids : []).map(Number).filter(Number.isInteger);
+      if (!ids.length) return;
+      await run(ctx.env, `UPDATE artworks SET event_id = ? WHERE event_id IS NULL AND business_slug = ?
+        AND id IN (SELECT value FROM json_each(?))`, [Number(entry.entity_id), entry.business_slug, JSON.stringify(ids)]);
+    },
+  }),
   announcement: tableRestorer('announcements', ANNOUNCEMENT_COLUMNS),
   inquiry: tableRestorer('inquiries', INQUIRY_COLUMNS),
 
@@ -93,6 +145,15 @@ const RESTORERS = {
     },
   }),
   menu_item: tableRestorer('menu_items', ITEM_COLUMNS),
+
+  artwork(ctx, entry, before, after) {
+    if (isReorder(entry, before)) return restoreOrder(ctx, 'artworks', before, 'business_slug = ?', entry.business_slug);
+    return artworkRows(ctx, entry, before, after);
+  },
+  artwork_image(ctx, entry, before, after) {
+    if (isReorder(entry, before)) return restoreOrder(ctx, 'artwork_images', before, 'artwork_id = ?', Number(before.artwork_id) || 0);
+    return artworkImageRows(ctx, entry, before, after);
+  },
 
   async menu(ctx, entry, before) {
     if (entry.action !== 'update' || !before) throw bad('Menu order can only be restored from a reorder.', 'not_restorable');

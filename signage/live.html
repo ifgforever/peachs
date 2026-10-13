@@ -9,12 +9,13 @@
   Live in-store screen, 1920x1080, scaled to fit whatever TV it lands on.
   Reads GET {api}/api/public/signage/{business} every 5 minutes and rotates through
   welcome / notice / announcements / featured dishes / menu board / catering / events / closing.
+  Businesses with the artwork catalog (Blanc) also get an exhibition title card and one scene per artwork.
   Query params: ?business=peachs (default) · ?api=https://worker.example.com (default: same origin)
   Press "d" for the debug overlay. Setup for the TVs is in signage/README.md (Option B).
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
 <link rel="stylesheet" href="live.css">
 </head>
 <body>

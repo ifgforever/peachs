@@ -5,7 +5,7 @@ import { readFields, readHoursRow } from './validate.js';
 import { assertCanEdit, canEdit, requireBusiness } from './auth.js';
 import { audit, changedKeys, fieldLabels, listWords } from './audit.js';
 import { DAY_LABELS, hoursSummary, hoursText, shapeHours, shortDate } from './time.js';
-import { shapeException } from './public.js';
+import { parseFeatures, shapeException } from './public.js';
 
 export const BUSINESS_FIELDS = {
   name: { type: 'text', required: true, max: 120 },
@@ -35,22 +35,43 @@ export const BUSINESS_EDITABLE = Object.keys(BUSINESS_FIELDS);
 const shapeBusiness = (row) => withIsoTimes(row);
 const displayName = (b) => b.short_name || b.name;
 
+/** Artworks per business (all, and status "available"); none until the artworks migration has run, so the admin keeps working. */
+async function artworkCounts(env) {
+  try {
+    return await all(env, "SELECT business_slug, COUNT(*) AS n, SUM(status = 'available') AS available FROM artworks GROUP BY business_slug");
+  } catch (err) {
+    if (/no such table/i.test(String(err?.message))) return [];
+    throw err;
+  }
+}
+
 /** GET /api/admin/businesses */
 export async function list(ctx) {
   const today = ctx.now.date;
-  const [biz, hours, inquiries, events] = await batch(ctx.env, [
+  const [biz, hours, inquiries, events, features] = await batch(ctx.env, [
     stmt(ctx.env, 'SELECT * FROM businesses ORDER BY sort_order, slug'),
     stmt(ctx.env, 'SELECT * FROM hours'),
     stmt(ctx.env, "SELECT business_slug, COUNT(*) AS n FROM inquiries WHERE status = 'new' GROUP BY business_slug"),
     stmt(ctx.env, `SELECT business_slug, SUM(start_date > ?) AS upcoming, SUM(start_date <= ? AND COALESCE(end_date, start_date) >= ?) AS current
       FROM events WHERE published = 1 AND COALESCE(end_date, start_date) >= ? GROUP BY business_slug`, [today, today, today, today]),
+    stmt(ctx.env, "SELECT key, value_json FROM settings WHERE key LIKE 'features:%'"),
   ]);
+  const artworks = await artworkCounts(ctx.env);
   const count = (rows, slug, col = 'n') => rows.find((r) => r.business_slug === slug)?.[col] || 0;
+  const featureJson = new Map(features.results.map((r) => [r.key.slice('features:'.length), r.value_json]));
   const businesses = biz.results.filter((b) => canEdit(ctx.user, b.slug)).map((b) => ({
     ...shapeBusiness(b),
     hours_summary: hoursSummary(shapeHours(hours.results.filter((h) => h.business_slug === b.slug))),
+    features: parseFeatures(featureJson.get(b.slug)),
     // Published events only, as the public sites bucket them: upcoming starts after today, current is on now.
-    counts: { new_inquiries: count(inquiries.results, b.slug), upcoming_events: count(events.results, b.slug, 'upcoming'), current_events: count(events.results, b.slug, 'current') },
+    // Artworks count every piece whatever its status or published flag; artworks_available those marked available.
+    counts: {
+      new_inquiries: count(inquiries.results, b.slug),
+      upcoming_events: count(events.results, b.slug, 'upcoming'),
+      current_events: count(events.results, b.slug, 'current'),
+      artworks: count(artworks, b.slug),
+      artworks_available: count(artworks, b.slug, 'available'),
+    },
   }));
   return { businesses };
 }

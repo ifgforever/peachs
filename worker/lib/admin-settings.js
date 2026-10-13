@@ -7,6 +7,8 @@ import { audit } from './audit.js';
 const KEY_RE = /^[a-z0-9][a-z0-9:_.-]{0,79}$/i;
 const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' };
 const MAX_UPLOAD = 8 * 1024 * 1024;
+const VARIANTS = ['full', 'thumb'];
+const MAX_DIMENSION = 100000;
 
 const signageSlug = (key) => (key.startsWith('signage:') ? key.slice('signage:'.length) : null);
 
@@ -55,8 +57,24 @@ export async function writeSetting(env, key, value) {
    Media (R2). Without the MEDIA binding uploads answer 501 and the admin shows a URL field instead.
    ------------------------------------------------------------------------- */
 const safeName = (name) => String(name || 'photo').toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'photo';
+/** "IMG 1234.HEIC.jpg" → "img-1234" (the extension comes from the file type instead). */
+const baseName = (name) => safeName(name).replace(/(\.[a-z0-9]{1,5})+$/, '').replace(/[._-]+$/, '') || 'photo';
 
-/** POST /api/admin/media multipart { file, business } → { url } */
+/** An optional width/height form field: a positive whole number, or null when it was left out. */
+function dimension(form, key) {
+  const raw = form.get(key);
+  if (raw == null || String(raw).trim() === '') return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_DIMENSION) throw bad(`${key} must be a whole number of pixels.`, 'invalid_field');
+  return n;
+}
+
+/**
+ * POST /api/admin/media multipart { file, business, variant?, width?, height? } → { url, key, width, height }.
+ * The admin uploads a browser-resized "full" copy and a "thumb" of each photo; the key is
+ * uploads/<slug>/<timestamp>-<name>-<variant>.<ext> (no "-<variant>" when none was sent). Only uploads without a
+ * variant write a History entry of their own.
+ */
 export async function upload(ctx) {
   if (!ctx.env.MEDIA) throw notConfigured('Photo uploads are not set up. Paste an image link instead.', 'media_not_configured');
   const type = (ctx.request.headers.get('Content-Type') || '').toLowerCase();
@@ -70,14 +88,19 @@ export async function upload(ctx) {
   const ext = IMAGE_TYPES[file.type];
   if (!ext) throw bad('Photos must be JPEG, PNG, WebP or GIF.', 'unsupported_type');
   if (file.size > MAX_UPLOAD) throw bad('Photos must be 8 MB or smaller.', 'too_large');
-  let name = safeName(file.name);
-  if (!name.includes('.')) name += `.${ext}`;
+  const variant = String(form.get('variant') || '').trim() || null;
+  if (variant && !VARIANTS.includes(variant)) throw bad('variant must be full or thumb.', 'invalid_field');
+  const width = dimension(form, 'width');
+  const height = dimension(form, 'height');
+  const name = `${baseName(file.name)}${variant ? `-${variant}` : ''}.${ext}`;
   const key = `uploads/${slug}/${Date.now()}-${name}`;
   await ctx.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: file.type } });
   // An absolute link, so a copy of a site hosted elsewhere (GitHub Pages) shows the photo too.
   const url = new URL(`/api/media/${key}`, ctx.env.PUBLIC_BASE_URL || ctx.url.origin).toString();
-  await audit(ctx, { business_slug: slug, entity: 'media', entity_id: key, action: 'create', summary: `Uploaded photo ${name}`, after: { key, url, size: file.size, type: file.type } });
-  return { url };
+  // A sized copy (variant) is only half of a photo: the artwork photo, or the saved event or announcement link, gets
+  // the History entry. Without that rule every artwork photo wrote three rows and pushed real changes off the page.
+  if (!variant) await audit(ctx, { business_slug: slug, entity: 'media', entity_id: key, action: 'create', summary: `Uploaded photo ${name}`, after: { key, url, size: file.size, type: file.type, width, height } });
+  return { url, key, width, height };
 }
 
 /** GET /api/media/<key> — public, cached for a year. */

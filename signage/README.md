@@ -142,6 +142,35 @@ The `signage:peachs` setting is a small JSON object. Only `seconds_per_scene` is
 
 The same page works for any business: `live.html?business=blanc` reads Blanc's data (the brand screen then shows the name in type instead of the Peach's logo).
 
+### Blanc gallery screen
+
+```
+https://peachs.tvinstallchicago.workers.dev/signage/live.html?business=blanc
+```
+
+Blanc's screen is the same page with a gallery slideshow added (any business with the artwork catalog switched on gets it):
+
+1. **Welcome**: name, open/closed, today's and the week's hours.
+2. **Title card**: "Now showing", the exhibition's title and dates (for example "Sep 19 – Nov 1, 2026").
+3. **One scene per artwork** in the current exhibition: the main photo large on a dark gallery wall, with a slow, slight zoom (none on players or computers set to reduce motion), and a wall label: title, artist, year · medium, dimensions, and a small red dot with "Sold" for sold pieces. **Prices are never shown on the TV**, whatever the website shows.
+4. Then the usual scenes: catering, Coming up, closing.
+
+If no exhibition is on right now, the slideshow shows the next exhibition's pieces ("Coming soon"); if that has none either, the pieces marked Featured ("From the collection"). Up to 20 artworks play per round; with more, the next round shows the next 20, and so on.
+
+How to control it, all in the admin (Blanc → Artworks):
+
+| To | Do this |
+|---|---|
+| Put a piece on the screen | Tick **Published**, pick its **Exhibition**, and add at least one photo (the first photo is the one shown). Pieces without a photo are left out |
+| Change the order | Featured pieces come first, then the order on the Artworks page |
+| Show the red dot | Set **Status** to Sold |
+| Take a piece off | Untick **Published** (it also leaves the website) |
+| Change the title card | Edit the exhibition in Events (title, subtitle, dates) |
+| Seconds per scene | the `signage:blanc` setting, `seconds_per_scene` (12 to start with; every scene, artworks included) |
+| Turn the slideshow or the catering card off | `"show_artworks": false` or `"show_catering": false` in the same setting |
+
+Changes reach the screen within 5 minutes. The screen loads each photo before its scene comes up; a photo that will not load is skipped (and tried again ten minutes later), so a broken link never shows as an empty wall. It also remembers which photos it has shown: without internet it plays the saved data and only those photos (the browser keeps the files), and if none of them load it simply skips the slideshow.
+
 ### Cheaper fallback: a streaming stick or a smart TV
 
 Any device with a web browser that can run full screen will show the same page.
@@ -159,4 +188,4 @@ Any device with a web browser that can run full screen will show the same page.
 
 ### Checking it automatically
 
-`node signage/tv-test.mjs` serves the repo with a fake API built from `docs/fixtures/public-peachs.json`, opens the page at 1920×1080 in Chromium, screenshots every scene, checks for console errors, then cuts the API off and confirms the page still shows the saved data (and the brand screen when there is nothing saved). Screenshots land in a temp folder, or wherever `--out <dir>` points.
+`node signage/tv-test.mjs` serves the repo with a fake API built from `docs/fixtures/public-peachs.json`, opens the page at 1920×1080 in Chromium, screenshots every scene, checks for console errors, then cuts the API off and confirms the page still shows the saved data (and the brand screen when there is nothing saved). It then does the same for Blanc's gallery screen with sample artworks (title card, then each piece; the sold dot; no prices; a broken photo skipped; offline from the saved copy, with and without the photos; more than 20 pieces rotating). Screenshots land in a temp folder, or wherever `--out <dir>` points.

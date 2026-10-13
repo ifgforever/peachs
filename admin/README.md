@@ -47,7 +47,7 @@ repo, avoids that. Delete that folder to start from a clean database.
 Checks you can run while the dev server is up:
 
 ```sh
-node worker/smoke-test.mjs http://localhost:8787   # 23 API checks, creates smoke-owner@example.com on an empty database
+node worker/smoke-test.mjs http://localhost:8787   # 31 API checks, creates smoke-owner@example.com on an empty database
 node admin/ui-test.mjs                             # drives the admin in a headless browser against a fake API
 node signage/tv-test.mjs                           # same for the TV page
 ```
@@ -137,15 +137,35 @@ To get the emails:
 
 Open any earlier inquiry and press "Resend email" to confirm it works.
 
-### Optional: photo uploads (R2)
+### Photo uploads (R2)
 
-Without this, events and announcements take a photo *link* (a URL). To let staff
-upload photos from their phone:
+Staff upload photos (events, announcements, artworks) from their phone. The photos
+live in the R2 bucket `romesjoy-media`, which already exists in Lance's account and is
+bound as `MEDIA` in `wrangler.jsonc`, so there is nothing to set up there. Files are
+served from `/api/media/…` on the Worker's address.
 
-1. `npx wrangler@4 r2 bucket create romesjoy-media`
-2. In `wrangler.jsonc`, uncomment the `r2_buckets` line.
-3. Deploy again. The forms now show an upload button; files are served from
-   `/api/media/…` on the Worker's address.
+In a new Cloudflare account, create the bucket once before deploying:
+`npx wrangler@4 r2 bucket create romesjoy-media`. (Without the `r2_buckets` line in
+`wrangler.jsonc` the forms fall back to a photo *link* field.)
+
+### Upgrading the live site (artwork catalog, October 2026)
+
+The live site was deployed before the artwork catalog existed. Its database needs the
+two new tables once; then deploy the new code. On Lance's Mac, in the `peachs` folder:
+
+```sh
+git pull
+npx wrangler@4 d1 execute romesjoy-admin --remote --file worker/migrations/2026-10-13-artworks.sql
+npx wrangler@4 deploy
+```
+
+The migration only adds the `artworks` and `artwork_images` tables and switches the
+catalog on for Blanc (`features:blanc`, plus a starting `signage:blanc` TV setting if
+there is none); it does not touch hours, menus, events,
+inquiries or accounts, and it is safe to run again. The R2 bucket `romesjoy-media`
+already exists, so photo uploads work as soon as the deploy finishes. If the code is
+deployed before the migration runs, nothing breaks: the sites and admin work as before,
+and the Artworks screen and the website's catalog appear once the migration has run.
 
 ### Pointing the GitHub Pages copies at the Worker
 
@@ -170,6 +190,9 @@ Nothing is tied to Lance's account except the database id and the deployment.
 
 1. In the new account: `npx wrangler@4 login`, then
    `npx wrangler@4 d1 create romesjoy-admin`. It prints a new `database_id`.
+   Also create the photo bucket: `npx wrangler@4 r2 bucket create romesjoy-media`
+   (photos already uploaded stay in the old account's bucket; copy them over or
+   upload them again).
 2. Put that id in `wrangler.jsonc` (`d1_databases[0].database_id`).
 3. Repeat steps 2–4 above in the new account (schema, seed, secrets, deploy).
    The first login creates a fresh owner account; staff accounts, inquiries and
@@ -202,6 +225,7 @@ Websites update within a minute."
 - **Menu**: sections and items. Each change saves on its own. "Available" off
   hides an item without deleting it (sold out today). Up/Down reorders.
   Dietary tags (GF, V, DF) and allergens show on the site.
+- **Artworks** (Blanc): the gallery's catalog. See "Artworks (Blanc)" below.
 - **Announcements**: news and promos with start and end dates, for one business or
   the whole family ("Whole family" tab, owners and admins only). "Show on TV"
   puts it in the screen rotation.
@@ -214,6 +238,53 @@ Websites update within a minute."
 
 The in-store screen reads the same data: see `signage/README.md` for setting up
 the TV and what each setting does.
+
+### Artworks (Blanc)
+
+The Artworks screen appears for Blanc only (on a phone it is in the bottom bar). Each
+piece has a title, artist, year, medium, size, a description, up to 12 photos, the
+exhibition it hangs in, a price and a status.
+
+**Adding a piece from a phone**
+
+1. Artworks → **Add artwork**. Type the title and artist (the rest can wait).
+2. Under "Show, price and status", pick the exhibition (or "Not in a show"), type the
+   price (e.g. `1800`) and choose **Show price**, **Price on request** or **Don't show**.
+3. Tap **Add photos** and take or choose photos. The first photo you add saves the piece,
+   so photos always have a home (that is why the title comes first). If the wifi drops,
+   the photos that did not make it get a **Try again** button. Big phone photos are shrunk before they upload, so it is
+   quick on the gallery wifi. On an iPhone, if a photo is refused, set Settings → Camera
+   → Formats → **Most Compatible**, or choose a JPEG.
+4. For each photo, describe what it shows ("Oil painting of two sisters on a porch").
+   People who use screen readers hear this instead of seeing the photo. **Make main**
+   picks the photo the website shows first; the arrows change the order.
+5. Tap **Save changes**. The website updates within a minute.
+
+**Marking a piece sold**: tap **Mark sold** on its card in the list. The website then
+shows a red dot and "Sold" and never the price. Tapped by mistake? Use **Undo** in the
+message, or **Mark available**. "Reserved" and "Not for sale" are in the Status menu on
+the piece's page.
+
+**Featuring**: tick **Featured** on the piece's page to put it first on the website (it
+gets a star in the list). Between exhibitions (none on view or coming up), the gallery
+TV plays the featured pieces. Untick **Published** to keep a piece as a draft only staff can see.
+Pieces in an exhibition that is still a draft (Events → Published off) stay off the
+website too, prices included, until the exhibition is published; their cards say
+"Hidden: its exhibition is a draft". So a show can be prepared before it is announced.
+
+**What visitors see**: on the Blanc website, an "Artworks" section (and menu link)
+groups the pieces under their exhibition: on view now, coming up, past shows, then "From
+the collection". Each exhibition with pieces gets a "See the artworks" link. Tapping a piece opens it
+large with all its photos, and **Ask about this piece** sends a message that lands in
+Inquiries as an "Artwork inquiry" naming the piece (and by email once email is set up).
+
+**The gallery TV**: `https://peachs.tvinstallchicago.workers.dev/signage/live.html?business=blanc`
+shows the exhibition's title card and then each piece with a photo (never prices). See
+`signage/README.md` for the settings.
+
+**Deleted something by mistake?** History → **Restore** on "Deleted artwork …" brings the
+piece back with all its photos. Deleting an exhibition keeps its pieces ("Not in a show");
+restoring the exhibition from History puts them back in it.
 
 ## Troubleshooting
 

@@ -117,8 +117,11 @@ class ApiError extends Error {
   }
 }
 
-/** Fetch JSON from the Worker. body: a plain object (sent as JSON) or FormData (sent as is). */
-async function api(path, { method = 'GET', body } = {}) {
+/**
+ * Fetch JSON from the Worker. body: a plain object (sent as JSON) or FormData (sent as is). timeoutMs: give up
+ * after that long (photo uploads), so a request stalled on weak wifi fails and can be retried instead of spinning.
+ */
+async function api(path, { method = 'GET', body, timeoutMs = 0 } = {}) {
   const headers = { Accept: 'application/json' };
   const token = store.get(TOKEN_KEY);
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -129,14 +132,23 @@ async function api(path, { method = 'GET', body } = {}) {
     headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(body);
   }
+  const controller = timeoutMs ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  if (controller) init.signal = controller.signal;
+  const timedOut = () => new ApiError('The server took too long to answer. Check your connection and try again.', 0, 'timeout');
   let res;
-  try {
-    res = await fetch(`${API_BASE}${path}`, init);
-  } catch {
-    throw new ApiError('Could not reach the server. Check your connection and try again.', 0, 'network');
-  }
   let data = null;
-  try { data = await res.json(); } catch { data = null; }
+  try {
+    try {
+      res = await fetch(`${API_BASE}${path}`, init);
+    } catch {
+      throw controller?.signal.aborted ? timedOut() : new ApiError('Could not reach the server. Check your connection and try again.', 0, 'network');
+    }
+    try { data = await res.json(); } catch { data = null; }
+    if (controller?.signal.aborted) throw timedOut();
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     if (res.status === 401 && token && !path.startsWith('/auth/login')) {
       signOut({ expired: true });
@@ -237,17 +249,28 @@ function fmtPrice(value) {
   if (value == null || Number.isNaN(n)) return '';
   return Number.isInteger(n) ? `$${n}` : `$${n.toFixed(2)}`;
 }
+/** 1800 -> "$1,800", 950.5 -> "$950.50" (like price_text in the public bundle). */
+function fmtUsd(value) {
+  const n = Number(value);
+  if (value == null || value === '' || !Number.isFinite(n)) return '';
+  const cents = Number.isInteger(n) ? 0 : 2;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: cents, maximumFractionDigits: cents }).format(n);
+}
+/** plural(1, 'artwork') -> "1 artwork", plural(3, 'artwork') -> "3 artworks" */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /* -------------------------------------------------------------------------
    Toasts, dialogs, busy buttons
    ------------------------------------------------------------------------- */
-function toast(message, { kind = 'ok', ms = 3600 } = {}) {
+/** action: { label, onClick } adds a button (e.g. Undo); such a toast stays at least 8 seconds. */
+function toast(message, { kind = 'ok', ms = 3600, action = null } = {}) {
   const box = $('#toasts');
   if (!box) return;
-  const el = h('div', { class: `toast${kind === 'error' ? ' toast--error' : ''}` }, kind === 'error' ? null : icon('check'), h('span', {}, message));
+  const el = h('div', { class: `toast${kind === 'error' ? ' toast--error' : ''}${action ? ' toast--action' : ''}` }, kind === 'error' ? null : icon('check'), h('span', {}, message));
+  if (action) el.append(h('button', { type: 'button', class: 'toast__action', onclick: () => { el.remove(); action.onClick(); } }, action.label));
   while (box.children.length >= 2) box.firstChild.remove(); // never stack more than two
   box.append(el);
-  setTimeout(() => el.remove(), ms);
+  setTimeout(() => el.remove(), action ? Math.max(ms, 8000) : ms);
 }
 
 let confirmEl = null;
@@ -455,35 +478,167 @@ function tabStrip(tabs, selected, onSelect) {
   return list;
 }
 
-/** URL field plus an upload button when photo storage is configured on the server. */
+/* -------------------------------------------------------------------------
+   Photos: shrink in the browser, then upload (docs/admin-api.md, "Photo upload").
+   Phones take 12-megapixel photos; the websites need at most 2000 px. Shrinking
+   first makes uploads quick on the gallery's wifi and keeps every file small.
+   ------------------------------------------------------------------------- */
+const PHOTO_FULL_PX = 2000;
+const PHOTO_THUMB_PX = 640;
+const PHOTO_FORMAT_MESSAGE = "This photo format isn't supported by this browser. On iPhone, set Camera → Formats → Most Compatible, or upload a JPEG.";
+const STEP_TEXT = { waiting: 'Waiting…', shrinking: 'Shrinking…', uploading: 'Uploading…', done: 'Done' };
+const UPLOAD_TIMEOUT_MS = 60000; // per request; a stalled upload then fails with a message and can be tried again
+
+class PhotoError extends Error {}
+
+/** Decode a picked file the right way up. Throws PhotoError when this browser cannot read the format (HEIC, mostly). */
+async function decodePhoto(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, release: () => bitmap.close() };
+    } catch { /* try an <img> below */ }
+  }
+  try {
+    // A data: URL rather than a blob: URL, because the admin's Content-Security-Policy allows data: images only.
+    const src = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    if (!img.naturalWidth || !img.naturalHeight) throw new Error('empty image');
+    return { source: img, width: img.naturalWidth, height: img.naturalHeight, release: () => {} };
+  } catch {
+    throw new PhotoError(PHOTO_FORMAT_MESSAGE);
+  }
+}
+
+const canvasBlob = (canvas, type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+
+/** Safari cannot encode WebP (it hands back a PNG), so ask once rather than making and dropping two PNGs per photo. */
+let webpEncodes = null;
+function canEncodeWebp() {
+  if (webpEncodes == null) {
+    const probe = document.createElement('canvas');
+    probe.width = 1;
+    probe.height = 1;
+    try { webpEncodes = probe.toDataURL('image/webp').startsWith('data:image/webp'); } catch { webpEncodes = false; }
+  }
+  return webpEncodes;
+}
+
+/** Draw the picture at most maxPx on its longest side and encode it: WebP 0.85, or JPEG 0.88 where WebP cannot be made. */
+async function encodePhoto(source, width, height, maxPx) {
+  const scale = Math.min(1, maxPx / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  let blob = canEncodeWebp() ? await canvasBlob(canvas, 'image/webp', 0.85) : null;
+  if (!blob || blob.type !== 'image/webp') {
+    // Safari answers a WebP request with a PNG. JPEG has no transparency, so lay the picture on white first.
+    ctx.globalCompositeOperation = 'destination-over';
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    blob = await canvasBlob(canvas, 'image/jpeg', 0.88);
+  }
+  if (!blob) throw new PhotoError('This photo could not be prepared for upload. Please try another photo.');
+  return { blob, canvas, width: canvas.width, height: canvas.height };
+}
+
+/** "IMG_2041.HEIC" -> "img_2041"; the Worker adds the time, the variant and the extension. */
+const photoName = (file) => String(file.name || 'photo').replace(/\.[^.]*$/, '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'photo';
+
+function postPhoto(slug, variant, { blob, width, height }, name) {
+  const body = new FormData();
+  body.append('file', blob, `${name}.${blob.type === 'image/webp' ? 'webp' : 'jpg'}`);
+  body.append('business', slug);
+  body.append('variant', variant);
+  body.append('width', String(width));
+  body.append('height', String(height));
+  return api('/admin/media', { method: 'POST', body, timeoutMs: UPLOAD_TIMEOUT_MS });
+}
+
+/**
+ * Shrink a picked photo and upload it: a full copy (≤ 2000 px) and, unless thumb is false, a thumbnail
+ * (≤ 640 px). onStep('shrinking' | 'uploading') reports progress. Resolves { url, thumb_url, width, height }.
+ */
+async function uploadPhoto(file, { slug, thumb = true, onStep = () => {} }) {
+  onStep('shrinking');
+  const decoded = await decodePhoto(file);
+  let full;
+  let small = null;
+  try {
+    full = await encodePhoto(decoded.source, decoded.width, decoded.height, PHOTO_FULL_PX);
+    // The thumbnail is drawn from the shrunk copy: quicker, and smoother than one big jump.
+    if (thumb) small = await encodePhoto(full.canvas, full.width, full.height, PHOTO_THUMB_PX);
+  } finally {
+    decoded.release();
+  }
+  [full, small].forEach((c) => { if (c) c.canvas.width = 0; }); // phones run out of canvas memory after a dozen photos otherwise
+  onStep('uploading');
+  const name = photoName(file);
+  const fullRes = await postPhoto(slug, 'full', full, name);
+  const thumbRes = small ? await postPhoto(slug, 'thumb', small, name) : null;
+  return { url: fullRes.url, thumb_url: thumbRes ? thumbRes.url : null, width: full.width, height: full.height };
+}
+
+/** Photos the admin can preview: https links and this site's own files (its Content-Security-Policy allows no others). */
+const previewable = (url) => /^(https:\/\/\S+|\/(?!\/)\S*)$/i.test(url || '') || String(url || '').startsWith(`${location.origin}/`);
+
+/**
+ * Photo link field. When photo storage is configured on the server it also offers "Choose a photo": the
+ * photo is shrunk in the browser, uploaded, and its link lands in the field (saved with the form).
+ */
 function imageField({ value, name = 'image_url' }) {
-  const urlField = field({ label: 'Photo link', name, type: 'url', value, placeholder: 'https://…', hint: 'Paste a link to a photo, or upload one below.' });
-  const wrap = h('div', { class: 'form__row' }, urlField);
-  if (state.status?.media_configured) {
-    const fileInput = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp,image/gif', class: 'input', id: `file-${++uid}` });
-    const uploadBtn = h('button', { type: 'button', class: 'btn btn--secondary btn--sm' }, 'Upload photo');
+  const media = Boolean(state.status?.media_configured);
+  const urlField = field({
+    label: 'Photo link', name, type: 'url', value, placeholder: 'https://…',
+    hint: media ? 'Upload a photo below, or paste a link to one.' : 'Paste a link to a photo (https://…). Photo uploads are not set up on the server yet.',
+  });
+  const preview = h('img', { class: 'photo-preview', alt: 'Preview of the photo', hidden: true });
+  const showPreview = () => {
+    const url = urlField.control.value.trim();
+    preview.hidden = !previewable(url);
+    if (!preview.hidden && preview.getAttribute('src') !== url) preview.src = url;
+  };
+  preview.addEventListener('error', () => { preview.hidden = true; });
+  urlField.control.addEventListener('change', showPreview);
+  showPreview();
+  const wrap = h('div', { class: 'form__row' }, urlField, preview);
+  if (media) {
+    const fileInput = h('input', { type: 'file', accept: 'image/*', class: 'file-pick__input', id: `file-${++uid}` });
     const status = h('p', { class: 'field__hint', 'aria-live': 'polite' });
-    uploadBtn.addEventListener('click', () => {
+    fileInput.addEventListener('change', async () => {
       const file = fileInput.files && fileInput.files[0];
-      if (!file) { status.textContent = 'Choose a photo first (JPEG, PNG, WebP or GIF, up to 8 MB).'; return; }
-      if (file.size > 8 * 1024 * 1024) { status.textContent = 'That photo is over 8 MB. Please pick a smaller one.'; return; }
-      withBusy(uploadBtn, async () => {
-        try {
-          const body = new FormData();
-          body.append('file', file);
-          if (state.slug) body.append('business', state.slug);
-          const res = await api('/admin/media', { method: 'POST', body });
-          urlField.control.value = res.url || '';
-          state.dirty = true;
-          status.textContent = 'Uploaded. Save the form to keep it.';
-        } catch (err) {
-          status.textContent = err.message;
-        }
-      });
+      fileInput.value = '';
+      if (!file) return;
+      status.classList.remove('is-error');
+      fileInput.disabled = true;
+      try {
+        const photo = await uploadPhoto(file, { slug: state.slug, thumb: false, onStep: (step) => { status.textContent = STEP_TEXT[step]; } });
+        urlField.control.value = photo.url;
+        setError(urlField.control, '');
+        showPreview();
+        state.dirty = true;
+        status.textContent = 'Uploaded. Save the form to keep it.';
+      } catch (err) {
+        status.classList.add('is-error');
+        status.textContent = err.message;
+      } finally {
+        fileInput.disabled = false;
+      }
     });
     wrap.append(h('div', { class: 'field' },
-      h('label', { class: 'field__label', for: fileInput.id }, 'Upload a photo'),
-      fileInput, h('div', { class: 'actions', style: 'margin-top:0' }, uploadBtn), status));
+      h('span', { class: 'field__label' }, 'Upload a photo'),
+      h('div', { class: 'file-pick' }, fileInput, h('label', { class: 'btn btn--secondary file-pick__btn', for: fileInput.id }, icon('camera'), 'Choose a photo')),
+      status));
   }
   return wrap;
 }
@@ -497,6 +652,7 @@ const SCREENS = [
   { id: 'contact', label: 'Contact & links', icon: 'card', group: 'business', render: screenContact },
   { id: 'notice', label: 'Notice', icon: 'bell', group: 'business', render: screenNotice },
   { id: 'events', label: 'Events', icon: 'calendar', group: 'business', render: screenEvents },
+  { id: 'artworks', label: 'Artworks', icon: 'frame', group: 'business', render: screenArtworks, feature: 'artworks' },
   { id: 'menu', label: 'Menu', icon: 'menu', group: 'business', render: screenMenu },
   { id: 'announcements', label: 'Announcements', icon: 'megaphone', group: 'business', render: screenAnnouncements },
   { id: 'inquiries', label: 'Inquiries', icon: 'inbox', group: 'business', render: screenInquiries },
@@ -507,6 +663,11 @@ const SCREENS = [
 const PHONE_NAV = ['overview', 'hours', 'events', 'inquiries'];
 
 const screenById = (id) => SCREENS.find((s) => s.id === id);
+/** Switched on per business by the setting features:<slug> (e.g. { artworks: true }); missing = off. */
+const hasFeature = (name) => Boolean(currentBusiness()?.features?.[name]);
+const screenAllowed = (def) => (!def.managerOnly || isManager()) && (!def.feature || hasFeature(def.feature));
+// A gallery edits its artworks far more often than its hours, so Artworks takes the Hours spot on the phone bar.
+const phoneNav = () => (hasFeature('artworks') ? ['overview', 'artworks', 'events', 'inquiries'] : PHONE_NAV);
 const hashFor = (screen, sub) => `#/${screen}${sub != null && sub !== '' ? `/${encodeURIComponent(sub)}` : ''}`;
 
 function parseHash() {
@@ -549,7 +710,10 @@ async function route({ focusHeading = false } = {}) {
   if (!state.user) return;
   let { screen, sub } = parseHash();
   let def = screenById(screen);
-  if (!def || (def.managerOnly && !isManager())) { def = screenById('overview'); screen = 'overview'; sub = null; }
+  if (!def || !screenAllowed(def)) {
+    def = screenById('overview'); screen = 'overview'; sub = null;
+    if (location.hash && location.hash !== hashFor('overview')) history.replaceState(null, '', hashFor('overview')); // no hashchange
+  }
   if (state.user.must_change_password && screen !== 'account') {
     if (location.hash !== hashFor('account')) { ignoreNextHash = true; location.hash = hashFor('account'); }
     screen = 'account'; sub = null; def = screenById('account');
@@ -592,7 +756,7 @@ function navLink(def, { bottom = false } = {}) {
 }
 
 function navList() {
-  const visible = SCREENS.filter((s) => !s.managerOnly || isManager());
+  const visible = SCREENS.filter(screenAllowed);
   const list = h('ul', { class: 'sidenav__list', role: 'list' });
   let group = null;
   visible.forEach((def) => {
@@ -623,7 +787,7 @@ function renderShell() {
   more.addEventListener('click', (e) => { if (e.target.closest('a')) more.close(); });
 
   const bottom = h('nav', { class: 'bottomnav', 'aria-label': 'Main' },
-    PHONE_NAV.map((id) => navLink(screenById(id), { bottom: true })),
+    phoneNav().map((id) => navLink(screenById(id), { bottom: true })),
     h('button', { type: 'button', class: 'bottomnav__item', 'aria-haspopup': 'dialog', onclick: () => { fill($('nav', more), navList()); more.showModal(); } }, icon('more'), h('span', {}, 'More')));
 
   fill(app,
@@ -638,6 +802,7 @@ function renderShell() {
     ),
     bottom, more,
   );
+  navShape = currentNavShape();
 }
 
 function syncNav() {
@@ -646,6 +811,21 @@ function syncNav() {
     a.classList.toggle('is-active', on);
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
+}
+
+/** Rebuild the side nav and the phone bar when the screens on offer change (another business, other features). */
+let navShape = '';
+const currentNavShape = () => `${SCREENS.filter(screenAllowed).map((s) => s.id)}|${phoneNav()}`;
+function renderNav() {
+  const shape = currentNavShape();
+  if (shape === navShape) { refreshNavCounts(); return; }
+  navShape = shape;
+  const side = $('.sidenav');
+  if (side) fill(side, navList());
+  const bottom = $('.bottomnav');
+  const more = bottom && $('[aria-haspopup="dialog"]', bottom);
+  if (bottom) fill(bottom, phoneNav().map((id) => navLink(screenById(id), { bottom: true })), more);
+  syncNav();
 }
 
 /** Refresh the unread badge next to "Inquiries" after counts change. */
@@ -661,7 +841,7 @@ function setBusiness(slug) {
   state.slug = slug;
   store.set(BUSINESS_KEY, slug);
   $$('#business-select').forEach((s) => { s.value = slug; });
-  refreshNavCounts();
+  renderNav();
   route();
 }
 
@@ -778,7 +958,7 @@ async function screenOverview(main, { slug }) {
   ]);
   if (bizList?.businesses) {
     state.businesses = bizList.businesses;
-    refreshNavCounts();
+    renderNav(); // counts, and features switched on or off since sign-in
   }
   const biz = currentBusiness() || {};
   const counts = biz.counts || {};
@@ -814,6 +994,10 @@ async function screenOverview(main, { slug }) {
       stat({ label: `Today, ${weekdayOf(today)}`, value: todayText, note: bundle.hours_summary ? `Usual week: ${bundle.hours_summary}` : null, link: { href: hashFor('hours'), label: 'Edit hours' } }),
       stat({ label: 'New inquiries', value: String(counts.new_inquiries ?? 0), big: true, note: counts.new_inquiries ? 'Waiting for a reply.' : 'Nothing new.', link: { href: hashFor('inquiries'), label: 'Open the inbox' } }),
       stat({ label: 'Upcoming events', value: String(counts.upcoming_events ?? upcoming.length), big: true, note: eventsNote, link: { href: hashFor('events'), label: 'Manage events' } }),
+      biz.features?.artworks ? stat({
+        label: 'Artworks', value: `${plural(counts.artworks ?? 0, 'artwork')} · ${counts.artworks_available ?? 0} available`,
+        note: 'Pieces on the website, with photos, prices and sold dots.', link: { href: hashFor('artworks'), label: 'Manage artworks' },
+      }) : null,
       stat({ label: 'Site notice', value: notice ? notice.text : 'No notice showing', note: notice?.until ? `Shows until ${fmtDate(notice.until)}` : null, link: { href: hashFor('notice'), label: notice ? 'Change notice' : 'Add a notice' }, extraClass: 'stat--wide' }),
       website ? stat({ label: 'Website', value: biz.name || bundle.business?.name || slug, note: bundle.business?.tagline || null, link: { href: website, label: 'View website', external: true }, extraClass: 'stat--wide' }) : null,
     ),
@@ -1250,7 +1434,18 @@ async function renderEventForm(main, slug, sub) {
     });
   });
   deleteBtn?.addEventListener('click', async () => {
-    const ok = await confirmDialog({ title: `Delete "${ev.title}"?`, text: 'It disappears from the website right away. You can bring it back from History.' });
+    // Its artworks stay in the catalog, out of any show, until History → Restore brings the event back with them.
+    let pieces = 0;
+    if (hasFeature('artworks')) {
+      try {
+        pieces = ((await api(`/admin/businesses/${encodeURIComponent(slug)}/artworks?event_id=${ev.id}`)).artworks || []).length;
+      } catch { /* the question still works without the count */ }
+    }
+    const stay = pieces === 1 ? ' Its artwork stays, listed as "Not in a show".' : pieces > 1 ? ` Its ${pieces} artworks stay, listed as "Not in a show".` : '';
+    const ok = await confirmDialog({
+      title: `Delete "${ev.title}"?`,
+      text: `It disappears from the website right away.${stay} You can bring it back from History${pieces ? `, ${pieces === 1 ? 'artwork' : 'artworks'} included` : ''}.`,
+    });
     if (!ok) return;
     withBusy(deleteBtn, async () => {
       try {
@@ -1266,6 +1461,549 @@ async function renderEventForm(main, slug, sub) {
     h('p', { style: 'margin-bottom:10px' }, h('a', { class: 'btn btn--quiet btn--sm', href: hashFor('events') }, icon('back'), 'All events')),
     pageHead({ title: isNew ? 'Add an event' : ev.title }),
     form);
+}
+
+/* -------------------------------------------------------------------------
+   Artworks (Blanc's catalog): card grid with quick actions, add / edit form with photos.
+   Built for gallery staff on a phone: big targets, photos straight from the camera roll.
+   ------------------------------------------------------------------------- */
+const ART_STATUS = { available: 'Available', reserved: 'Reserved', sold: 'Sold', not_for_sale: 'Not for sale' };
+const PRICE_DISPLAY = { show: 'Show price', on_request: 'Price on request', hidden: "Don't show" };
+const ARTWORK_SAVED = 'Saved. The website updates within a minute.';
+const MAX_PHOTOS = 12;
+// The list's filters, kept while staff open a piece and come back (reset when the business changes).
+const artFilters = { slug: null, event: 'all', status: 'all', q: '' };
+
+/** What the website shows for the price (the public bundle's price_text rules, in words for staff). */
+function artPriceText(a) {
+  if (a.status === 'sold' || a.status === 'not_for_sale') return 'No price shown';
+  if (a.price_display === 'on_request') return 'Price on request';
+  if (a.price_display === 'show' && a.price != null) return fmtUsd(a.price);
+  return 'No price shown';
+}
+const artStatusChip = (status) => h('span', { class: `chip art-status art-status--${status}` }, h('span', { class: 'art-status__dot', 'aria-hidden': 'true' }), ART_STATUS[status] || status);
+const byArtOrder = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id;
+/** The business's events for the exhibition pickers, newest first; on the same day the exhibition before its reception. */
+const showsNewestFirst = (events) => [...events].sort((a, b) => {
+  if (a.start_date !== b.start_date) return a.start_date < b.start_date ? 1 : -1;
+  return (b.kind === 'exhibition') - (a.kind === 'exhibition') || b.id - a.id;
+});
+/** The website leaves out a published piece while its exhibition is still a draft (docs/admin-api.md, "Public"). */
+const hiddenByDraftShow = (a, showsById) => Boolean(a.published) && a.event_id != null && showsById.get(String(a.event_id))?.published === false;
+const draftShowChip = () => h('span', { class: 'chip chip--draft chip--long' }, 'Hidden: its exhibition is a draft');
+/** A photo link the Worker accepts: https, or one of this site's own uploads. */
+const isPhotoLink = (s) => /^(https:\/\/\S+|\/api\/media\/\S+)$/i.test(s || '');
+/** Extra words for screen readers, e.g. which artwork a "Mark sold" button is about. */
+const srOnly = (text) => h('span', { class: 'visually-hidden' }, text);
+/** Keep what we know (photos, exhibition title) when a write answers with fewer fields. */
+const mergeArtwork = (a, fresh) => Object.assign(a, fresh || {}, { images: fresh?.images || a.images, event_title: fresh?.event_title ?? a.event_title });
+
+/** Focus data-focus="<key>" inside root; for a disabled Up (now first) use Down, and the other way round. */
+function focusKey(root, key, fallback) {
+  let el = key ? $(`[data-focus="${key}"]`, root) : null;
+  if (el?.disabled) el = $(`[data-focus="${key.startsWith('up:') ? key.replace('up:', 'down:') : key.replace('down:', 'up:')}"]`, root);
+  (el && !el.disabled ? el : fallback)?.focus();
+}
+
+async function screenArtworks(main, { slug, sub }) {
+  if (sub) return renderArtworkForm(main, slug, sub);
+  const base = `/admin/businesses/${encodeURIComponent(slug)}`;
+  const [{ artworks = [] }, { events = [] }] = await Promise.all([api(`${base}/artworks`), api(`${base}/events?status=all`)]);
+  let list = artworks.map((a) => ({ ...a, images: [...(a.images || [])].sort(byArtOrder) })).sort(byArtOrder);
+  const shows = showsNewestFirst(events);
+  const showTitles = new Map(shows.map((ev) => [String(ev.id), ev.title]));
+  const showsById = new Map(shows.map((ev) => [String(ev.id), { published: Boolean(ev.published) }]));
+  if (artFilters.slug !== slug) Object.assign(artFilters, { slug, event: 'all', status: 'all', q: '' });
+  if (!['all', 'none'].includes(artFilters.event) && !showTitles.has(artFilters.event)) artFilters.event = 'all';
+
+  // --- Filters: exhibition, status, search (all on this page, so Up/Down can save the whole order) ---
+  const inShow = (id) => list.filter((a) => (id === 'none' ? a.event_id == null : String(a.event_id) === String(id))).length;
+  const search = field({ label: 'Search', name: 'q', type: 'search', value: artFilters.q, placeholder: 'Title or artist', autocomplete: 'off' });
+  search.classList.add('art-filters__search');
+  const showSelect = field({
+    label: 'Exhibition', name: 'event', type: 'select', value: artFilters.event,
+    options: [{ value: 'all', label: 'All exhibitions' }, ...shows.map((ev) => ({ value: String(ev.id), label: `${ev.title} (${inShow(ev.id)})` })), { value: 'none', label: `Not in a show (${inShow('none')})` }],
+  });
+  const statusSelect = field({ label: 'Status', name: 'status', type: 'select', value: artFilters.status, options: [{ value: 'all', label: 'Any status' }, ...Object.entries(ART_STATUS).map(([value, label]) => ({ value, label }))] });
+  const filters = h('div', { class: 'art-filters', role: 'search', 'aria-label': 'Find artworks' }, search, showSelect, statusSelect);
+  search.control.addEventListener('input', () => { artFilters.q = search.control.value; render(); });
+  showSelect.control.addEventListener('change', () => { artFilters.event = showSelect.control.value; render(); });
+  statusSelect.control.addEventListener('change', () => { artFilters.status = statusSelect.control.value; render(); });
+  const clearFilters = () => {
+    Object.assign(artFilters, { event: 'all', status: 'all', q: '' });
+    search.control.value = '';
+    showSelect.control.value = 'all';
+    statusSelect.control.value = 'all';
+    render();
+    search.control.focus();
+  };
+
+  const summary = h('p', { 'aria-live': 'polite' });
+  const clearBtn = h('button', { type: 'button', class: 'btn btn--quiet btn--sm', onclick: clearFilters }, 'Clear filters');
+  const summaryRow = h('div', { class: 'art-summary', tabindex: '-1' }, summary, clearBtn);
+  const grid = h('ul', { class: 'art-grid', role: 'list' });
+
+  const filtering = () => artFilters.event !== 'all' || artFilters.status !== 'all' || artFilters.q.trim() !== '';
+  function matches(a) {
+    const f = artFilters;
+    if (f.event === 'none' ? a.event_id != null : f.event !== 'all' && String(a.event_id) !== f.event) return false;
+    if (f.status !== 'all' && a.status !== f.status) return false;
+    const q = f.q.trim().toLowerCase();
+    return !q || a.title.toLowerCase().includes(q) || (a.artist || '').toLowerCase().includes(q);
+  }
+
+  function render({ focus } = {}) {
+    const shown = list.filter(matches);
+    const available = list.filter((a) => a.status === 'available').length;
+    filters.hidden = !list.length;
+    summaryRow.hidden = !list.length;
+    summary.textContent = `${plural(list.length, 'artwork')} · ${available} available${filtering() ? ` · showing ${shown.length}` : ''}`;
+    clearBtn.hidden = !filtering();
+    if (!list.length) {
+      fill(grid, h('li', {}, emptyState('No artworks yet', 'Add a piece with its photos, price and status. It shows on the website as soon as you save it.',
+        h('a', { class: 'btn btn--primary', href: hashFor('artworks', 'new') }, 'Add an artwork'))));
+    } else if (!shown.length) {
+      fill(grid, h('li', {}, emptyState('No artworks match', 'Try another exhibition or status, or clear the search.',
+        h('button', { type: 'button', class: 'btn btn--secondary', onclick: clearFilters }, 'Clear filters'))));
+    } else {
+      fill(grid, shown.map((a, i) => h('li', {}, artCard(a, i, shown))));
+    }
+    if (focus) focusKey(grid, focus, summaryRow); // a piece a filter now hides: land on the summary
+  }
+
+  function artCard(a, index, shown) {
+    const href = hashFor('artworks', a.id);
+    const photo = a.images[0];
+    const titleId = `art-${a.id}-title`;
+    const offSale = a.status === 'sold' || a.status === 'not_for_sale';
+    const toggleBtn = h('button', { type: 'button', class: 'btn btn--secondary btn--compact', dataset: { focus: `toggle:${a.id}` } }, offSale ? 'Mark available' : 'Mark sold', srOnly(`: ${a.title}`));
+    const up = h('button', { type: 'button', class: 'btn btn--secondary btn--icon', 'aria-label': `Move ${a.title} up`, disabled: index === 0, dataset: { focus: `up:${a.id}` } }, icon('up'));
+    const down = h('button', { type: 'button', class: 'btn btn--secondary btn--icon', 'aria-label': `Move ${a.title} down`, disabled: index === shown.length - 1, dataset: { focus: `down:${a.id}` } }, icon('down'));
+    toggleBtn.addEventListener('click', () => setStatus(a, offSale ? 'available' : 'sold', toggleBtn));
+    up.addEventListener('click', () => move(a, shown, -1, up));
+    down.addEventListener('click', () => move(a, shown, 1, down));
+    const where = a.event_id == null ? 'Not in a show' : (a.event_title || showTitles.get(String(a.event_id)) || 'In an exhibition');
+    return h('article', { class: `art-card${a.published ? '' : ' is-draft'}`, 'aria-labelledby': titleId, dataset: { artwork: String(a.id) } },
+      // The picture repeats the title link for fingers; screen readers and keyboards use the title.
+      h('a', { class: 'art-card__thumb', href, tabindex: '-1', 'aria-hidden': 'true' },
+        photo ? h('img', { src: photo.thumb_url || photo.url, alt: '', loading: 'lazy', decoding: 'async' }) : h('span', { class: 'art-card__nophoto' }, icon('frame'), 'No photo yet')),
+      h('div', { class: 'art-card__body' },
+        h('h3', { class: 'art-card__title', id: titleId }, h('a', { href }, a.title), a.featured ? star() : null),
+        a.artist ? h('p', { class: 'art-card__artist' }, a.artist) : null,
+        h('div', { class: 'chips' }, artStatusChip(a.status), a.published ? null : h('span', { class: 'chip chip--draft' }, 'Draft'), hiddenByDraftShow(a, showsById) ? draftShowChip() : null),
+        h('p', { class: 'art-card__price' }, artPriceText(a)),
+        h('p', { class: 'art-card__meta' }, where)),
+      h('div', { class: 'art-card__tools' },
+        toggleBtn,
+        h('a', { class: 'btn btn--secondary btn--compact', href }, 'Edit', srOnly(`: ${a.title}`)),
+        h('div', { class: 'art-card__move' }, up, down)));
+  }
+
+  /** Mark sold / available straight from the card, with Undo in the toast (the button itself also flips back). */
+  function setStatus(a, next, button, { offerUndo = true } = {}) {
+    const previous = a.status;
+    return withBusy(button, async () => {
+      try {
+        const res = await api(`/admin/artworks/${a.id}`, { method: 'PATCH', body: { status: next } });
+        mergeArtwork(a, res.artwork || { status: next });
+        render({ focus: `toggle:${a.id}` });
+        const undo = offerUndo ? { label: 'Undo', onClick: () => setStatus(a, previous, null, { offerUndo: false }) } : null;
+        toast(`"${a.title}" is now ${(ART_STATUS[a.status] || a.status).toLowerCase()}.`, { action: undo });
+      } catch (err) { toast(err.message, { kind: 'error' }); }
+    });
+  }
+
+  /** Swap with the neighbour on screen (a filter may hide pieces in between), then save the whole order. */
+  function move(a, shown, delta, button) {
+    const neighbour = shown[shown.indexOf(a) + delta];
+    if (!neighbour) return undefined;
+    return withBusy(button, async () => {
+      const before = list.slice();
+      const i = list.indexOf(a);
+      const j = list.indexOf(neighbour);
+      [list[i], list[j]] = [list[j], list[i]];
+      try {
+        await api(`${base}/artworks/reorder`, { method: 'POST', body: { ids: list.map((x) => x.id) } });
+        list.forEach((x, k) => { x.sort_order = k; });
+        render({ focus: `${delta < 0 ? 'up' : 'down'}:${a.id}` });
+      } catch (err) {
+        list = before;
+        toast(err.message, { kind: 'error' });
+        button.focus();
+      }
+    });
+  }
+
+  fill(main,
+    pageHead({
+      title: 'Artworks',
+      lead: 'Every piece on the website, with photos, price and status. Mark a piece sold the moment it sells; the website never shows what a sold piece cost.',
+      actions: [h('a', { class: 'btn btn--primary', href: hashFor('artworks', 'new') }, 'Add artwork')],
+    }),
+    filters, summaryRow, grid);
+  render();
+}
+
+async function renderArtworkForm(main, slug, sub) {
+  const base = `/admin/businesses/${encodeURIComponent(slug)}`;
+  const backHref = hashFor('artworks');
+  let isNew = sub === 'new';
+  const [found, { events = [] }] = await Promise.all([
+    isNew ? null : api(`/admin/artworks/${encodeURIComponent(sub)}`).then((r) => r.artwork || null, (err) => { if (err.status === 404) return null; throw err; }),
+    api(`${base}/events?status=all`),
+  ]);
+  if (!isNew && (!found || (found.business_slug && found.business_slug !== slug))) {
+    fill(main, pageHead({ title: 'Artwork not found' }), errorBanner({ message: 'That artwork no longer exists. It may have been deleted by someone else.' }), h('a', { class: 'btn btn--secondary', href: backHref }, 'Back to artworks'));
+    return;
+  }
+  // A new piece starts in the exhibition the list was showing, if any.
+  const listShow = artFilters.slug === slug && !['all', 'none'].includes(artFilters.event) ? artFilters.event : null;
+  let art = isNew ? { title: '', status: 'available', price_display: 'on_request', featured: 0, published: 1, event_id: listShow } : found;
+  const photos = [...(art.images || [])].sort(byArtOrder);
+  const shows = showsNewestFirst(events);
+  const showsById = new Map(shows.map((ev) => [String(ev.id), { published: Boolean(ev.published) }]));
+  const media = Boolean(state.status?.media_configured);
+
+  // --- The artwork's own fields ---
+  const f = (opts) => field({ ...opts, value: art[opts.name] ?? '' });
+  const price = f({ label: 'Price (US dollars)', name: 'price', type: 'number', min: '0', step: '0.01', inputmode: 'decimal', placeholder: 'e.g. 1800' });
+  const priceShow = h('fieldset', { class: 'field fieldset' },
+    h('legend', { class: 'field__label' }, 'Price on the website'),
+    h('div', { class: 'price-mode' }, Object.entries(PRICE_DISPLAY).map(([value, label]) => h('label', { class: 'check' },
+      h('input', { type: 'radio', name: 'price_display', value, checked: (art.price_display || 'on_request') === value }), h('span', {}, label)))),
+    h('p', { class: 'field__hint' }, 'Sold and not-for-sale pieces never show a price, whatever is chosen here.'));
+  const saveBtn = h('button', { type: 'submit', class: 'btn btn--primary' }, isNew ? 'Add artwork' : 'Save changes');
+  const deleteBtn = h('button', { type: 'button', class: 'btn btn--danger btn--compact', hidden: isNew }, 'Delete');
+
+  // --- Photos: added, moved and removed straight away; descriptions save with the form ---
+  const photoList = h('ol', { class: 'photos', 'aria-label': 'Photos, main photo first' });
+  const progress = h('ul', { class: 'upload-progress', role: 'list', 'aria-live': 'polite', 'aria-label': 'Upload progress', tabindex: '-1' });
+  const photoMsg = h('p', { class: 'field__error', role: 'alert' });
+  const photoCount = h('p', { class: 'photos-count' });
+  const photoIntro = h('p', { class: 'field__hint' });
+  let busyPhotos = false;
+  // These controls change photos, not the form, so they must not trip the unsaved-changes guard.
+  const quiet = (el) => { ['input', 'change'].forEach((type) => el.addEventListener(type, (e) => e.stopPropagation())); return el; };
+
+  const fileInput = quiet(h('input', { type: 'file', accept: 'image/*', multiple: true, class: 'file-pick__input', id: `photos-${++uid}` }));
+  // A new artwork is saved when photos are picked, so check the form before the picker opens: otherwise the
+  // photos someone has just chosen would be thrown away by a missing title. (Keyboard and label clicks both land here.)
+  fileInput.addEventListener('click', (e) => {
+    if (art.id) return;
+    clearErrors(form);
+    const { errors } = collect();
+    if (errors.title) errors.title = 'Give the artwork a title first, then add photos.';
+    if (showErrors(form, errors)) e.preventDefault();
+  });
+  fileInput.addEventListener('change', () => {
+    const files = [...(fileInput.files || [])];
+    fileInput.value = '';
+    if (files.length) addPhotos(files);
+  });
+  const picker = h('div', { class: 'file-pick' }, fileInput, h('label', { class: 'btn btn--primary file-pick__btn', for: fileInput.id }, icon('camera'), 'Add photos'));
+
+  const linkField = field({ label: 'Photo link', name: 'photo_link', type: 'url', inputmode: 'url', placeholder: 'https://…', hint: 'Photo uploads are not set up on the server yet, so add photos by their link: an address that starts with https://.' });
+  quiet(linkField.control);
+  const linkBtn = h('button', { type: 'button', class: 'btn btn--secondary' }, 'Add photo');
+  linkField.control.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); linkBtn.click(); } });
+  linkBtn.addEventListener('click', addLink);
+  const addControl = media ? fileInput : linkField.control;
+
+  function syncPhotoControls() {
+    const full = photos.length >= MAX_PHOTOS;
+    photoCount.textContent = photos.length ? `${photos.length} of ${MAX_PHOTOS}` : '';
+    fileInput.disabled = full || busyPhotos;
+    linkField.control.disabled = full;
+    linkBtn.disabled = full;
+    photoIntro.textContent = full
+      ? `This artwork has the most photos it can have (${MAX_PHOTOS}). Remove one to add another.`
+      : !art.id
+        ? 'Adding photos saves the artwork first, so the photos have a place to go. The first photo is the main one.'
+        : 'The first photo is the main one: the website shows it first. Describe each photo for people who use screen readers; descriptions save with the Save button.';
+  }
+
+  function renderPhotos(focus) {
+    fill(photoList, photos.map(photoRow));
+    photoList.hidden = !photos.length;
+    syncPhotoControls();
+    if (focus) focusKey(photoList, focus, addControl);
+  }
+
+  /** A photo that has just arrived gets its own row; the rows above stay put, so a description being typed keeps its focus. */
+  function appendPhoto(p) {
+    photos.push(p);
+    const i = photos.length - 1;
+    const aboveDown = i > 0 ? $(`[data-focus="down:${photos[i - 1].id}"]`, photoList) : null;
+    if (aboveDown) aboveDown.disabled = false;
+    photoList.append(photoRow(p, i));
+    photoList.hidden = false;
+    syncPhotoControls();
+  }
+
+  function photoRow(p, i) {
+    const n = i + 1;
+    const altId = `photo-alt-${p.id}`;
+    const alt = h('input', { class: 'input', id: altId, type: 'text', value: p.altDraft ?? p.alt ?? '', maxlength: 300, placeholder: 'e.g. Oil painting of two sisters on a porch' });
+    alt.addEventListener('input', () => { p.altDraft = alt.value; });
+    const swapped = (j) => { const next = photos.slice(); [next[i], next[j]] = [next[j], next[i]]; return next; };
+    const makeMain = i === 0
+      ? h('span', { class: 'photo-row__main' }, h('span', { class: 'chip chip--current' }, 'Main photo'))
+      : h('button', { type: 'button', class: 'btn btn--secondary btn--compact', dataset: { focus: `main:${p.id}` } }, 'Make main', srOnly(` (photo ${n})`));
+    const up = h('button', { type: 'button', class: 'btn btn--secondary btn--icon', 'aria-label': `Move photo ${n} up`, disabled: i === 0, dataset: { focus: `up:${p.id}` } }, icon('up'));
+    const down = h('button', { type: 'button', class: 'btn btn--secondary btn--icon', 'aria-label': `Move photo ${n} down`, disabled: i === photos.length - 1, dataset: { focus: `down:${p.id}` } }, icon('down'));
+    const remove = h('button', { type: 'button', class: 'btn btn--danger btn--compact' }, 'Remove', srOnly(` photo ${n}`));
+    if (i > 0) makeMain.addEventListener('click', () => reorderPhotos([p, ...photos.filter((x) => x !== p)], makeMain, `down:${p.id}`, 'Main photo changed.'));
+    up.addEventListener('click', () => reorderPhotos(swapped(i - 1), up, `up:${p.id}`));
+    down.addEventListener('click', () => reorderPhotos(swapped(i + 1), down, `down:${p.id}`));
+    remove.addEventListener('click', () => removePhoto(p, n, remove));
+    return h('li', { class: 'photo-row', dataset: { imageId: String(p.id) } },
+      h('img', { class: 'photo-row__img', src: p.thumb_url || p.url, alt: '', width: 120, height: 120 }),
+      h('div', { class: 'field photo-row__alt' }, h('label', { class: 'field__label', for: altId }, `Photo ${n}: what it shows`), alt),
+      h('div', { class: 'photo-row__tools' }, makeMain, up, down, remove));
+  }
+
+  function reorderPhotos(next, button, focus, message) {
+    return withBusy(button, async () => {
+      try {
+        await api(`/admin/artworks/${art.id}/images/reorder`, { method: 'POST', body: { ids: next.map((p) => p.id) } });
+        // A photo that finished uploading meanwhile stays (last, as on the server); one removed meanwhile stays gone.
+        const order = [...next.filter((p) => photos.includes(p)), ...photos.filter((p) => !next.includes(p))];
+        photos.splice(0, photos.length, ...order);
+        renderPhotos(focus);
+        if (message) toast(message);
+      } catch (err) { toast(err.message, { kind: 'error' }); }
+    });
+  }
+
+  async function removePhoto(p, n, button) {
+    const ok = await confirmDialog({ title: `Remove photo ${n}?`, text: 'It disappears from the website right away. You can bring it back from History.', confirmLabel: 'Remove' });
+    if (!ok) return;
+    await withBusy(button, async () => {
+      try {
+        await api(`/admin/artwork-images/${p.id}`, { method: 'DELETE' });
+        photos.splice(photos.indexOf(p), 1);
+        renderPhotos();
+        addControl.focus();
+        toast('Photo removed.');
+      } catch (err) { toast(err.message, { kind: 'error' }); }
+    });
+  }
+
+  /** Photos belong to a saved artwork, so a new one is saved first with what the form says so far. */
+  async function ensureSaved() {
+    if (art.id) return true;
+    if (!(await save({ auto: true }))) return false;
+    toast('Artwork saved. Now adding the photos.');
+    return true;
+  }
+
+  async function addPhotos(files) {
+    if (busyPhotos) return;
+    photoMsg.textContent = '';
+    if (!(await ensureSaved())) {
+      photoMsg.textContent = `${files.length === 1 ? 'The photo was' : `The ${files.length} photos were`} not added. Fix the form, then choose ${files.length === 1 ? 'it' : 'them'} again.`;
+      return;
+    }
+    const room = Math.max(0, MAX_PHOTOS - photos.length);
+    const take = files.slice(0, room);
+    const left = files.length - take.length;
+    if (left) photoMsg.textContent = `An artwork can have up to ${MAX_PHOTOS} photos, so ${plural(left, 'photo')} ${left === 1 ? 'was' : 'were'} left out.`;
+    if (!take.length) return;
+    busyPhotos = true;
+    syncPhotoControls();
+    const rows = take.map((file, k) => {
+      const step = h('span', { class: 'upload-progress__step' }, STEP_TEXT.waiting);
+      // "Photo 2 of 4": an iPhone names every picked photo image.jpg, so the name alone cannot say which one failed.
+      const label = `Photo ${k + 1} of ${take.length}${file.name ? ` · ${file.name}` : ''}`;
+      return { file, step, row: h('li', { class: 'upload-progress__row' }, h('span', { class: 'upload-progress__name' }, label), step) };
+    });
+    fill(progress, rows.map((r) => r.row));
+    let added = 0;
+    const failed = [];
+    for (const { file, step, row } of rows) { // one at a time: a phone has little memory to spare
+      try {
+        const up = await uploadPhoto(file, { slug, onStep: (s) => { step.textContent = STEP_TEXT[s]; } });
+        const res = await api(`/admin/artworks/${art.id}/images`, {
+          method: 'POST', body: { url: up.url, thumb_url: up.thumb_url, width: up.width, height: up.height, alt: null }, timeoutMs: UPLOAD_TIMEOUT_MS,
+        });
+        appendPhoto(res.image || { id: res.id, ...up, alt: null });
+        row.classList.add('is-done');
+        step.textContent = STEP_TEXT.done;
+        added++;
+      } catch (err) {
+        row.classList.add('is-error');
+        step.textContent = err.message;
+        if (!(err instanceof PhotoError)) failed.push(file); // a format this browser cannot read fails again on a retry
+      }
+    }
+    busyPhotos = false;
+    syncPhotoControls();
+    if (failed.length) {
+      // The picked files are kept, so nobody has to find them in the camera roll again.
+      const again = h('button', { type: 'button', class: 'btn btn--secondary' }, failed.length === 1 ? 'Try that photo again' : `Try the ${failed.length} photos again`);
+      again.addEventListener('click', () => { progress.focus(); addPhotos(failed); });
+      progress.append(h('li', { class: 'upload-progress__retry' }, again));
+    }
+    if (added) toast(`${plural(added, 'photo')} added.`);
+  }
+
+  async function addLink() {
+    const url = linkField.control.value.trim();
+    setError(linkField.control, '');
+    if (!isPhotoLink(url)) {
+      setError(linkField.control, 'Paste a link to a photo that starts with https://');
+      linkField.control.focus();
+      return;
+    }
+    if (!(await ensureSaved())) return;
+    await withBusy(linkBtn, async () => {
+      try {
+        const res = await api(`/admin/artworks/${art.id}/images`, { method: 'POST', body: { url, thumb_url: null, alt: null } });
+        appendPhoto(res.image || { id: res.id, url, thumb_url: null, alt: null });
+        linkField.control.value = '';
+        toast('Photo added.');
+      } catch (err) { setError(linkField.control, err.message); }
+    });
+  }
+
+  // --- Exhibition picker; a draft show keeps its pieces off the website until it is published ---
+  const showField = field({
+    label: 'Exhibition', name: 'event_id', type: 'select', value: art.event_id ?? '',
+    options: [{ value: '', label: 'Not in a show' }, ...shows.map((ev) => ({ value: String(ev.id), label: `${ev.title} (${ev.date_text || dateText(ev.start_date, ev.end_date)})${ev.published ? '' : ' · draft'}` }))],
+    hint: 'The show it hangs in. Pieces not in a show are listed as part of the collection.',
+  });
+  const showNote = h('p', { class: 'art-show-note', 'aria-live': 'polite' });
+  const syncShowNote = () => {
+    const published = $('input[name="published"]', form)?.checked ?? Boolean(art.published);
+    const hidden = hiddenByDraftShow({ published, event_id: showField.control.value || null }, showsById);
+    fill(showNote, hidden ? [draftShowChip(), ' The website shows this piece once its exhibition is published (Events).'] : []);
+    showNote.hidden = !hidden;
+  };
+  showField.control.addEventListener('change', syncShowNote);
+
+  // --- The form ---
+  const head = pageHead({ title: isNew ? 'Add an artwork' : art.title });
+  const photosTitleId = `photos-title-${++uid}`;
+  const form = h('form', { class: 'form', novalidate: true },
+    h('div', { class: 'card' }, h('div', { class: 'form' },
+      f({ label: 'Title', name: 'title', required: true, maxlength: 200 }),
+      f({ label: 'Artist', name: 'artist', maxlength: 200, autocomplete: 'off' }),
+      h('div', { class: 'form__row form__row--3' },
+        f({ label: 'Year', name: 'year', maxlength: 40, placeholder: 'e.g. 2024 or c. 1968' }),
+        f({ label: 'Medium', name: 'medium', maxlength: 200, placeholder: 'e.g. Oil on canvas' }),
+        f({ label: 'Dimensions', name: 'dimensions', maxlength: 120, placeholder: 'e.g. 36 × 48 in.' })),
+      f({ label: 'Description', name: 'description', type: 'textarea', rows: 4 }),
+    )),
+    h('section', { class: 'card', 'aria-labelledby': photosTitleId },
+      h('div', { class: 'photos-head' }, h('h2', { class: 'card__title', id: photosTitleId }, 'Photos'), photoCount),
+      h('div', { class: 'photos-body' },
+        photoIntro, photoList,
+        media ? h('div', {}, picker) : h('div', { class: 'form' }, linkField, h('div', {}, linkBtn)),
+        progress, photoMsg)),
+    h('div', { class: 'card' }, h('h2', { class: 'card__title' }, 'Show, price and status'), h('div', { class: 'form' },
+      h('div', { class: 'form__row form__row--2' },
+        showField,
+        f({ label: 'Status', name: 'status', type: 'select', options: Object.entries(ART_STATUS).map(([value, label]) => ({ value, label })) })),
+      showNote,
+      price, priceShow,
+    )),
+    h('div', { class: 'card' },
+      checkbox({ label: 'Featured', name: 'featured', checked: Boolean(art.featured), hint: 'Shown first on the website and marked with a star here.' }),
+      checkbox({ label: 'Published', name: 'published', checked: Boolean(art.published), hint: 'Off = a draft only staff can see.' })),
+    h('p', { class: 'form-error', role: 'alert' }),
+    // Compact Cancel and Delete keep the bar on one line on a phone.
+    h('div', { class: 'actions actions--sticky' }, saveBtn, h('a', { class: 'btn btn--secondary btn--compact', href: backHref }, 'Cancel'), h('span', { class: 'actions__spacer' }), deleteBtn));
+  trackDirty(form);
+  $('input[name="published"]', form).addEventListener('change', syncShowNote);
+  syncShowNote();
+
+  function collect() {
+    const data = readForm(form);
+    const body = {
+      title: data.title, artist: data.artist, year: data.year, medium: data.medium, dimensions: data.dimensions, description: data.description,
+      event_id: data.event_id == null ? null : Number(data.event_id),
+      price: data.price, price_display: data.price_display || 'on_request',
+      status: data.status, featured: data.featured, published: data.published,
+    };
+    const errors = {};
+    if (!body.title) errors.title = 'Give the artwork a title.';
+    if (price.control.validity.badInput) errors.price = 'Type the price as a number, e.g. 1800 or 950.50.';
+    else if (body.price != null && body.price < 0) errors.price = 'The price cannot be below zero.';
+    else if (body.price_display === 'show' && body.price == null) errors.price = 'Enter the price, or choose "Price on request".';
+    return { body, errors };
+  }
+
+  /** Save the form (and any changed photo descriptions). auto: called by "Add photos" on a new artwork. */
+  async function save({ auto = false } = {}) {
+    clearErrors(form);
+    const { body, errors } = collect();
+    if (auto && errors.title) errors.title = 'Give the artwork a title first, then add photos.';
+    if (showErrors(form, errors)) return false;
+    const ok = await withBusy(saveBtn, async () => {
+      try {
+        if (art.id) {
+          const res = await api(`/admin/artworks/${art.id}`, { method: 'PATCH', body });
+          art = { ...art, ...(res.artwork || body) };
+        } else {
+          const res = await api(`${base}/artworks`, { method: 'POST', body });
+          art = { ...art, ...(res.artwork || { ...body, id: res.id }) };
+          becameSaved();
+        }
+        for (const p of photos) {
+          const next = p.altDraft == null ? null : p.altDraft.trim();
+          if (next == null || next === (p.alt || '')) continue;
+          const res = await api(`/admin/artwork-images/${p.id}`, { method: 'PATCH', body: { alt: next || null } });
+          p.alt = res.image ? res.image.alt : next || null;
+          p.altDraft = null;
+        }
+        state.dirty = false;
+        return true;
+      } catch (err) {
+        $('.form-error', form).textContent = err.message;
+        return false;
+      }
+    });
+    return ok === true;
+  }
+
+  /** A new artwork got its id: point the address at it (without re-rendering) and offer Delete. */
+  function becameSaved() {
+    isNew = false;
+    const hash = hashFor('artworks', art.id);
+    history.replaceState(null, '', hash); // fires no hashchange
+    state.sub = String(art.id);
+    state.hash = hash;
+    saveBtn.textContent = 'Save changes';
+    $('h1', head).textContent = art.title;
+    deleteBtn.hidden = false;
+    syncPhotoControls();
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (busyPhotos) { $('.form-error', form).textContent = 'Please wait until the photos finish uploading, then save.'; return; }
+    if (await save()) {
+      toast(ARTWORK_SAVED);
+      go('artworks');
+    }
+  });
+  deleteBtn.addEventListener('click', async () => {
+    const ok = await confirmDialog({ title: `Delete "${art.title}"?`, text: 'It disappears from the website right away, with its photos. You can bring it back from History.' });
+    if (!ok) return;
+    withBusy(deleteBtn, async () => {
+      try {
+        await api(`/admin/artworks/${art.id}`, { method: 'DELETE' });
+        state.dirty = false;
+        toast('Artwork deleted.');
+        go('artworks');
+      } catch (err) { $('.form-error', form).textContent = err.message; }
+    });
+  });
+
+  fill(main,
+    h('p', { style: 'margin-bottom:10px' }, h('a', { class: 'btn btn--quiet btn--sm', href: backHref }, icon('back'), 'All artworks')),
+    head, form);
+  renderPhotos();
 }
 
 /* -------------------------------------------------------------------------
@@ -1684,7 +2422,7 @@ async function renderAnnouncementForm(main, slug, sub) {
 /* -------------------------------------------------------------------------
    Inquiries: website form submissions
    ------------------------------------------------------------------------- */
-const FORM_TYPE_LABELS = { contact: 'Contact', quote: 'Quote request', event: 'Event inquiry', wholesale: 'Wholesale', apply: 'Job application', catering: 'Catering' };
+const FORM_TYPE_LABELS = { contact: 'Contact', quote: 'Quote request', event: 'Event inquiry', wholesale: 'Wholesale', apply: 'Job application', catering: 'Catering', artwork: 'Artwork inquiry' };
 const formTypeLabel = (t) => FORM_TYPE_LABELS[t] || (t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Form');
 
 /** Plain words for the email_error codes the Worker stores (see worker/lib/email.js). */
@@ -1707,6 +2445,10 @@ async function screenInquiries(main, { slug, sub }) {
     const open = h('button', { type: 'button', class: 'list__open', onclick: () => go('inquiries', q.id) },
       h('p', { class: 'list__title' }, who, q.status === 'new' ? h('span', { class: 'chip chip--new', style: 'margin-left:8px' }, 'New') : null, q.status === 'spam' ? h('span', { class: 'chip chip--off', style: 'margin-left:8px' }, 'Spam') : null),
       h('p', { class: 'list__meta' }, `${formTypeLabel(q.form_type)} · ${fmtDateTime(q.created_at)}`),
+      // An artwork inquiry names the piece. Only the Worker writes artwork_status, and only together with the piece's
+      // real title and artist (anything a visitor sends under those names is dropped), so it marks catalog facts.
+      q.form_type === 'artwork' && q.fields?.artwork_status && q.fields.artwork_title
+        ? h('p', { class: 'list__meta' }, `About “${q.fields.artwork_title}”${q.fields.artwork_artist ? ` by ${q.fields.artwork_artist}` : ''}`) : null,
       q.message ? h('p', { class: 'list__meta' }, q.message.length > 120 ? `${q.message.slice(0, 120)}…` : q.message) : null);
     return h('div', { class: `list__row${q.status === 'new' ? ' is-unread' : ''}` }, open);
   };
@@ -1776,7 +2518,11 @@ async function renderInquiry(main, slug, id) {
   const fields = h('dl', { class: 'inquiry__fields' },
     dt('Name', q.name), dt('Email', q.email, { href: q.email ? `mailto:${q.email}` : null }), dt('Phone', q.phone, { href: q.phone ? `tel:${q.phone}` : null }),
     dt('Form', formTypeLabel(q.form_type)), dt('Message', q.message, { wide: true }),
-    Object.entries(extra).map(([k, v]) => dt(k.replace(/[_-]+/g, ' '), typeof v === 'object' ? JSON.stringify(v) : v, { wide: String(v).length > 60 })),
+    Object.entries(extra).map(([k, v]) => dt(k.replace(/[_-]+/g, ' '), typeof v === 'object' ? JSON.stringify(v) : v, {
+      wide: String(v).length > 60,
+      // The piece an artwork inquiry is about opens in Artworks (where it can be marked sold).
+      href: k === 'artwork_id' && q.form_type === 'artwork' && /^\d+$/.test(String(v)) && hasFeature('artworks') ? hashFor('artworks', v) : null,
+    })),
     dt('Sent', fmtDateTime(q.created_at)), dt('From page', q.source_url, { href: isUrl(q.source_url) ? q.source_url : null }));
 
   const setStatus = (status, btn) => withBusy(btn, async () => {
@@ -1825,7 +2571,7 @@ async function renderInquiry(main, slug, id) {
    History: who changed what, with Restore
    ------------------------------------------------------------------------- */
 const ACTION_LABELS = { create: 'Added', update: 'Changed', delete: 'Deleted', restore: 'Restored' };
-const ENTITY_LABELS = { business: 'business details', hours: 'hours', hours_exception: 'a special day', event: 'an event', menu_section: 'a menu section', menu_item: 'a menu item', announcement: 'an announcement', inquiry: 'an inquiry', user: 'a user', settings: 'settings' };
+const ENTITY_LABELS = { business: 'business details', hours: 'hours', hours_exception: 'a special day', event: 'an event', menu_section: 'a menu section', menu_item: 'a menu item', announcement: 'an announcement', inquiry: 'an inquiry', user: 'a user', settings: 'settings', artwork: 'an artwork', artwork_image: 'an artwork photo', media: 'a photo' };
 
 async function screenHistory(main, { slug, sub }) {
   const all = sub === 'all' && isManager();

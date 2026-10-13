@@ -4,6 +4,7 @@ import { all, first, parseJson, updateRow, withIsoTimes } from './db.js';
 import { requireBusiness } from './auth.js';
 import { audit } from './audit.js';
 import { deliverInquiry } from './email.js';
+import { findArtwork } from './forms.js';
 
 export const INQUIRY_STATUSES = ['new', 'handled', 'spam'];
 
@@ -63,7 +64,9 @@ export async function patch(ctx) {
 /** POST /api/admin/inquiries/:id/resend — tries the notification email again. */
 export async function resend(ctx) {
   const { row, business } = await loadInquiry(ctx);
-  const result = await deliverInquiry(ctx.env, business, row);
+  // An artwork inquiry keeps its "Inquiry about …" subject while the piece is still published.
+  const artwork = row.form_type === 'artwork' ? await findArtwork(ctx.env, row.business_slug, parseJson(row.fields_json, {}).artwork_id) : null;
+  const result = await deliverInquiry(ctx.env, business, row, artwork);
   const fresh = await first(ctx.env, 'SELECT emailed_at, email_error FROM inquiries WHERE id = ?', [row.id]);
   await audit(ctx, {
     business_slug: row.business_slug, entity: 'inquiry', entity_id: row.id, action: 'update',

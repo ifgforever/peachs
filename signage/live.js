@@ -22,6 +22,11 @@
   const BOARD_PER_SCENE = 14;            // menu board items per scene (two columns of seven)
   const FEATURED_PER_SCENE = 4;
   const CATERING_PICKS = 5;              // rows that fit the catering card
+  const ARTWORKS_PER_CYCLE = 20;         // gallery slideshow: artwork scenes per pass; more rotate in on the next pass
+  const PRELOAD_AHEAD = 2;               // artwork photos loaded ahead of the scene that shows them
+  const IMAGE_TIMEOUT_MS = 12000;        // a photo slower than this counts as failed and its scene is skipped
+  const IMAGE_RETRY_MS = 10 * 60 * 1000; // a failed photo is tried again after this long
+  const KNOWN_IMAGES = 80;               // photos remembered as loaded (with their size), for offline starts
   const RELOAD_AFTER_MS = 24 * 60 * 60 * 1000; // a daily reload keeps long-running players tidy
   const OFFLINE_AFTER_MS = 2 * REFRESH_MS;     // show the "offline" chip after two missed refreshes
 
@@ -30,6 +35,7 @@
   const API = apiBase(params.get('api'));
   const FROZEN = parseFrozenClock(params.get('at'));   // ?at=2026-10-14T10:30 freezes "now" for previews
   const CACHE_KEY = 'romesjoy-tv:' + BUSINESS;
+  const IMAGES_KEY = CACHE_KEY + ':images';
 
   const DAY_LABELS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -73,6 +79,12 @@
     errors: [],          // newest first, max 12
     started: Date.now(),
     plannedDate: null,   // the Chicago date plan() last ran for
+    images: {},          // artwork photo url → { ok: true | false | null (loading), w, h, at, promise } this session
+    known: {},           // artwork photo url → [width, height, lastLoadedAt], kept in localStorage across restarts
+    artPool: 0,          // artworks the gallery slideshow can show; more than ARTWORKS_PER_CYCLE rotate
+    artOffset: 0,        // where this pass's window of artworks starts in that pool
+    waiting: null,       // token of a pending "wait for the next photo"; a newer advance() replaces it
+    history: [],         // ids of the scenes shown, oldest first (last 40), for the debug overlay and tests
   };
 
   const scenesRoot = document.getElementById('scenes');
@@ -267,6 +279,83 @@
 
   const settingOn = (settings, key) => settings[key] !== false && settings[key] !== 0 && settings[key] !== 'false';
 
+  /* -------------------------------------------------------------------------
+     Artwork photos: loaded ahead of their scene, remembered once they have loaded
+     ------------------------------------------------------------------------- */
+  function loadKnownImages() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(IMAGES_KEY) || 'null');
+      if (saved && saved.v === 1 && isObj(saved.images)) return saved.images;
+    } catch (e) { note(e, 'cache'); }
+    return {};
+  }
+
+  /** Keeps the most recent KNOWN_IMAGES photos that loaded; the browser's own cache holds the files. */
+  function rememberImage(url, w, h) {
+    state.known[url] = [w, h, Date.now()];
+    const urls = Object.keys(state.known);
+    if (urls.length > KNOWN_IMAGES) {
+      urls.sort((a, b) => state.known[a][2] - state.known[b][2]).slice(0, urls.length - KNOWN_IMAGES).forEach((u) => { delete state.known[u]; });
+    }
+    try { localStorage.setItem(IMAGES_KEY, JSON.stringify({ v: 1, images: state.known })); } catch (e) { note(e, 'cache'); }
+  }
+
+  /** 'ok', 'failed', 'loading' or 'unknown' (never tried, or failed long enough ago to try again). */
+  function photoState(url) {
+    const p = state.images[url];
+    if (!p) return 'unknown';
+    if (p.ok === null) return 'loading';
+    if (p.ok) return 'ok';
+    return Date.now() - p.at > IMAGE_RETRY_MS ? 'unknown' : 'failed';
+  }
+
+  function photoFailed(url, why) {
+    const p = state.images[url] || (state.images[url] = {});
+    Object.assign(p, { ok: false, at: Date.now() });
+    note(new Error(why + ': ' + url), 'artwork photo');
+  }
+
+  /** Loads a photo once (again after IMAGE_RETRY_MS if it failed). Resolves true when it can be shown. */
+  function preload(url) {
+    const st = photoState(url);
+    if (st !== 'unknown') return state.images[url].promise || Promise.resolve(st === 'ok');
+    const entry = { ok: null, w: 0, h: 0, at: Date.now() };
+    state.images[url] = entry;
+    entry.promise = new Promise((resolve) => {
+      const img = new Image();
+      let timer = null;
+      const finish = (ok, why) => {
+        if (entry.ok !== null) return;
+        clearTimeout(timer);
+        img.onload = img.onerror = null;
+        if (ok) {
+          Object.assign(entry, { ok: true, w: img.naturalWidth, h: img.naturalHeight, at: Date.now() });
+          rememberImage(url, entry.w, entry.h);
+        } else {
+          photoFailed(url, why);
+        }
+        resolve(ok);
+      };
+      timer = setTimeout(() => finish(false, 'Timed out after ' + IMAGE_TIMEOUT_MS / 1000 + 's'), IMAGE_TIMEOUT_MS);
+      img.onload = () => (img.naturalWidth ? finish(true) : finish(false, 'Empty image'));
+      img.onerror = () => finish(false, 'Could not load');
+      img.src = url;
+    });
+    return entry.promise;
+  }
+
+  /** Starts loading the photos of the next few artwork scenes while the current scene is up. */
+  function preloadAhead() {
+    const n = state.scenes.length;
+    let found = 0;
+    for (let k = 1; k < n && found < PRELOAD_AHEAD; k++) {
+      const s = state.scenes[(state.index + k) % n];
+      if (!s.photo) continue;
+      found++;
+      if (photoState(s.photo) === 'unknown') preload(s.photo);
+    }
+  }
+
   /** One round trip: the signage bundle, then catering and Blanc when the settings allow. */
   function refresh() {
     if (state.fetching) return Promise.resolve(false);
@@ -302,6 +391,8 @@
       .catch((err) => {
         state.lastError = (err && err.message) || String(err);
         note(err, 'fetch');
+        // Offline, the gallery slideshow narrows to photos this player has loaded before (see plan()).
+        if (state.data && hasArtworks(state.data.bundle)) plan();
         return false;
       })
       .finally(() => {
@@ -326,7 +417,7 @@
     const settings = isObj(bundle.signage) ? bundle.signage : {};
     const seconds = Math.min(MAX_SECONDS, Math.max(MIN_SECONDS, Number(settings.seconds_per_scene) || DEFAULT_SECONDS));
     const scenes = [];
-    const add = (id, build, factor) => scenes.push({ id, seconds: Math.round(seconds * (factor || 1)), build });
+    const add = (id, build, factor, extra) => scenes.push(Object.assign({ id, seconds: Math.round(seconds * (factor || 1)), build }, extra));
     // The Worker filters by date when it builds the bundle, but a cached copy can outlive a holiday, so
     // dates are checked again against today's date here (and plan() runs again when the date changes).
     const today = chicagoNow().date;
@@ -336,6 +427,24 @@
     add('welcome', () => sceneWelcome(bundle));
     const notice = bundle.business.notice;
     if (notice && notice.text && onToday(null, notice.until)) add('notice', () => sceneNotice(bundle));
+
+    // Gallery slideshow (businesses with the artwork catalog): a title card, then one scene per piece.
+    state.artPool = 0;
+    const gallery = hasArtworks(bundle) && settingOn(settings, 'show_artworks') ? slideshow(bundle, today) : null;
+    if (gallery) {
+      const pool = gallery.pieces;
+      state.artPool = pool.length;
+      const start = pool.length > ARTWORKS_PER_CYCLE ? state.artOffset % pool.length : 0;
+      const picks = [];
+      for (let k = 0; k < Math.min(ARTWORKS_PER_CYCLE, pool.length); k++) picks.push(pool[(start + k) % pool.length]);
+      // The title card is skipped once photos of this pass have failed and none has loaded (offline, say).
+      const titleSkip = () => {
+        const states = picks.map((p) => photoState(p.photo.url));
+        return states.indexOf('ok') === -1 && states.indexOf('failed') > -1;
+      };
+      add('exhibition', () => sceneExhibition(bundle, gallery), 1, { skip: titleSkip });
+      picks.forEach((p, k) => add('artwork-' + p.art.id, () => sceneArtwork(gallery, p, k, seconds), 1, { photo: p.photo.url }));
+    }
 
     if (settingOn(settings, 'show_announcements')) {
       (bundle.announcements || []).filter((a) => isObj(a) && a.title && a.show_on_tv !== false && onToday(a.starts_at, a.ends_at))
@@ -469,6 +578,115 @@
       el('p', { class: 'eyebrow', text: 'Please note', d: 0 }),
       el('p', { class: 'text' + (text(n.text).length > 120 ? ' is-long' : ''), text: n.text, d: 150 }),
       until ? el('p', { class: 'until', text: 'Through ' + until, d: 350 }) : null);
+  }
+
+  /* -------------------------------------------------------------------------
+     2b. Gallery slideshow: exhibition title card, then one artwork per scene
+     ------------------------------------------------------------------------- */
+  const hasArtworks = (bundle) => Boolean(isObj(bundle.features) && bundle.features.artworks && Array.isArray(bundle.artworks));
+
+  /** The first photo of a piece that can go into a src attribute, or null. */
+  function artPhoto(art) {
+    const images = Array.isArray(art.images) ? art.images : [];
+    for (let i = 0; i < images.length; i++) {
+      const url = isObj(images[i]) ? safeUrl(images[i].url) : null;
+      if (url) return { url, alt: images[i].alt };
+    }
+    return null;
+  }
+
+  /**
+   * What the slideshow shows: the pieces of the current exhibition, else of the next one, else the featured
+   * pieces. Only pieces with a photo count; offline, only photos this player has loaded before (the rest would
+   * fail anyway). Returns { event (null for featured), pieces: [{ art, photo }] } or null.
+   */
+  function slideshow(bundle, today) {
+    const offline = Boolean(state.lastError);
+    const pieces = bundle.artworks
+      .filter((a) => isObj(a) && a.title)
+      .map((a) => ({ art: a, photo: artPhoto(a) }))
+      .filter((p) => p.photo && (!offline || state.known[p.photo.url] || photoState(p.photo.url) === 'ok'));
+    if (!pieces.length) return null;
+    const events = liveEvents(bundle.events, today);
+    const inShow = (status) => {
+      const shows = events.filter((e) => e.status === status)
+        .map((e) => ({ event: e, pieces: pieces.filter((p) => p.art.event_id != null && Number(p.art.event_id) === Number(e.id)) }))
+        .filter((s) => s.pieces.length);
+      return shows.find((s) => s.event.kind === 'exhibition') || shows[0] || null;
+    };
+    const found = inShow('current') || inShow('upcoming');
+    if (found) return found;
+    const featured = pieces.filter((p) => p.art.featured);
+    return featured.length ? { event: null, pieces: featured } : null;
+  }
+
+  /** "Now showing · <title> · <dates>" before the pieces. */
+  function sceneExhibition(bundle, gallery) {
+    const e = gallery.event;
+    const eyebrow = !e ? 'From the collection' : e.status === 'upcoming' ? 'Coming soon' : 'Now showing';
+    const title = e ? text(e.title) : 'Featured works';
+    return el('section', { class: 'scene s-gallery s-exhibition' },
+      el('p', { class: 'g-eyebrow', text: eyebrow, d: 0 }),
+      el('h2', { class: 'g-title' + (title.length > 34 ? ' is-long' : ''), text: title, d: 150 }),
+      e && e.subtitle ? el('p', { class: 'g-sub', text: e.subtitle, d: 300 }) : null,
+      e && (e.date_text || e.start_date) ? el('p', { class: 'g-dates', text: e.date_text || e.start_date, d: 450 }) : null,
+      el('p', { class: 'g-house', text: bundle.business.name, d: 650 }));
+  }
+
+  // Ken Burns drift: each piece grows from a slightly different point.
+  const ZOOM_ORIGINS = ['50% 45%', '35% 40%', '65% 55%', '45% 65%', '60% 35%'];
+  // Wall boxes the photo fits into; they match .s-art--side / .s-art--wide .art__wall in live.css.
+  const ART_BOX = { side: [1148, 904], wide: [1728, 676] };
+
+  /** Largest size of a w×h photo inside a box. */
+  function fitInto(w, h, box) {
+    const s = Math.min(box[0] / w, box[1] / h);
+    return [Math.round(w * s), Math.round(h * s)];
+  }
+
+  /** One piece: the photo letterboxed on the wall, a label beside it (or under a wide one). Never a price. */
+  function sceneArtwork(gallery, pick, k, seconds) {
+    const art = pick.art;
+    const url = pick.photo.url;
+    const p = state.images[url] || {};
+    // A wide photo gets the label underneath when that leaves it bigger than the label-beside layout.
+    let layout = 'side';
+    let size = null;
+    if (p.w && p.h) {
+      const side = fitInto(p.w, p.h, ART_BOX.side);
+      const wide = fitInto(p.w, p.h, ART_BOX.wide);
+      if (wide[0] * wide[1] > side[0] * side[1] * 1.05) layout = 'wide';
+      size = layout === 'wide' ? wide : side;
+    }
+    const scene = el('section', { class: 'scene s-gallery s-art s-art--' + layout });
+    const img = el('img', { class: 'art__img', attrs: { alt: text(pick.photo.alt) || text(art.title) + (art.artist ? ', by ' + art.artist : '') } });
+    if (size) { img.style.width = size[0] + 'px'; img.style.height = size[1] + 'px'; }
+    img.style.animationDuration = (seconds + FADE_MS / 1000 + 1) + 's';
+    img.style.transformOrigin = ZOOM_ORIGINS[k % ZOOM_ORIGINS.length];
+    // Loaded a moment ago, so this comes from the browser's cache; if it still fails, skip the scene.
+    img.addEventListener('error', () => {
+      photoFailed(url, 'Could not show');
+      if (scenesRoot.lastElementChild === scene) advance();
+    });
+    img.src = url;
+    scene.appendChild(el('div', { class: 'art__wall' }, img));
+
+    const e = gallery.event;
+    const meta = [art.year, art.medium].filter((v) => v != null && String(v).trim()).join(' · ');
+    const title = text(art.title);
+    scene.appendChild(el('div', { class: 'art__label', d: 350 },
+      el('div', { class: 'art__show' },
+        el('p', { class: 'g-eyebrow', text: !e ? 'From the collection' : e.status === 'upcoming' ? 'Coming soon' : 'Now showing' }),
+        e ? el('p', { class: 'art__showname', text: e.title }) : null),
+      el('div', { class: 'art__text' },
+        el('div', { class: 'art__main' },
+          el('h2', { class: 'art__title' + (title.length > 40 ? ' is-long' : ''), text: title }),
+          art.artist ? el('p', { class: 'art__artist', text: art.artist }) : null),
+        el('div', { class: 'art__facts' },
+          meta ? el('p', { class: 'art__meta', text: meta }) : null,
+          art.dimensions ? el('p', { class: 'art__meta', text: art.dimensions }) : null,
+          art.status === 'sold' ? el('p', { class: 'art__sold' }, el('span', { class: 'art__dot', attrs: { 'aria-hidden': 'true' } }), 'Sold') : null))));
+    return scene;
   }
 
   /* -------------------------------------------------------------------------
@@ -673,13 +891,29 @@
   function advance() {
     clearTimeout(state.timer);
     state.timer = null;
+    state.waiting = null;
+    // End of a pass: with more artworks than fit one pass, the slideshow moves on to the next ones.
+    if (state.index >= state.scenes.length - 1 && state.artPool > ARTWORKS_PER_CYCLE) {
+      state.artOffset = (state.artOffset + ARTWORKS_PER_CYCLE) % state.artPool;
+      plan();
+      state.index = -1;
+    }
     const n = state.scenes.length;
     for (let tries = 0; tries < n; tries++) {
       state.index = (state.index + 1) % n;
       const scene = state.scenes[state.index];
+      if (scene.photo) {
+        const st = photoState(scene.photo);
+        if (st === 'failed') continue;                       // a photo that will not load: skip its scene
+        if (st !== 'ok') { waitForPhoto(scene); return; }    // not loaded yet: keep the current scene up a moment
+      }
+      if (scene.skip && scene.skip()) continue;
       try {
         show(scene.build());
         schedule(scene.seconds);
+        state.history.push(scene.id);
+        if (state.history.length > 40) state.history.shift();
+        preloadAhead();
         return;
       } catch (e) {
         note(e, 'scene ' + scene.id);
@@ -688,6 +922,17 @@
     // Nothing could be built: fall back to the brand screen and try again later.
     brandEl.classList.add('is-on');
     if (n) schedule(DEFAULT_SECONDS);
+  }
+
+  /** Leaves the current scene up until the photo of `scene` has loaded (or failed), then moves on. */
+  function waitForPhoto(scene) {
+    const index = state.index;
+    const token = {};
+    state.index = index - 1;                 // the next advance() comes back to this scene
+    state.waiting = token;
+    // Nothing else moved the rotation on meanwhile (a key, the watchdog): carry on from here, even if a
+    // refresh re-planned the scenes in the meantime.
+    preload(scene.photo).then(() => { if (state.waiting === token) advance(); });
   }
 
   function schedule(seconds) {
@@ -746,7 +991,8 @@
       ['Last success', stamp(state.lastOkAt)],
       ['Last error', state.lastError || 'none'],
       ['Scenes', state.scenes.map((s) => s.id + ' ' + s.seconds + 's').join(', ') || 'none'],
-      ['Showing', state.scenes[state.index] ? state.scenes[state.index].id : 'brand screen'],
+      ['Showing', brandEl.classList.contains('is-on') || !state.history.length ? 'brand screen' : state.history[state.history.length - 1]],
+      ['Artworks', state.artPool ? state.artPool + ' in the slideshow' + (state.artPool > ARTWORKS_PER_CYCLE ? ', this pass from #' + (state.artOffset + 1) : '') + ' · photos loaded ' + Object.keys(state.images).filter((u) => state.images[u].ok).length + ', failed ' + Object.keys(state.images).filter((u) => state.images[u].ok === false).length : 'none'],
       ['Clock', chicagoNow().date + ' ' + chicagoNow().time + (FROZEN ? ' (frozen by ?at=)' : ' America/Chicago')],
       ['Uptime', Math.round((Date.now() - state.started) / 60000) + ' min'],
       ['Screen', window.innerWidth + '×' + window.innerHeight + ' · scale ' + getComputedStyle(document.documentElement).getPropertyValue('--tv-scale').trim()],
@@ -781,6 +1027,7 @@
       $('[data-brand-name]').textContent = BUSINESS.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
       $('[data-brand-address]').textContent = '';
     }
+    state.known = loadKnownImages();
     const cached = loadCache();
     if (cached) {
       state.data = { bundle: cached.bundle, catering: cached.catering || null, blanc: cached.blanc || null, savedAt: cached.savedAt };
@@ -809,7 +1056,8 @@
     next: advance,
     refresh,
     scenes: () => state.scenes.map((s) => s.id),
-    current: () => (state.scenes[state.index] ? state.scenes[state.index].id : null),
+    current: () => (state.history.length ? state.history[state.history.length - 1] : null),
+    shown: () => state.history.slice(),
     goto: (id) => { const i = state.scenes.findIndex((s) => s.id === id); if (i > -1) { state.index = i - 1; advance(); } },
     state: () => ({ source: state.source, lastOkAt: state.lastOkAt, lastFetchAt: state.lastFetchAt, lastError: state.lastError, errors: state.errors.slice(), hasData: Boolean(state.data), api: API, business: BUSINESS }),
   };

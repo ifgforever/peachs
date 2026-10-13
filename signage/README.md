@@ -70,11 +70,17 @@ Upload them to Google Drive or Dropbox, set sharing to "Anyone with the link", a
 From the repo root, run `python3 -m http.server 8765`, then `node signage/entrance.mjs`.
 
 - Any listed clip that isn't in `source/` is skipped, so it builds with whatever is there.
-- It writes two files: `peachs-entrance-loop.mp4` for the TV, and `peachs-entrance-loop-web.mp4`, a 720p copy of about 10 MB for the website. Commit only the web copy.
+- It writes three files: `peachs-entrance-loop.mp4` (full quality, about 30 MB, for the BrightSign player), `peachs-entrance-loop-web.mp4` (720p, about 10 MB, for the landing page) and `peachs-entrance-loop-tv.mp4` (1080p, about 21 MB, for the `/tv/` page). Commit the web and TV copies; the full file is over Cloudflare's 25 MB limit.
 - Widescreen clips play full screen. A clip of any other shape (a vertical phone video, say) plays in a Peach's-colored frame with its title beside it.
 - Every clip's sound is leveled to the same loudness, so one video isn't much louder than the next.
 - To cut a clip's start or end (for example, a YouTube end screen), add `"start": 2` and/or `"end": 95` (seconds) to that clip in `entrance.json`.
 - To add another video (a news segment, a new Instagram post), put the file in `source/` and add a block like the existing clips to `entrance.json`.
+
+## Showing a loop on a TV with a Fire TV Stick or an Android box
+
+Open **peachs.tvinstallchicago.workers.dev/tv** in the TV's web browser and press OK. The entrance loop plays full screen, with sound, and repeats until you turn it off. The two other buttons play Screen 2 and Screen 3 (or open `/tv/?screen=2` or `/tv/?screen=3`). This needs Wi-Fi the whole time.
+
+For a demo without Wi-Fi, use the page's **Save this video to the device** link (or download `signage/peachs-entrance-loop-tv.mp4`), then play the file in VLC with Repeat turned on.
 
 ## Putting a video on a BrightSign player
 

@@ -3,7 +3,8 @@
 // Clip audio is leveled to the same loudness (-16 LUFS); everything else is silent.
 // Usage: python3 -m http.server 8765 (from the repo root), then: node signage/entrance.mjs
 // Options: --config <file> (default signage/entrance.json), --out <file> (default signage/peachs-entrance-loop.mp4),
-//          --web <file> (default signage/peachs-entrance-loop-web.mp4, the smaller copy for the website)
+//          --web <file> (default signage/peachs-entrance-loop-web.mp4, the smaller copy for the website),
+//          --tv <file> (default signage/peachs-entrance-loop-tv.mp4, the 1080p copy the /tv/ page plays)
 import { existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +16,7 @@ const opt = (name, def) => (argv.includes(name) ? resolve(argv[argv.indexOf(name
 const configPath = opt('--config', join(here, 'entrance.json'));
 const out = opt('--out', join(here, 'peachs-entrance-loop.mp4'));
 const web = opt('--web', join(here, 'peachs-entrance-loop-web.mp4'));
+const tv = opt('--tv', join(here, 'peachs-entrance-loop-tv.mp4'));
 const work = join(here, 'build', 'entrance');
 mkdirSync(work, { recursive: true });
 
@@ -154,3 +156,10 @@ await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-vf', 'scale=1280:7
   '-c:v', 'libx264', '-preset', 'slow', '-crf', '27', '-maxrate', '2500k', '-bufsize', '5000k', '-pix_fmt', 'yuv420p',
   '-profile:v', 'high', '-level', '4.0', '-c:a', 'aac', '-b:a', '128k', '-ar', '48000', '-movflags', '+faststart', web]);
 console.log(`wrote ${web} (web copy)`);
+
+// 7. A 1080p copy for TVs that play the site's /tv/ page (Fire TV, Android boxes). CRF 26 keeps a two-minute loop
+// around 21 MB, under Cloudflare's 25 MiB limit (SSIM 0.99 against the full file).
+await run('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-c:v', 'libx264', '-preset', 'slow', '-crf', '26',
+  '-maxrate', '3000k', '-bufsize', '6000k', '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-level', '4.1',
+  '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-movflags', '+faststart', tv]);
+console.log(`wrote ${tv} (TV copy)`);

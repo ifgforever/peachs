@@ -5,13 +5,15 @@
   "description": "Rome's Joy Companies: concept sites, admin panel and in-store screens on Cloudflare Workers",
   "scripts": {
     "build": "echo \"No build step: static sites plus worker/index.js\"",
-    "dev": "wrangler dev --local --port 8787",
+    "dev": "wrangler dev --local --port 8787 --persist-to ../romesjoy-local-data",
     "deploy": "wrangler deploy",
-    "db:schema:local": "wrangler d1 execute romesjoy-admin --local --file worker/schema.sql",
-    "db:seed:local": "wrangler d1 execute romesjoy-admin --local --file worker/seed.sql",
+    "db:schema:local": "wrangler d1 execute romesjoy-admin --local --persist-to ../romesjoy-local-data --file worker/schema.sql",
+    "db:seed:local": "wrangler d1 execute romesjoy-admin --local --persist-to ../romesjoy-local-data --file worker/seed.sql",
     "db:schema:remote": "wrangler d1 execute romesjoy-admin --remote --file worker/schema.sql",
     "db:seed:remote": "wrangler d1 execute romesjoy-admin --remote --file worker/seed.sql",
-    "test:smoke": "node worker/smoke-test.mjs http://localhost:8787"
+    "test:smoke": "node worker/smoke-test.mjs http://localhost:8787",
+    "test:admin-ui": "node admin/ui-test.mjs",
+    "test:tv": "node signage/tv-test.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

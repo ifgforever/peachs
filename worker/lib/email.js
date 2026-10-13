@@ -50,7 +50,7 @@ export function inquiryEmail(env, business, inquiry) {
   rows.push(['Message', inquiry.message]);
   if (inquiry.source_url) rows.push(['Sent from', inquiry.source_url]);
   const present = rows.filter(([, v]) => v != null && String(v).trim() !== '');
-  const adminUrl = env.PUBLIC_BASE_URL ? `${String(env.PUBLIC_BASE_URL).replace(/\/+$/, '')}/admin/` : null;
+  const adminUrl = env.PUBLIC_BASE_URL ? `${String(env.PUBLIC_BASE_URL).replace(/\/+$/, '')}/admin/?business=${encodeURIComponent(business.slug)}#/inquiries/${inquiry.id}` : null;
 
   const text = [
     `New ${kind} for ${business.name} (inquiry #${inquiry.id})`,

@@ -80,7 +80,14 @@ assets/js/menu-data.js   menu content (edit prices here)
 assets/js/hero.js        the 3D pancake-stack hero (Three.js r169 from a CDN)
 assets/img/              food photos and brand marks
 menus/                   original menu PDF and images
-docs/                    content inventory and source notes
+docs/                    content inventory, source notes and the admin API contract (docs/admin-api.md)
+romesjoy/ catering/ parkway-social/ mise-en-place/ blanc/ rjc-sausage/
+                         the other six concept sites (each with its own css/ and js/)
+assets/js/live.js        shared module every site uses to pull hours, notices, menus and events from the API
+admin/                   the staff back office (admin/index.html, admin.js, admin.css) — see admin/README.md
+worker/                  the Cloudflare Worker API (worker/index.js, lib/), database schema and seed
+signage/                 in-store TV loop: the MP4 (Option A) and the live page signage/live.html (Option B)
+wrangler.jsonc           Cloudflare config: one Worker serves the sites as static files plus /api/*
 ```
 
-No build step and no frameworks. To change a price, edit `assets/js/menu-data.js`.
+No build step and no frameworks. Prices, hours, notices and events are edited in the back office (`admin/README.md`); `assets/js/menu-data.js` is only the fallback the Peach's page shows when the API is unreachable.

@@ -664,8 +664,9 @@ function setBusiness(slug) {
 async function loadBusinesses() {
   const res = await api('/admin/businesses');
   state.businesses = res.businesses || [];
+  const fromQuery = new URLSearchParams(location.search).get('business');
   const remembered = store.get(BUSINESS_KEY);
-  const pick = state.businesses.find((b) => b.slug === remembered) || state.businesses[0];
+  const pick = state.businesses.find((b) => b.slug === fromQuery) || state.businesses.find((b) => b.slug === remembered) || state.businesses[0];
   state.slug = pick ? pick.slug : null;
   if (state.slug) store.set(BUSINESS_KEY, state.slug);
 }
@@ -937,12 +938,13 @@ async function screenHours(main, { slug }) {
   const exOpen = h('input', { class: 'input', type: 'time', name: 'open', 'aria-label': 'Opens at', step: 300 });
   const exClose = h('input', { class: 'input', type: 'time', name: 'close', 'aria-label': 'Closes at', step: 300 });
   const exTimes = h('div', { class: 'hours__times is-closed' }, exOpen, h('span', { class: 'hours__dash', 'aria-hidden': 'true' }, '–'), exClose);
-  $('input', exClosed).addEventListener('change', (e) => exTimes.classList.toggle('is-closed', e.target.checked));
+  const exTimesField = h('div', { class: 'field', hidden: true }, h('span', { class: 'field__label' }, 'Hours that day'), exTimes, h('p', { class: 'field__error', id: `ex-time-err-${++uid}` }));
+  $('input', exClosed).addEventListener('change', (e) => { exTimes.classList.toggle('is-closed', e.target.checked); exTimesField.hidden = e.target.checked; });
   const addBtn = h('button', { type: 'submit', class: 'btn btn--secondary' }, 'Add special day');
   const exForm = h('form', { class: 'form card', novalidate: true },
     h('h3', { class: 'card__title' }, 'Add a special day'),
     h('div', { class: 'form__row form__row--2' }, exDate, exLabel),
-    exClosed, h('div', { class: 'field' }, h('span', { class: 'field__label' }, 'Hours that day'), exTimes, h('p', { class: 'field__error', id: `ex-time-err-${++uid}` })),
+    exClosed, exTimesField,
     h('p', { class: 'form-error', role: 'alert' }),
     h('div', { class: 'actions' }, addBtn));
   trackDirty(exForm);
@@ -1672,6 +1674,13 @@ async function renderAnnouncementForm(main, slug, sub) {
 const FORM_TYPE_LABELS = { contact: 'Contact', quote: 'Quote request', event: 'Event inquiry', wholesale: 'Wholesale', apply: 'Job application', catering: 'Catering' };
 const formTypeLabel = (t) => FORM_TYPE_LABELS[t] || (t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Form');
 
+/** Plain words for the email_error codes the Worker stores (see worker/lib/email.js). */
+function emailErrorText(code) {
+  if (code === 'not_configured') return 'Not emailed: email sending is not set up on the server yet. The inquiry is saved here.';
+  if (code === 'no_recipients') return 'Not emailed: this business has no inquiry email address yet. Add one under Contact & links.';
+  return `Email failed (${code}). Try "Resend email" or check the Resend settings.`;
+}
+
 async function screenInquiries(main, { slug, sub }) {
   if (sub && !['new', 'handled', 'spam', 'all'].includes(sub)) return renderInquiry(main, slug, sub);
   const filter = sub || 'new';
@@ -1740,7 +1749,7 @@ async function renderInquiry(main, slug, id) {
   const emailLine = h('p', { class: 'muted small' });
   const renderStatus = () => {
     fill(statusLine, q.status === 'new' ? h('span', { class: 'chip chip--new' }, 'New') : q.status === 'spam' ? h('span', { class: 'chip chip--off' }, 'Marked as spam') : h('span', { class: 'chip chip--current' }, 'Handled'));
-    emailLine.textContent = q.emailed_at ? `Emailed to the team ${fmtDateTime(q.emailed_at)}.` : q.email_error ? `Email failed: ${q.email_error}` : 'Not emailed yet.';
+    emailLine.textContent = q.emailed_at ? `Emailed to the team ${fmtDateTime(q.emailed_at)}.` : q.email_error ? emailErrorText(q.email_error) : 'Not emailed yet.';
   };
   renderStatus();
 
@@ -1780,7 +1789,7 @@ async function renderInquiry(main, slug, id) {
       try {
         const res = await api(`/admin/inquiries/${q.id}/resend`, { method: 'POST' });
         if (res.emailed) { q.emailed_at = new Date().toISOString(); q.email_error = null; toast('Email sent.'); }
-        else { q.email_error = res.error || 'not sent'; toast(res.error ? `Email not sent: ${res.error}` : 'Email not sent. Email is not set up on the server yet.', { kind: 'error' }); }
+        else { q.email_error = res.error || 'not sent'; toast(emailErrorText(q.email_error), { kind: 'error' }); }
         renderStatus();
       } catch (err) { toast(err.message, { kind: 'error' }); }
     }));
@@ -1810,7 +1819,7 @@ async function screenHistory(main, { slug, sub }) {
     const restore = entry.can_restore ? h('button', { type: 'button', class: 'btn btn--secondary btn--sm' }, 'Restore') : null;
     const el = h('div', { class: 'list__row history__row' },
       h('div', { class: 'list__main' },
-        h('p', { class: 'list__title' }, h('span', { class: 'history__action' }, ACTION_LABELS[entry.action] || entry.action), ' ', entry.summary || ENTITY_LABELS[entry.entity] || entry.entity),
+        h('p', { class: 'list__title' }, entry.summary ? entry.summary : [h('span', { class: 'history__action' }, ACTION_LABELS[entry.action] || entry.action), ' ', ENTITY_LABELS[entry.entity] || entry.entity]),
         h('p', { class: 'history__who' }, `${entry.user_email || 'Someone'} · ${fmtDateTime(entry.created_at)}`, all && entry.business_slug ? ` · ${state.businesses.find((b) => b.slug === entry.business_slug)?.name || entry.business_slug}` : '')),
       restore ? h('div', { class: 'list__actions' }, restore) : null);
     restore?.addEventListener('click', async () => {

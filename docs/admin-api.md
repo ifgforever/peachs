@@ -75,6 +75,7 @@ Rules:
 - `events`: `published = 1` only. `status` = `past` when the last day (`end_date` or `start_date`) is before today; `upcoming` when `start_date` is after today; otherwise `current`. `past` holds the 20 most recent. `upcoming` and `current` are sorted by `start_date` ascending, `past` descending. `date_text` examples: `Oct 24, 2026`, `Oct 24 – Dec 5, 2026`, `Dec 28, 2026 – Jan 4, 2027`. `time_text` examples: `5–8 pm`, `11 am – 3 pm`, `7 pm`.
 - `menu`: published sections with `available = 1` items only, in `sort_order`. `prices` is the parsed `prices_json` or `null`.
 - `notice` is `null` when there is no notice or `notice_until` has passed.
+- Additive extras (safe to ignore): each announcement also carries `show_on_tv` and `business_slug` (null = family-wide) so the TV page can filter; each exception also carries `id`, `open_min`, `close_min` and a ready-to-print `text`.
 
 ### `GET /api/public/signage/:slug`
 The same bundle plus `"signage": { ...settings["signage:<slug>"] or {} }` and `"family": [ { slug, name, tagline, hours_summary } ]` for every business.
@@ -158,8 +159,18 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 ## Admin: settings and media
 
 - `GET /api/admin/settings/:key` → `{ value }` (`{}` when unset); `PUT /api/admin/settings/:key` `{ value }` (owner/admin, or an editor for `signage:<slug>` of a business they may edit).
-- `POST /api/admin/media` multipart `file` (jpeg, png, webp, gif, ≤ 8 MB) → `{ url }` stored in R2 under `uploads/<slug>/<timestamp>-<name>` and served at `GET /api/media/<key>` (public, long cache). 501 when `MEDIA` is not bound.
+- `POST /api/admin/media` multipart `file` (jpeg, png, webp, gif, ≤ 8 MB) plus `business` (the slug) → `{ url }` stored in R2 under `uploads/<slug>/<timestamp>-<name>` and served at `GET /api/media/<key>` (public, long cache). 501 when `MEDIA` is not bound, 404 for an unknown slug.
 
 ## Email
 
-`sendEmail({ to: [..], subject, text, html })` tries, in order: Resend (`RESEND_API_KEY` + `EMAIL_FROM`), then returns `{ sent: false, reason: 'not_configured' }`. Inquiry emails include every field, the business name, the time in Chicago, and a link to the admin inbox when `PUBLIC_BASE_URL` is set.
+`sendEmail({ to: [..], subject, text, html })` tries, in order: Resend (`RESEND_API_KEY` + `EMAIL_FROM`), then returns `{ sent: false, reason: 'not_configured' }`. Inquiry emails include every field, the business name, the time in Chicago, and a link straight to the inquiry (`<PUBLIC_BASE_URL>/admin/?business=<slug>#/inquiries/<id>`) when `PUBLIC_BASE_URL` is set. The admin honours `?business=<slug>` in its URL and then routes by hash (`#/inquiries/<id>`, `#/hours`, …).
+
+## Admin: history and inquiries, shapes the admin relies on
+
+- `GET /api/admin/history/:id` returns both `before`/`after` (parsed) and the raw `before_json`/`after_json`; deleted users have `password_hash` redacted.
+- Inquiry rows carry `fields` (parsed object) as well as `fields_json`.
+- No audit row is written for a write that changes nothing.
+
+## Static files
+
+The Worker's `ASSETS` binding serves everything not under `/api/` with Cloudflare's default `html_handling` (`auto-trailing-slash`): `/peachs.html` redirects (307) to `/peachs`, `/signage/live.html?business=peachs` to `/signage/live?business=peachs` (query strings are kept), and `/admin/` serves `admin/index.html`. Files listed in `.assetsignore` are never uploaded.

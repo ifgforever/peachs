@@ -9,3 +9,10 @@ wrangler.jsonc
 worker
 signage/render.mjs
 signage/build
+signage/tv-test.mjs
+admin/ui-test.mjs
+docs
+lab
+package.json
+package-lock.json
+README.md

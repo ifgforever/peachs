@@ -4,47 +4,65 @@
 // part of it with a Range header. Chrome copes, but Safari (iPhone, iPad, Mac) won't play a video unless the
 // server returns 206 Partial Content for those requests. wrangler.jsonc runs this Worker first for video paths
 // only; every other file is served straight from static assets, as before.
+//
+// It also answers /loop, a short address to type with a TV remote (the Downloader app on Fire TV, a TV browser):
+// it saves the 1080p entrance loop as a file, to play offline in VLC. Any video URL with ?dl=1 does the same.
 
 export default {
   async fetch(request, env, ctx) {
-    const range = request.headers.get('Range');
-    if (!range || (request.method !== 'GET' && request.method !== 'HEAD')) {
-      return withAcceptRanges(await env.ASSETS.fetch(request));
+    const url = new URL(request.url);
+    if (url.pathname === '/loop') {
+      url.pathname = '/signage/peachs-entrance-loop-tv.mp4';
+      url.search = '?dl=1';
+      request = new Request(url, request);
     }
-
-    // Ask for the whole file, then cut out the requested bytes.
-    const headers = new Headers(request.headers);
-    headers.delete('Range');
-    headers.delete('If-Range');
-    const full = await env.ASSETS.fetch(new Request(request.url, { method: 'GET', headers }));
-    if (full.status !== 200) return full;
-    const size = await sizeOf(full, () => env.ASSETS.fetch(new Request(request.url)));
-
-    // If-Range: only send part of the file if the browser's copy is still current.
-    const ifRange = request.headers.get('If-Range');
-    if (ifRange && ifRange !== full.headers.get('ETag')) return withAcceptRanges(full, request.method);
-
-    const r = parseRange(range, size);
-    if (r === null) return withAcceptRanges(full, request.method);   // malformed or multi-range: ignore it
-    if (r === 'unsatisfiable') {
-      full.body?.cancel();
-      return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes' } });
-    }
-
-    const out = new Headers(full.headers);
-    out.set('Content-Range', `bytes ${r.start}-${r.end}/${size}`);
-    out.set('Accept-Ranges', 'bytes');
-    const length = r.end - r.start + 1;
-    if (request.method === 'HEAD') {
-      full.body?.cancel();
-      out.set('Content-Length', String(length));
-      return new Response(null, { status: 206, headers: out });
-    }
-    const body = new FixedLengthStream(length);
-    ctx.waitUntil(copySlice(full.body, body.writable, r.start, r.end, size));
-    return new Response(body.readable, { status: 206, headers: out });
+    const res = await serve(request, env, ctx);
+    if (!url.searchParams.has('dl') || res.status >= 300) return res;
+    const out = new Response(res.body, res);
+    out.headers.set('Content-Disposition', `attachment; filename="${url.pathname.split('/').pop()}"`);
+    return out;
   },
 };
+
+// Serves a video file, answering a Range header itself (see the top of this file).
+async function serve(request, env, ctx) {
+  const range = request.headers.get('Range');
+  if (!range || (request.method !== 'GET' && request.method !== 'HEAD')) {
+    return withAcceptRanges(await env.ASSETS.fetch(request));
+  }
+
+  // Ask for the whole file, then cut out the requested bytes.
+  const headers = new Headers(request.headers);
+  headers.delete('Range');
+  headers.delete('If-Range');
+  const full = await env.ASSETS.fetch(new Request(request.url, { method: 'GET', headers }));
+  if (full.status !== 200) return full;
+  const size = await sizeOf(full, () => env.ASSETS.fetch(new Request(request.url)));
+
+  // If-Range: only send part of the file if the browser's copy is still current.
+  const ifRange = request.headers.get('If-Range');
+  if (ifRange && ifRange !== full.headers.get('ETag')) return withAcceptRanges(full, request.method);
+
+  const r = parseRange(range, size);
+  if (r === null) return withAcceptRanges(full, request.method);   // malformed or multi-range: ignore it
+  if (r === 'unsatisfiable') {
+    full.body?.cancel();
+    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes' } });
+  }
+
+  const out = new Headers(full.headers);
+  out.set('Content-Range', `bytes ${r.start}-${r.end}/${size}`);
+  out.set('Accept-Ranges', 'bytes');
+  const length = r.end - r.start + 1;
+  if (request.method === 'HEAD') {
+    full.body?.cancel();
+    out.set('Content-Length', String(length));
+    return new Response(null, { status: 206, headers: out });
+  }
+  const body = new FixedLengthStream(length);
+  ctx.waitUntil(copySlice(full.body, body.writable, r.start, r.end, size));
+  return new Response(body.readable, { status: 206, headers: out });
+}
 
 // Streams are read in 1 MiB blocks. A plain reader.read() returns 4 KiB at a time, and looping over a 25 MB video
 // that way costs far more CPU than a Worker request is allowed.

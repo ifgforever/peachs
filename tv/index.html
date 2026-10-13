@@ -53,15 +53,15 @@
       <button class="other" data-screen="2">Screen 2: Peach’s loop</button>
       <button class="other" data-screen="3">Screen 3: Rome’s Joy family</button>
     </div>
-    <a class="save" id="save" href="../signage/peachs-entrance-loop-tv.mp4" download>Save this video to the device (to play in VLC)</a>
+    <a class="save" id="save" href="/loop" download>Save this video to the device (to play in VLC)</a>
     <p class="msg" id="msg" role="status"></p>
   </div>
 
   <script>
     const SCREENS = {
-      entrance: { src: '../signage/peachs-entrance-loop-tv.mp4', label: 'President Obama at Peach’s, with sound' },
-      2: { src: '../signage/peachs-instore-loop.mp4', label: 'Screen 2: Peach’s loop' },
-      3: { src: '../signage/romesjoy-family-loop.mp4', label: 'Screen 3: Rome’s Joy family' },
+      entrance: { src: '../signage/peachs-entrance-loop-tv.mp4', save: '/loop' },
+      2: { src: '../signage/peachs-instore-loop.mp4', save: '../signage/peachs-instore-loop.mp4?dl=1' },
+      3: { src: '../signage/romesjoy-family-loop.mp4', save: '../signage/romesjoy-family-loop.mp4?dl=1' },
     };
     const v = document.getElementById('v');
     const msg = document.getElementById('msg');
@@ -75,7 +75,7 @@
       current = key;
       const src = new URL(SCREENS[key].src, location.href).href;
       if (v.src !== src) { v.src = src; v.load(); }
-      save.href = SCREENS[key].src;
+      save.href = SCREENS[key].save;
     }
 
     async function keepAwake() {
@@ -105,6 +105,12 @@
 
     start.addEventListener('click', () => play('entrance'));
     document.querySelectorAll('[data-screen]').forEach((b) => b.addEventListener('click', () => play(b.dataset.screen)));
+
+    // Fire TV's browser moves a pointer instead of focus, and OK clicks wherever the pointer is. So a click anywhere
+    // on the menu (outside the other buttons) starts the President Obama loop, and any click while it plays puts it
+    // back in full screen and resumes it.
+    document.getElementById('menu').addEventListener('click', (e) => { if (!e.target.closest('button, a')) play('entrance'); });
+    v.addEventListener('click', () => { goFullscreen(); if (v.paused) v.play().catch(() => {}); });
 
     // TV remotes send arrow keys; move focus between the buttons with them.
     document.addEventListener('keydown', (e) => {

@@ -1,6 +1,14 @@
-# Rome's Joy Companies: website concepts
+# Rome's Joy Companies: website concepts, TV loops, playlist and merch
 
-Redesign concepts for every company in Chef Cliff Rome's group, built as a pitch. Open `index.html` (the preview page) to see a card for each site. Click a card to open the concept, or use the "Current site" link to compare with the live website.
+Everything made for Chef Cliff Rome's group, built as a pitch. `index.html` is the landing page that packages it all:
+
+- **TV loops**: the three in-store videos for Peach's (see `signage/README.md`). All three play right on the page. The entrance video's full-quality file for the TV is shared directly, and a smaller copy is on the site.
+- **Parkway Ballroom playlist** (`playlist/`): 38 songs by musicians who played the ballroom, each with dated evidence.
+- **Merch** (`merch/`): ten Peach's designs, a six-piece starter line and four tee concepts, rendered from the Peach's Merch Line and Peach's Shirt Concepts canvases.
+- **Screen network idea** (`screen-network/`): the "free TV for your business" flyer, pitched as a way to market Rome's Joy with other neighborhood businesses.
+- **Websites**: a concept site for each company. Click a card to open it, or use the "Current site" link to compare with the live website.
+
+Live preview: https://peachs.tvinstallchicago.workers.dev/ (Cloudflare redeploys it whenever changes are merged into the main branch).
 
 | Folder | Company | Live site today |
 |---|---|---|
@@ -45,6 +53,8 @@ Then open http://localhost:8080 for the preview page. Opening `peachs.html` by d
 
 ## Get a shareable link for the client meeting
 
+This is already set up on Cloudflare: https://peachs.tvinstallchicago.workers.dev/ shows the main branch. The options below are alternatives.
+
 **Option A: GitHub Pages (free, about 2 minutes)**
 1. Merge the pull request into `main`.
 2. On GitHub, go to the repo's **Settings → Pages**.
@@ -73,7 +83,7 @@ The concept preview has `noindex` set so it never competes with the real site in
 ```
 index.html               preview page linking every concept
 peachs.html              the Peach's concept (one page)
-preview/                 screenshot thumbnails for the preview page
+preview/                 screenshot thumbnails for the preview page, and og.jpg (the link-preview image)
 assets/css/styles.css    styles
 assets/js/main.js        nav, menu tabs and filters, open-now badge, hero scroll wiring
 assets/js/menu-data.js   menu content (edit prices here)
@@ -84,10 +94,16 @@ docs/                    content inventory, source notes and the admin API contr
 romesjoy/ catering/ parkway-social/ mise-en-place/ blanc/ rjc-sausage/
                          the other six concept sites (each with its own css/ and js/)
 assets/js/live.js        shared module every site uses to pull hours, notices, menus and events from the API
-admin/                   the staff back office (admin/index.html, admin.js, admin.css) — see admin/README.md
-worker/                  the Cloudflare Worker API (worker/index.js, lib/), database schema and seed
-signage/                 in-store TV loop: the MP4 (Option A) and the live page signage/live.html (Option B)
-wrangler.jsonc           Cloudflare config: one Worker serves the sites as static files plus /api/*
+admin/                   the staff back office (admin/index.html, admin.js, admin.css), see admin/README.md
+signage/                 the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, the entrance screen,
+                         and the live screen signage/live.html (see signage/README.md)
+playlist/                the Parkway Ballroom playlist page
+merch/                   Peach's merch page and the rendered designs (img/)
+screen-network/          the free-TV flyer (PDF) and its preview image
+tv/                      the TV player page for Fire TV and Android boxes
+worker/                  the Cloudflare Worker: the /api/* admin backend (index.js, lib/), the database schema and
+                         seed, and byte-range video serving for the .mp4 files so they play in Safari (lib/video.js)
+wrangler.jsonc           Cloudflare config: one Worker serves the sites as static files, /api/*, the videos and /loop
 ```
 
 No build step and no frameworks. Prices, hours, notices and events are edited in the back office (`admin/README.md`); `assets/js/menu-data.js` is only the fallback the Peach's page shows when the API is unreachable.

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Peach's TV Player</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400..700&family=Fraunces:ital,opsz,wght@0,9..144,500..700;1,9..144,400..600&display=swap">
+  <style>
+    /* Full-screen player for a TV browser (Fire TV, Android TV boxes). Everything is sized in vw/vh so it reads
+       the same at 960x540 (Fire TV's browser) and 1920x1080. */
+    :root { --cream: #FBF7F1; --espresso: #1C1612; --accent: #E8742A; --accent-ink: #F49A5C; --muted: #C2B4A7;
+            --f-serif: 'Fraunces', Georgia, serif; --f-sans: 'DM Sans', system-ui, sans-serif; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #000; color: var(--cream); font-family: var(--f-sans); overflow: hidden; }
+    video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+    .menu {
+      position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 2.4vh; padding: 6vh 6vw;
+      text-align: center; background: radial-gradient(ellipse at center, rgba(28,22,18,.82), rgba(28,22,18,.94));
+    }
+    .eyebrow { margin: 0; font-size: 2.2vh; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-ink); }
+    h1 { margin: 0; font-family: var(--f-serif); font-weight: 600; font-size: 7.4vh; line-height: 1.05; letter-spacing: -.02em; }
+    h1 em { font-style: italic; font-weight: 500; color: var(--accent-ink); }
+    .lede { margin: 0 0 1vh; font-size: 2.8vh; color: var(--muted); }
+    button, .save {
+      font: inherit; color: inherit; cursor: pointer; border: 0.35vh solid transparent; border-radius: 999px;
+      display: inline-flex; align-items: center; justify-content: center; gap: 1.4vh; text-decoration: none;
+    }
+    .start { background: var(--accent); color: #1C1612; font-weight: 700; font-size: 3.6vh; padding: 2.2vh 5vh; }
+    .start::before { content: ""; border-style: solid; border-width: 1.5vh 0 1.5vh 2.4vh; border-color: transparent transparent transparent currentColor; }
+    .others { display: flex; gap: 2vh; flex-wrap: wrap; justify-content: center; }
+    .other { background: rgba(251,247,241,.1); font-weight: 600; font-size: 2.6vh; padding: 1.6vh 3.4vh; }
+    .save { background: none; color: var(--muted); font-size: 2.2vh; padding: 1vh 2vh; text-decoration: underline; text-underline-offset: .5vh; }
+    button:focus, .save:focus { outline: none; border-color: var(--cream); box-shadow: 0 0 0 .8vh rgba(244,154,92,.55); }
+    .start:focus { transform: scale(1.04); }
+    .msg { margin: 0; min-height: 3vh; font-size: 2.6vh; color: var(--accent-ink); }
+    body.playing .menu { display: none; }
+    body.playing { cursor: none; }
+  </style>
+</head>
+<body>
+  <video id="v" playsinline loop preload="auto" muted></video>
+
+  <div class="menu" id="menu">
+    <p class="eyebrow">Peach’s on 47th · in-store screens</p>
+    <h1>Press <em>OK</em> to start</h1>
+    <p class="lede">Plays full screen and repeats until you turn it off.</p>
+    <button class="start" id="start" autofocus>President Obama at Peach’s, with sound</button>
+    <div class="others">
+      <button class="other" data-screen="2">Screen 2: Peach’s loop</button>
+      <button class="other" data-screen="3">Screen 3: Rome’s Joy family</button>
+    </div>
+    <a class="save" id="save" href="/loop" download>Save this video to the device (to play in VLC)</a>
+    <p class="msg" id="msg" role="status"></p>
+  </div>
+
+  <script>
+    const SCREENS = {
+      entrance: { src: '../signage/peachs-entrance-loop-tv.mp4', save: '/loop' },
+      2: { src: '../signage/peachs-instore-loop.mp4', save: '../signage/peachs-instore-loop.mp4?dl=1' },
+      3: { src: '../signage/romesjoy-family-loop.mp4', save: '../signage/romesjoy-family-loop.mp4?dl=1' },
+    };
+    const v = document.getElementById('v');
+    const msg = document.getElementById('msg');
+    const start = document.getElementById('start');
+    const save = document.getElementById('save');
+    const buttons = [...document.querySelectorAll('button, .save')];
+    let current = SCREENS[new URLSearchParams(location.search).get('screen')] ? new URLSearchParams(location.search).get('screen') : 'entrance';
+    let lock = null;
+
+    function load(key) {
+      current = key;
+      const src = new URL(SCREENS[key].src, location.href).href;
+      if (v.src !== src) { v.src = src; v.load(); }
+      save.href = SCREENS[key].save;
+    }
+
+    async function keepAwake() {
+      try { lock = await navigator.wakeLock?.request('screen'); } catch { /* not supported or not allowed */ }
+    }
+
+    function goFullscreen() {
+      const el = document.documentElement;
+      const req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req && !document.fullscreenElement && !document.webkitFullscreenElement) {
+        try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch { /* ignore */ }
+      }
+    }
+
+    // Must run inside the button press: browsers only allow sound after a click or key press.
+    function play(key) {
+      load(key);
+      msg.textContent = '';
+      v.muted = false;
+      v.volume = 1;
+      const p = v.play();
+      if (p && p.catch) p.catch(() => { v.muted = true; v.play().catch(() => {}); msg.textContent = 'This browser blocked the sound. Press OK again.'; document.body.classList.remove('playing'); });
+      document.body.classList.add('playing');
+      goFullscreen();
+      keepAwake();
+    }
+
+    start.addEventListener('click', () => play('entrance'));
+    document.querySelectorAll('[data-screen]').forEach((b) => b.addEventListener('click', () => play(b.dataset.screen)));
+
+    // Fire TV's browser moves a pointer instead of focus, and OK clicks wherever the pointer is. So a click anywhere
+    // on the menu (outside the other buttons) starts the President Obama loop, and any click while it plays puts it
+    // back in full screen and resumes it.
+    document.getElementById('menu').addEventListener('click', (e) => { if (!e.target.closest('button, a')) play('entrance'); });
+    v.addEventListener('click', () => { goFullscreen(); if (v.paused) v.play().catch(() => {}); });
+
+    // TV remotes send arrow keys; move focus between the buttons with them.
+    document.addEventListener('keydown', (e) => {
+      if (document.body.classList.contains('playing')) {
+        // Any OK press while playing puts it back in full screen (Back on some remotes leaves full screen).
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); goFullscreen(); }
+        return;
+      }
+      const i = buttons.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); buttons[(i + 1) % buttons.length].focus(); }
+      if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); buttons[(i - 1 + buttons.length) % buttons.length].focus(); }
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && document.body.classList.contains('playing')) { keepAwake(); v.play().catch(() => {}); }
+    });
+
+    // If the network drops, show the menu with a note; the next OK press tries again.
+    v.addEventListener('error', () => {
+      document.body.classList.remove('playing');
+      msg.textContent = 'The video didn’t load. Check the Wi-Fi, then press OK to try again.';
+      v.removeAttribute('src');
+      start.focus();
+    });
+
+    // Preselect from ?screen=2 or ?screen=3, and play a silent preview behind the menu where the browser allows it.
+    load(current);
+    (document.querySelector(`[data-screen="${current}"]`) || start).focus();
+    v.play().catch(() => {});
+  </script>
+</body>
+</html>

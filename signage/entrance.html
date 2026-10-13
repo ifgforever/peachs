@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920, height=1080">
+<meta name="robots" content="noindex">
+<title>Peach's Entrance Cards</title>
+<!-- Title cards and the video frame for the entrance screen. entrance.mjs fills them in from entrance.json with
+     window.setClip() and records them; the videos themselves are added with ffmpeg. Preview: ?scene=intro&t=4 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;display=block">
+<style>
+  /* Same palette and type as loop.html */
+  :root {
+    --cream: #FFF4E8;
+    --peach: #F9AE7F;
+    --espresso: #2A160C;
+    --butter: #FCD36A;
+    --f-display: 'Bebas Neue', Impact, sans-serif;
+    --f-serif: 'Fraunces', Georgia, serif;
+    --f-sans: 'DM Sans', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--espresso); color: var(--cream); font-family: var(--f-sans); }
+  html.is-frame, html.is-frame body { background: transparent; }
+  .scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+  .scene.is-on { display: block; }
+  .veil { position: absolute; inset: 0; background: var(--cream); pointer-events: none; z-index: 50; }
+  html.is-frame .veil { display: none; }
+  [data-in] { opacity: 0; will-change: transform, opacity; }
+  .eyebrow { font-weight: 700; font-size: 30px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--butter); }
+  .display { font-family: var(--f-display); font-weight: 400; line-height: 0.92; letter-spacing: 0.01em; text-wrap: balance; }
+  .accent { display: block; font-family: var(--f-serif); font-style: italic; font-weight: 500; color: var(--butter); letter-spacing: -0.01em; line-height: 1.05; }
+  .bigstar { position: absolute; right: -220px; bottom: -260px; width: 900px; height: 900px; fill: rgba(252, 211, 106, 0.06); }
+
+  /* Title card before each video */
+  #s-intro .copy { position: absolute; left: 120px; top: 50%; width: 1500px; transform: translateY(-50%); }
+  #s-intro h2 { margin-top: 26px; font-size: 168px; }
+  #s-intro h2 .accent { font-size: 140px; }
+  #s-intro .credit { margin-top: 44px; display: flex; align-items: center; gap: 24px; font-size: 32px; color: rgba(255, 244, 232, 0.78); }
+  #s-intro .credit::before { content: ''; width: 90px; height: 3px; background: var(--butter); }
+
+  /* Frame around a video that isn't 16:9 (the video shows through the transparent hole) */
+  #s-frame .hole { position: absolute; border-radius: 28px; box-shadow: 0 0 0 4000px var(--espresso); }
+  #s-frame .copy { position: absolute; left: 120px; top: 50%; transform: translateY(-50%); }
+  #s-frame h2 { margin-top: 22px; font-size: 92px; }
+  #s-frame h2 .accent { font-size: 88px; }
+  #s-frame .credit { margin-top: 34px; font-size: 26px; color: rgba(255, 244, 232, 0.78); }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><symbol id="star" viewBox="0 0 24 24"><path d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z"/></symbol></svg>
+
+<section class="scene" id="s-intro" data-dur="5">
+  <svg class="bigstar"><use href="#star"/></svg>
+  <div class="copy">
+    <p class="eyebrow" data-in="0.4" data-f="eyebrow">Obama Foundation</p>
+    <h2 class="display" data-in="0.7"><span data-f="title">President Obama stops by</span> <span class="accent" data-f="accent">Peach’s</span></h2>
+    <p class="credit" data-in="1.4" data-f="credit">Video courtesy of the Obama Foundation</p>
+  </div>
+</section>
+
+<section class="scene" id="s-frame" data-dur="1">
+  <div class="hole"></div>
+  <div class="copy">
+    <p class="eyebrow" data-f="eyebrow"></p>
+    <h2 class="display"><span data-f="title"></span> <span class="accent" data-f="accent"></span></h2>
+    <p class="credit" data-f="credit"></p>
+  </div>
+</section>
+
+<div class="veil" id="veil"></div>
+
+<script>
+  const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const FADE = 0.6;
+  const scenes = [...document.querySelectorAll('.scene')].map((el) => ({ id: el.id.slice(2), el, dur: Number(el.dataset.dur) }));
+  const veil = document.getElementById('veil');
+
+  // clip: { eyebrow, title, accent, credit }. box: where the video sits on the frame, { x, y, w, h } in pixels.
+  // The frame's text column fills the space left of the video.
+  window.setClip = (clip, box) => {
+    for (const el of document.querySelectorAll('[data-f]')) el.textContent = clip[el.dataset.f] || '';
+    if (box) {
+      const hole = document.querySelector('#s-frame .hole');
+      Object.assign(hole.style, { left: box.x + 'px', top: box.y + 'px', width: box.w + 'px', height: box.h + 'px' });
+      document.querySelector('#s-frame .copy').style.width = box.x - 120 - 80 + 'px';
+    }
+  };
+
+  function seek(id, t) {
+    const s = scenes.find((x) => x.id === id);
+    for (const x of scenes) x.el.classList.toggle('is-on', x === s);
+    document.documentElement.classList.toggle('is-frame', id === 'frame');
+    veil.style.opacity = Math.max(1 - clamp(t / FADE), clamp((t - (s.dur - FADE)) / FADE));
+    for (const el of s.el.querySelectorAll('[data-in]')) {
+      const k = easeOut(clamp((t - Number(el.dataset.in)) / 0.9));
+      el.style.opacity = k;
+      el.style.transform = `translateY(${(1 - k) * 46}px)`;
+    }
+  }
+
+  async function init() {
+    await Promise.all(['40px "Bebas Neue"', 'italic 500 40px Fraunces', '400 20px "DM Sans"', '700 20px "DM Sans"'].map((f) => document.fonts.load(f)));
+    await document.fonts.ready;
+    window.SCENES = scenes.map(({ id, dur }) => ({ id, dur }));
+    window.seek = seek;
+    const q = new URLSearchParams(location.search);
+    seek(q.get('scene') || 'intro', Number(q.get('t') || 4));
+    window.__ready = true;
+  }
+  init();
+</script>
+</body>
+</html>

@@ -16,6 +16,7 @@ import * as inquiries from './lib/admin-inquiries.js';
 import * as history from './lib/admin-history.js';
 import * as users from './lib/admin-users.js';
 import * as settings from './lib/admin-settings.js';
+import { isVideoPath, video } from './lib/video.js';
 
 const { admin } = auth;
 const router = createRouter();
@@ -149,6 +150,7 @@ async function handle(request, env, executionCtx, url) {
 export default {
   async fetch(request, env, executionCtx) {
     const url = new URL(request.url);
+    if (isVideoPath(url.pathname)) return video.fetch(request, env, executionCtx);
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
     }

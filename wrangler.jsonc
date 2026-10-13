@@ -9,7 +9,8 @@
     "directory": ".",
     "binding": "ASSETS",
     // Only these paths run the Worker; everything else is served straight from the files.
-    "run_worker_first": ["/api/*"]
+    // /api/* is the admin backend; the .mp4 paths and /loop get byte-range video serving (worker/lib/video.js).
+    "run_worker_first": ["/api/*", "/signage/*.mp4", "/docs/demo/*.mp4", "/loop"]
   },
   "d1_databases": [
     {

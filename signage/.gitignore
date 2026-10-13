@@ -1,1 +1,5 @@
 build/
+# The source clips and the full-quality entrance video stay out of git. The 1080p entrance file is over
+# Cloudflare's 25 MiB per-file limit; the smaller web copy (peachs-entrance-loop-web.mp4) is committed instead.
+source/
+peachs-entrance-loop.mp4

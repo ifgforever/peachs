@@ -21,6 +21,8 @@
   ],
   // Photo uploads (event photos, artwork images). Bucket created 2026-10-13 in the same account.
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "romesjoy-media" }],
+  // Sign-in for the Claude app connector (OAuth clients, grants, tokens). Namespace created 2026-10-14.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "14753048e70b4aaf99fed941817546da" }],
   "vars": {
     "PUBLIC_BASE_URL": ""
   },

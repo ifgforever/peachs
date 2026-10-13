@@ -997,3 +997,13 @@ VALUES ('signage:peachs', '{"seconds_per_scene": 10}', datetime('now'));
 -- Artwork catalog: switched on for Blanc. No artworks are seeded (the gallery adds its own).
 INSERT OR IGNORE INTO settings (key, value_json, updated_at) VALUES ('features:blanc', '{"artworks": true}', datetime('now'));
 INSERT OR IGNORE INTO settings (key, value_json, updated_at) VALUES ('signage:blanc', '{"seconds_per_scene": 12}', datetime('now'));
+
+-- Starter photo albums (staff can rename or delete them).
+INSERT OR IGNORE INTO media_albums (business_slug, name, sort_order) VALUES
+  ('peachs', 'Food', 1), ('peachs', 'Dining room', 2), ('peachs', 'Team', 3), ('peachs', 'Events', 4),
+  ('catering', 'Food', 1), ('catering', 'Events', 2),
+  ('blanc', 'Artworks', 1), ('blanc', 'Openings', 2), ('blanc', 'Installs', 3),
+  ('parkway-social', 'The space', 1), ('parkway-social', 'Events', 2),
+  ('mise-en-place', 'Classes', 1), ('mise-en-place', 'Graduations', 2),
+  ('rjc-sausage', 'Products', 1),
+  ('romesjoy', 'Chef Rome', 1), ('romesjoy', 'Press', 2);

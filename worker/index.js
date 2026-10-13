@@ -17,6 +17,10 @@ import * as history from './lib/admin-history.js';
 import * as users from './lib/admin-users.js';
 import * as settings from './lib/admin-settings.js';
 import { isVideoPath, video } from './lib/video.js';
+import * as changesets from './lib/changesets.js';
+import * as assistant from './lib/assistant.js';
+import * as mediaLibrary from './lib/media-library.js';
+import * as screens from './lib/screens.js';
 
 const { admin } = auth;
 const router = createRouter();
@@ -101,6 +105,12 @@ router.delete('/api/admin/users/:id', admin(users.remove));
 router.get('/api/admin/settings/:key', admin(settings.get));
 router.put('/api/admin/settings/:key', admin(settings.put));
 router.post('/api/admin/media', admin(settings.upload));
+
+/* ---------- Assistant, change sets, photo library, TV screens (docs/assistant-api.md) ---------- */
+changesets.register(router, admin);
+assistant.register(router, admin);
+mediaLibrary.register(router, admin);
+screens.register(router, admin);
 
 /* -------------------------------------------------------------------------
    CORS: public and form routes allow any origin; admin routes echo the caller's origin.

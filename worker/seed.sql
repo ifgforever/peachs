@@ -993,3 +993,7 @@ VALUES (
 -- In-store TV loop at Peach's: how long each scene stays on screen.
 INSERT OR REPLACE INTO settings (key, value_json, updated_at)
 VALUES ('signage:peachs', '{"seconds_per_scene": 10}', datetime('now'));
+
+-- Artwork catalog: switched on for Blanc. No artworks are seeded (the gallery adds its own).
+INSERT OR IGNORE INTO settings (key, value_json, updated_at) VALUES ('features:blanc', '{"artworks": true}', datetime('now'));
+INSERT OR IGNORE INTO settings (key, value_json, updated_at) VALUES ('signage:blanc', '{"seconds_per_scene": 12}', datetime('now'));

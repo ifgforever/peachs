@@ -176,3 +176,49 @@ Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A re
 ## Static files
 
 The Worker's `ASSETS` binding serves everything not under `/api/` with Cloudflare's default `html_handling` (`auto-trailing-slash`): `/peachs.html` redirects (307) to `/peachs`, `/signage/live.html?business=peachs` to `/signage/live?business=peachs` (query strings are kept), and `/admin/` serves `admin/index.html`. Files listed in `.assetsignore` are never uploaded. The root `_headers` file adds a Content-Security-Policy, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` to everything under `/admin/`.
+
+## Artwork catalog (added 2026-10-13)
+
+Tables `artworks` and `artwork_images` (see `worker/schema.sql`; existing databases run `worker/migrations/2026-10-13-artworks.sql` once). The catalog is switched on per business by the setting `features:<slug>` = `{ "artworks": true }` (seeded for `blanc`).
+
+### Feature flags
+- `GET /api/admin/businesses` rows gain `features: { artworks: bool }` (read from `settings` key `features:<slug>`; missing = `{}`), and `counts` gains `artworks` (all artworks, any status) and `artworks_available`.
+- `GET /api/public/:slug` (and the signage bundle) gain `features` the same way.
+
+### Public
+`GET /api/public/:slug` gains, only when `features.artworks` is true:
+```json
+"artworks": [
+  { "id": 3, "event_id": 7, "title": "Untitled (Family Portrait)", "artist": "Raja'Nee Hamilton", "year": "2026",
+    "medium": "Archival pigment print", "dimensions": "24 × 30 in.", "description": "...",
+    "status": "available", "status_text": "Available",
+    "price": 1800, "price_text": "$1,800",
+    "featured": true,
+    "images": [ { "id": 9, "url": "https://…/api/media/uploads/blanc/…-full.webp", "thumb_url": "https://…/api/media/uploads/blanc/…-thumb.webp", "alt": "...", "width": 2000, "height": 1500 } ] }
+]
+```
+Rules:
+- Only `published = 1` artworks, ordered by `featured DESC, sort_order, id`. Images ordered by `sort_order, id`. Artworks with zero images are still listed.
+- `status_text`: available → "Available", reserved → "Reserved", sold → "Sold", not_for_sale → "Not for sale".
+- `price_text`: when `price_display = 'show'` and `price` is set → formatted USD without cents when whole ("$1,800", "$950.50"); `on_request` → "Price on request"; `hidden` → `null`. When `status = 'sold'` or `'not_for_sale'`, `price` and `price_text` are always `null` (never show what a sold piece went for).
+- `event_id` lets a page group pieces under the exhibition from `events`; `null` = not tied to a show ("From the collection").
+- Each event object in `events.current|upcoming|past` gains `artwork_count` (published artworks linked to it) when the feature is on.
+
+### Forms
+`POST /api/forms/:slug/artwork` is an ordinary form submission (rules above) whose extra fields include `artwork_id` and `artwork_title`. When `artwork_id` is a published artwork of that business, the Worker stores the canonical title, artist and status in `fields_json` (ignoring client-sent title), and the email subject becomes `Inquiry about "<title>" by <artist> · <Business>`. The inquiry `form_type` is `artwork`.
+
+### Admin
+All routes check the artwork's (or image's) business with `canEdit`; 403 otherwise. Every write is audited (entities `artwork`, `artwork_image`) and restorable via History.
+
+- `GET /api/admin/businesses/:slug/artworks?event_id=<id|none>&status=<status>&q=<text>` → `{ artworks: [ { ...all columns, images: [...], event_title } ] }` (includes unpublished). `q` matches title or artist (case-insensitive, LIKE with escaped wildcards).
+- `POST /api/admin/businesses/:slug/artworks` `{ title (required), artist, year, medium, dimensions, description, price, price_display, status, featured, published, event_id }` → `{ artwork }`. `event_id` must be an event of the same business or null. `price` ≥ 0 or null.
+- `GET /api/admin/artworks/:id` → `{ artwork }` with images.
+- `PATCH /api/admin/artworks/:id` (any subset) → `{ artwork }`. Audit summaries: "Marked 'X' sold", "Changed the price of 'X' to $1,800", "Edited 'X'".
+- `DELETE /api/admin/artworks/:id` → `{ ok: true }` (images rows go with it; files stay in R2 so History → Restore can bring them back).
+- `POST /api/admin/businesses/:slug/artworks/reorder` `{ ids: [...] }` → `{ ok: true }` (ids must all belong to the business).
+- `POST /api/admin/artworks/:id/images` `{ url, thumb_url, alt, width, height }` → `{ image }` appended last. `url`/`thumb_url` must be https URLs or same-site `/api/media/...` paths. Maximum 12 images per artwork (409 `too_many_images`).
+- `PATCH /api/admin/artwork-images/:id` `{ alt }` → `{ image }`; `DELETE /api/admin/artwork-images/:id`.
+- `POST /api/admin/artworks/:id/images/reorder` `{ ids: [...] }` → `{ ok: true }`.
+
+### Photo upload (shared by events, announcements, artworks)
+The admin shrinks photos **in the browser** before uploading: it draws the file onto a canvas and makes a full-size copy (longest side ≤ 2000 px) and a thumbnail (≤ 640 px), as WebP at quality 0.85 (JPEG 0.88 if the browser cannot encode WebP), keeping the orientation the photo was taken in (`createImageBitmap(file, { imageOrientation: 'from-image' })`). It uploads each with `POST /api/admin/media` (multipart `file`, `business`, and `variant` = `full` | `thumb`). The Worker stores them under `uploads/<slug>/<timestamp>-<name>-<variant>.<ext>` and answers `{ url, key, width, height }` (width/height echoed from optional form fields). HEIC files the browser cannot decode get a plain-language error ("This photo format isn't supported by this browser. On iPhone, set Camera → Formats → Most Compatible, or upload a JPEG.").

@@ -192,3 +192,44 @@ CREATE TABLE IF NOT EXISTS settings (
   value_json      TEXT NOT NULL,
   updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- -------------------------------------------------------------------------
+-- Artwork catalog (Blanc). Added 2026-10-13; existing databases get these tables
+-- from worker/migrations/2026-10-13-artworks.sql (safe to run more than once).
+-- -------------------------------------------------------------------------
+
+-- One piece of art. Linked to the exhibition (an events row) it hangs in, if any.
+CREATE TABLE IF NOT EXISTS artworks (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  business_slug   TEXT NOT NULL REFERENCES businesses(slug) ON DELETE CASCADE,
+  event_id        INTEGER REFERENCES events(id) ON DELETE SET NULL,
+  title           TEXT NOT NULL,
+  artist          TEXT,
+  year            TEXT,                              -- free text: "2024", "c. 1968", "2019–2023"
+  medium          TEXT,                              -- e.g. "Oil on canvas"
+  dimensions      TEXT,                              -- e.g. "36 × 48 in."
+  description     TEXT,
+  price           REAL,                              -- USD; NULL = no price set
+  price_display   TEXT NOT NULL DEFAULT 'on_request' CHECK (price_display IN ('show', 'on_request', 'hidden')),
+  status          TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'reserved', 'sold', 'not_for_sale')),
+  featured        INTEGER NOT NULL DEFAULT 0,
+  published       INTEGER NOT NULL DEFAULT 1,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_artworks_business ON artworks (business_slug, event_id, sort_order);
+
+-- Photos of a piece, first = main photo. url is the full-size image (≤ 2000 px), thumb_url a ≤ 640 px copy.
+CREATE TABLE IF NOT EXISTS artwork_images (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  artwork_id      INTEGER NOT NULL REFERENCES artworks(id) ON DELETE CASCADE,
+  url             TEXT NOT NULL,
+  thumb_url       TEXT,
+  alt             TEXT,                              -- what the photo shows, for screen readers
+  width           INTEGER,
+  height          INTEGER,
+  sort_order      INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_artwork_images_artwork ON artwork_images (artwork_id, sort_order);

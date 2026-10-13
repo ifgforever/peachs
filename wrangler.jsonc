@@ -18,8 +18,8 @@
       "database_id": "3545d6c2-619a-497b-8f15-1c30b71e6014"
     }
   ],
-  // Optional photo uploads. Create the bucket (npx wrangler r2 bucket create romesjoy-media) and uncomment.
-  // "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "romesjoy-media" }],
+  // Photo uploads (event photos, artwork images). Bucket created 2026-10-13 in the same account.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "romesjoy-media" }],
   "vars": {
     "PUBLIC_BASE_URL": ""
   },

@@ -2,6 +2,8 @@
    Fetches GET {api}/api/public/signage/{business} every 5 minutes, keeps the last good copy in
    localStorage, and rotates through scenes built from it with DOM nodes (textContent only, never
    innerHTML). It never goes blank: with no data at all it leaves the brand screen up.
+   With ?screen=<id> (the player link from the admin's TV screens page) it also reports in every
+   minute, and fetches its data again as soon as staff tap "Refresh all screens now".
 
    This is a classic script, not a module, on purpose: BrightSign players open the page from the
    SD card as file:// and Chromium refuses module scripts there. Syntax is kept to Chromium 87+
@@ -29,6 +31,7 @@
   const KNOWN_IMAGES = 80;               // photos remembered as loaded (with their size), for offline starts
   const RELOAD_AFTER_MS = 24 * 60 * 60 * 1000; // a daily reload keeps long-running players tidy
   const OFFLINE_AFTER_MS = 2 * REFRESH_MS;     // show the "offline" chip after two missed refreshes
+  const HEARTBEAT_MS = 60 * 1000;        // with ?screen=, how often to tell the admin this screen is on
 
   const params = new URLSearchParams(location.search);
   const BUSINESS = /^[a-z0-9-]{1,40}$/.test(params.get('business') || '') ? params.get('business') : 'peachs';
@@ -36,6 +39,8 @@
   const FROZEN = parseFrozenClock(params.get('at'));   // ?at=2026-10-14T10:30 freezes "now" for previews
   // ?preview=<draft id> from the admin's Assistant: the bundles as they will be once it is published (never cached).
   const PREVIEW = /^[A-Za-z0-9_-]{10,64}$/.test(params.get('preview') || '') ? params.get('preview') : null;
+  // ?screen=<id>: this TV's row in the admin. Previews never report in, so they cannot make a screen look online.
+  const SCREEN = !PREVIEW && /^[a-z0-9]{6,32}$/.test(params.get('screen') || '') ? params.get('screen') : null;
   const CACHE_KEY = 'romesjoy-tv:' + BUSINESS;
   const IMAGES_KEY = CACHE_KEY + ':images';
 
@@ -87,6 +92,8 @@
     artOffset: 0,        // where this pass's window of artworks starts in that pool
     waiting: null,       // token of a pending "wait for the next photo"; a newer advance() replaces it
     history: [],         // ids of the scenes shown, oldest first (last 40), for the debug overlay and tests
+    version: 0,          // refresh_version of the data on screen; a heartbeat answer with another one means "fetch again"
+    lastBeatAt: null,    // last heartbeat the Worker accepted
   };
 
   const scenesRoot = document.getElementById('scenes');
@@ -250,11 +257,12 @@
   /* -------------------------------------------------------------------------
      Fetching and the cache
      ------------------------------------------------------------------------- */
-  function fetchJson(path) {
+  /** `fresh` skips the browser's copy (the API allows a minute of caching): used when staff asked for a refresh. */
+  function fetchJson(path, fresh) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     const url = API + path + (PREVIEW ? (path.indexOf('?') > -1 ? '&' : '?') + 'preview=' + encodeURIComponent(PREVIEW) : '');
-    return fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' }, cache: PREVIEW ? 'no-store' : 'default' })
+    return fetch(url, { signal: ctrl.signal, headers: { Accept: 'application/json' }, cache: PREVIEW ? 'no-store' : fresh ? 'reload' : 'default' })
       .then((res) => {
         if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + path);
         return res.json();
@@ -283,6 +291,20 @@
   }
 
   const settingOn = (settings, key) => settings[key] !== false && settings[key] !== 0 && settings[key] !== 'false';
+
+  // Scene switches: settings.scenes = { welcome, notice, announcements, featured, menu, catering, events, artworks }
+  // (the admin's TV screens page). A scene it does not name follows the older flat key, if any; everything is on by default.
+  const LEGACY_SCENE_KEYS = {
+    announcements: 'show_announcements', featured: 'show_featured', menu: 'show_menu_board',
+    catering: 'show_catering', events: 'show_events', artworks: 'show_artworks',
+  };
+  function sceneOn(settings, name) {
+    const scenes = isObj(settings.scenes) ? settings.scenes : {};
+    if (Object.prototype.hasOwnProperty.call(scenes, name)) return settingOn(scenes, name);
+    return LEGACY_SCENE_KEYS[name] ? settingOn(settings, LEGACY_SCENE_KEYS[name]) : true;
+  }
+  /** The refresh_version a bundle was built with; read the same way as worker/lib/screens.js does. */
+  const versionOf = (bundle) => Number(isObj(bundle.signage) ? bundle.signage.refresh_version : 0) || 0;
 
   /* -------------------------------------------------------------------------
      Artwork photos: loaded ahead of their scene, remembered once they have loaded
@@ -361,20 +383,20 @@
     }
   }
 
-  /** One round trip: the signage bundle, then catering and Blanc when the settings allow. */
-  function refresh() {
+  /** One round trip: the signage bundle, then catering and Blanc when the settings allow. `fresh`: see fetchJson. */
+  function refresh(fresh) {
     if (state.fetching) return Promise.resolve(false);
     state.fetching = true;
     state.lastFetchAt = Date.now();
     let fetched = false;
-    return fetchJson('/api/public/signage/' + BUSINESS)
+    return fetchJson('/api/public/signage/' + BUSINESS, fresh)
       .then(checkBundle)
       .then((bundle) => {
         const settings = isObj(bundle.signage) ? bundle.signage : {};
-        const wantCatering = BUSINESS !== 'catering' && settingOn(settings, 'show_catering');
-        const wantBlanc = BUSINESS !== 'blanc' && settingOn(settings, 'show_events') && settingOn(settings, 'show_blanc');
+        const wantCatering = BUSINESS !== 'catering' && sceneOn(settings, 'catering');
+        const wantBlanc = BUSINESS !== 'blanc' && sceneOn(settings, 'events') && settingOn(settings, 'show_blanc');
         // null = turned off; undefined = failed this time, so keep what we had.
-        const side = (want, path) => (want ? fetchJson(path).then(checkBundle).catch((e) => { note(e); return undefined; }) : Promise.resolve(null));
+        const side = (want, path) => (want ? fetchJson(path, fresh).then(checkBundle).catch((e) => { note(e); return undefined; }) : Promise.resolve(null));
         return Promise.all([side(wantCatering, '/api/public/catering'), side(wantBlanc, '/api/public/blanc')]).then((extra) => {
           const prev = state.data || {};
           state.data = {
@@ -384,6 +406,7 @@
             savedAt: Date.now(),
           };
           state.source = 'network';
+          state.version = versionOf(bundle);
           state.lastOkAt = state.data.savedAt;
           state.lastError = null;
           saveCache(state.data);
@@ -415,6 +438,45 @@
   }
 
   /* -------------------------------------------------------------------------
+     Heartbeat (?screen=<id>): "this screen is on and showing X" for the admin's TV screens page. The answer
+     carries refresh_version; a new one means staff tapped "Refresh all screens now", so the data is fetched again.
+     ------------------------------------------------------------------------- */
+  function showingNow() {
+    return brandEl.classList.contains('is-on') || !state.history.length ? 'brand' : state.history[state.history.length - 1];
+  }
+
+  function heartbeat() {
+    if (!SCREEN) return Promise.resolve(null);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    // text/plain keeps this a simple cross-origin request (no preflight); the Worker reads the body as JSON anyway.
+    return fetch(API + '/api/public/screens/' + encodeURIComponent(SCREEN) + '/heartbeat', {
+      method: 'POST',
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify({ scene: showingNow(), version: String(state.version) }),
+    })
+      .then((res) => {
+        if (res.status === 429) return null; // a restart moments after the last beat; the next one counts
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' for the heartbeat');
+        return res.json();
+      })
+      .then((data) => {
+        if (!isObj(data)) return null;
+        state.lastBeatAt = Date.now();
+        // Different, not just higher: restoring an older TV setting from History must refresh the screens too.
+        if ((Number(data.refresh_version) || 0) !== state.version && !state.fetching) refresh(true);
+        return data;
+      })
+      .catch((err) => {
+        note(err && err.name === 'AbortError' ? new Error('Timed out after ' + TIMEOUT_MS / 1000 + 's: heartbeat') : err, 'heartbeat');
+        return null;
+      })
+      .finally(() => clearTimeout(timer));
+  }
+
+  /* -------------------------------------------------------------------------
      Scene planning: which scenes exist, from the current data
      ------------------------------------------------------------------------- */
   function plan() {
@@ -430,13 +492,13 @@
     state.plannedDate = today;
     const onToday = (from, to) => (!from || from <= today) && (!to || to >= today);
 
-    add('welcome', () => sceneWelcome(bundle));
+    if (sceneOn(settings, 'welcome')) add('welcome', () => sceneWelcome(bundle));
     const notice = bundle.business.notice;
-    if (notice && notice.text && onToday(null, notice.until)) add('notice', () => sceneNotice(bundle));
+    if (sceneOn(settings, 'notice') && notice && notice.text && onToday(null, notice.until)) add('notice', () => sceneNotice(bundle));
 
     // Gallery slideshow (businesses with the artwork catalog): a title card, then one scene per piece.
     state.artPool = 0;
-    const gallery = hasArtworks(bundle) && settingOn(settings, 'show_artworks') ? slideshow(bundle, today) : null;
+    const gallery = hasArtworks(bundle) && sceneOn(settings, 'artworks') ? slideshow(bundle, today) : null;
     if (gallery) {
       const pool = gallery.pieces;
       state.artPool = pool.length;
@@ -452,18 +514,18 @@
       picks.forEach((p, k) => add('artwork-' + p.art.id, () => sceneArtwork(gallery, p, k, seconds), 1, { photo: p.photo.url }));
     }
 
-    if (settingOn(settings, 'show_announcements')) {
+    if (sceneOn(settings, 'announcements')) {
       (bundle.announcements || []).filter((a) => isObj(a) && a.title && a.show_on_tv !== false && onToday(a.starts_at, a.ends_at))
         .forEach((a) => add('announcement-' + a.id, () => sceneAnnouncement(bundle, a)));
     }
 
     const sections = (bundle.menu && Array.isArray(bundle.menu.sections) ? bundle.menu.sections : []).filter((s) => isObj(s) && Array.isArray(s.items));
-    if (settingOn(settings, 'show_featured')) {
+    if (sceneOn(settings, 'featured')) {
       const featured = [];
       sections.forEach((s) => s.items.forEach((it) => { if (isObj(it) && it.featured && it.name) featured.push({ item: it, section: s }); }));
       chunk(featured, FEATURED_PER_SCENE).forEach((group, i, all) => add('featured-' + (i + 1), () => sceneFeatured(group, i, all.length)));
     }
-    if (settingOn(settings, 'show_menu_board')) {
+    if (sceneOn(settings, 'menu')) {
       sections.forEach((s) => {
         const items = s.items.filter((it) => isObj(it) && it.name);
         if (!items.length) return;
@@ -471,11 +533,11 @@
       });
     }
 
-    if (d.catering && settingOn(settings, 'show_catering')) {
+    if (d.catering && sceneOn(settings, 'catering')) {
       const picks = cateringPicks(d.catering);
       if (picks.length) add('catering', () => sceneCatering(bundle, d.catering, picks));
     }
-    if (settingOn(settings, 'show_events')) {
+    if (sceneOn(settings, 'events')) {
       const cards = eventCards(bundle, d.blanc, today);
       if (cards.length) add('events', () => sceneEvents(bundle, cards));
     }
@@ -991,6 +1053,7 @@
     const rows = [
       ['API', API + '/api/public/signage/' + BUSINESS],
       ['Business', BUSINESS],
+      ['Player id', SCREEN ? SCREEN + ' · last heartbeat ' + stamp(state.lastBeatAt) + ' · refresh version ' + state.version : 'none (no ?screen= in the address)'],
       ['Page', location.href],
       ['Data from', state.source + (state.data ? ' (saved ' + stamp(state.data.savedAt) + ')' : '')],
       ['Last fetch', stamp(state.lastFetchAt) + (state.fetching ? ' (in progress)' : '')],
@@ -1054,6 +1117,7 @@
     if (cached) {
       state.data = { bundle: cached.bundle, catering: cached.catering || null, blanc: cached.blanc || null, savedAt: cached.savedAt };
       state.source = 'cache';
+      state.version = versionOf(cached.bundle);
       state.lastOkAt = cached.savedAt || null;
       plan();
       advance();
@@ -1069,6 +1133,10 @@
         $('[data-brand-address]').textContent = addr && addr.formatted ? addr.formatted : '';
       }
       window.__tvReady = true;
+      if (SCREEN) {
+        heartbeat();
+        setInterval(heartbeat, HEARTBEAT_MS);
+      }
     });
   }
 
@@ -1077,11 +1145,12 @@
   window.__tv = {
     next: advance,
     refresh,
+    heartbeat,
     scenes: () => state.scenes.map((s) => s.id),
     current: () => (state.history.length ? state.history[state.history.length - 1] : null),
     shown: () => state.history.slice(),
     goto: (id) => { const i = state.scenes.findIndex((s) => s.id === id); if (i > -1) { state.index = i - 1; advance(); } },
-    state: () => ({ source: state.source, lastOkAt: state.lastOkAt, lastFetchAt: state.lastFetchAt, lastError: state.lastError, errors: state.errors.slice(), hasData: Boolean(state.data), api: API, business: BUSINESS }),
+    state: () => ({ source: state.source, lastOkAt: state.lastOkAt, lastFetchAt: state.lastFetchAt, lastError: state.lastError, errors: state.errors.slice(), hasData: Boolean(state.data), api: API, business: BUSINESS, screen: SCREEN, version: state.version, lastBeatAt: state.lastBeatAt }),
   };
 
   init();

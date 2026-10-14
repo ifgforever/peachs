@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ApiError, bad, conflict, intParam, notConfigured, notFound, readBody } from './http.js';
 import { all, first, insertRow, isoTime, parseJson, run, sqlNow, withIsoTimes } from './db.js';
 import { isManager, requireBusiness, requireManager } from './auth.js';
-import { addDays, chicagoLong, chicagoNow } from './time.js';
+import { addDays, chicagoLong, chicagoModifier, chicagoNow } from './time.js';
 import { businessNames, runTool, toolLabel, toolsFor } from './assistant-tools.js';
 import { getChangeSet } from './changesets.js';
 
@@ -30,6 +30,13 @@ const NOTE_MARK = '[Back office note';      // opens the text blocks the system 
 const REFUSAL_TEXT = 'Sorry, I can’t help with that request.';
 const TOOL_RESULT_PREFIX = '[{"type":"tool_result"'; // how a stored message of tool results begins (we write them)
 const PHOTO_REF = '"type":"r2"';                      // appears once per stored photo reference
+// The message the admin's Publish button adds (published()): the system's words only, never the draft's title, which
+// Claude wrote and could carry text from an inquiry or a photo note. It comes first in its message, so the daily
+// count can leave these follow-ups out by how the stored message begins.
+const PUBLISHED_NOTE = `${NOTE_MARK}: written by the system] The person published change set`;
+const FOLLOW_UP_PREFIX = `[{"type":"text","text":${JSON.stringify(PUBLISHED_NOTE).slice(0, -1)}`;
+const TURN_LEASE_MINUTES = 3;                // a chat counts as busy this long after its turn last showed signs of life
+const BUSY_TEXT = 'I’m still finishing your last message. Give me a moment.';
 
 /* -------------------------------------------------------------------------
    The system prompt. It is the product: frozen (no dates, names or ids), so it and the tool list cache together.
@@ -70,9 +77,9 @@ with problems, fix them and try again; if you cannot fix one, explain it in plai
 summary), mention every warning or blocking check and what it means, and point them to the preview links so they can see \
 the website (and the TV screen) as it will look. Then say that nothing is live yet: it goes live only when they tap \
 Publish. Do not say "done" or "updated" before that. A draft nobody publishes expires after 48 hours.
-7. After they publish, you will see a message like "(Published …)". Call verify_change_set, then tell them what is now \
-live. Never say a change is live unless verify_change_set says so; if something did not check out, say what and suggest \
-the next step.
+7. After they publish, you will see a back office note saying the person published a change set. Call \
+verify_change_set with that id, then tell them what is now live. Never say a change is live unless verify_change_set \
+says so; if something did not check out, say what and suggest the next step.
 
 Rules that always apply
 - Allergens, dietary tags (GF, V, DF) and halal or other certifications: keep them exactly as staff give them. Never add, \
@@ -136,19 +143,15 @@ function chicagoMidnight(now = new Date()) {
   return start.toISOString().slice(0, 19).replace('T', ' ');
 }
 
-/** Chicago's offset from UTC right now as an SQLite date modifier, e.g. "-300 minutes". */
-function chicagoModifier(now = new Date()) {
-  const local = chicagoNow(now);
-  const utcDate = now.toISOString().slice(0, 10);
-  const dayShift = local.date === utcDate ? 0 : local.date < utcDate ? -1440 : 1440;
-  return `${local.minutes - (now.getUTCHours() * 60 + now.getUTCMinutes()) + dayShift} minutes`;
-}
+/** SQL (and its binds) for "a message a person started": not tool results, not the automatic follow-up to a publish. */
+const PERSON_TURN = `m.role = 'user' AND substr(m.content_json, 1, ?) <> ? AND substr(m.content_json, 1, ?) <> ?`;
+const PERSON_TURN_BINDS = [TOOL_RESULT_PREFIX.length, TOOL_RESULT_PREFIX, FOLLOW_UP_PREFIX.length, FOLLOW_UP_PREFIX];
 
-/** Turns started by people (not tool results) since `since` (UTC), for one user. */
-async function turnsSince(env, userId, since) {
+/** Turns started by people since `since` (UTC), for one user; with `upTo`, only messages stored up to that id. */
+async function turnsSince(env, userId, since, upTo = null) {
   const row = await first(env, `SELECT COUNT(*) AS n FROM assistant_messages m JOIN assistant_conversations c ON c.id = m.conversation_id
-    WHERE c.user_id = ? AND m.role = 'user' AND m.created_at >= ? AND substr(m.content_json, 1, ?) <> ?`,
-  [userId, since, TOOL_RESULT_PREFIX.length, TOOL_RESULT_PREFIX]);
+    WHERE c.user_id = ? AND m.created_at >= ? AND ${PERSON_TURN}${upTo ? ' AND m.id <= ?' : ''}`,
+  [userId, since, ...PERSON_TURN_BINDS, ...(upTo ? [upTo] : [])]);
   return row?.n || 0;
 }
 
@@ -158,11 +161,54 @@ async function dailyLimit(env) {
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_DAILY_TURNS;
 }
 
+const limitError = (limit) => new ApiError(429, 'assistant_limit', `You have used today's ${limit} Assistant messages. It resets at midnight. You can still make changes by hand.`);
+
+/** Refuses a message once the person has used today's turns (checked again after storing it, see claimDailyTurn). */
 async function checkDailyLimit(ctx) {
   const limit = await dailyLimit(ctx.env);
-  if ((await turnsSince(ctx.env, ctx.user.id, chicagoMidnight())) >= limit) {
-    throw new ApiError(429, 'assistant_limit', `You have used today's ${limit} Assistant messages. It resets at midnight. You can still make changes by hand.`);
-  }
+  if ((await turnsSince(ctx.env, ctx.user.id, chicagoMidnight())) >= limit) throw limitError(limit);
+}
+
+/**
+ * The count again, now that message `messageId` is stored: messages sent at the same moment from two chats could both
+ * pass checkDailyLimit, so only those within the limit in storing order go on. One past it is taken back out. Claude
+ * never saw it, so the history Claude is sent stays append-only.
+ */
+async function claimDailyTurn(ctx, conversationId, messageId) {
+  const limit = await dailyLimit(ctx.env);
+  if ((await turnsSince(ctx.env, ctx.user.id, chicagoMidnight(), messageId)) <= limit) return;
+  await run(ctx.env, 'DELETE FROM assistant_messages WHERE id = ? AND conversation_id = ?', [messageId, conversationId]);
+  throw limitError(limit);
+}
+
+/* -------------------------------------------------------------------------
+   One turn at a time per chat. Two turns on the same history (a reply cut off on a phone that is still running on the
+   server, then a new message; or the chat open on two devices) would interleave their replies, and the API refuses
+   such a history for good. A lease in the settings table (assistant:turn:<chat id>) marks a turn in progress; it is
+   renewed at every call to Claude and lapses after TURN_LEASE_MINUTES if the Worker running the turn was stopped.
+   ------------------------------------------------------------------------- */
+const leaseKey = (conversationId) => `assistant:turn:${conversationId}`;
+
+/** Claims the chat for one turn → { renew, release }, or 409 turn_in_progress while another turn holds it. */
+async function claimTurn(env, conversationId) {
+  const key = leaseKey(conversationId);
+  const token = newId();
+  const { meta } = await run(env, `INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    WHERE settings.updated_at < datetime('now', ?)`, [key, JSON.stringify({ token }), `-${TURN_LEASE_MINUTES} minutes`]);
+  if (!meta.changes) throw conflict(BUSY_TEXT, 'turn_in_progress');
+  const mine = "key = ? AND json_extract(value_json, '$.token') = ?";
+  return {
+    renew: () => run(env, `UPDATE settings SET updated_at = datetime('now') WHERE ${mine}`, [key, token]),
+    release: () => run(env, `DELETE FROM settings WHERE ${mine}`, [key, token]).catch((err) => console.error('Could not end a chat turn:', err)),
+  };
+}
+
+/** True while a turn of this chat is running (its lease is live). */
+async function turnRunning(env, conversationId) {
+  const row = await first(env, "SELECT 1 AS busy FROM settings WHERE key = ? AND updated_at >= datetime('now', ?)",
+    [leaseKey(conversationId), `-${TURN_LEASE_MINUTES} minutes`]);
+  return Boolean(row);
 }
 
 /** Refuses to grow a chat past ~150k input tokens (from the last call's usage); the person starts a new chat instead. */
@@ -340,8 +386,11 @@ function streamError(err) {
   return { error: 'Something went wrong on our side.', code: 'internal' };
 }
 
-/** Starts `work(send)` and returns the text/event-stream it writes to. The work keeps going if the browser leaves. */
-function eventStream(ctx, work) {
+/**
+ * Starts `work(send)` and returns the text/event-stream it writes to. The work keeps going if the browser leaves; the
+ * chat's turn lease is released when it ends.
+ */
+function eventStream(ctx, work, lease) {
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
@@ -359,6 +408,7 @@ function eventStream(ctx, work) {
       send('error', streamError(err));
     } finally {
       clearInterval(keepalive);
+      await lease?.release();
       if (open) await writer.close().catch(() => {});
     }
   })();
@@ -390,7 +440,7 @@ function requestParams(messages) {
 
 const errorResults = (calls, text) => calls.map((c) => ({ type: 'tool_result', tool_use_id: c.id, is_error: true, content: text }));
 
-async function runTurn(ctx, conversation, send) {
+async function runTurn(ctx, conversation, send, lease) {
   const client = new Anthropic({
     apiKey: ctx.env.ANTHROPIC_API_KEY,
     ...(ctx.env.ANTHROPIC_BASE_URL ? { baseURL: ctx.env.ANTHROPIC_BASE_URL } : {}),
@@ -412,6 +462,7 @@ async function runTurn(ctx, conversation, send) {
   };
 
   for (let round = 0; ; round++) {
+    if (round) await lease?.renew();
     const stream = client.beta.messages.stream(requestParams(history));
     stream.on('streamEvent', (event) => {
       if (event.type === 'content_block_start' && event.content_block.type === 'text') needsBreak = true;
@@ -468,11 +519,28 @@ async function runTurn(ctx, conversation, send) {
   send('done', { message_id: messageId, usage: totals });
 }
 
-/** Stores the person's message (plus the system's note) and streams the reply. */
-async function startTurn(ctx, conversation, content) {
-  await repairTail(ctx.env, conversation.id);
-  await storeMessage(ctx.env, conversation.id, 'user', content);
-  return eventStream(ctx, (send) => runTurn(ctx, conversation, send));
+/**
+ * Claims the chat, stores the person's message and streams the reply. `compose(notes)` builds the stored content
+ * around the system's notes: the opening note on a chat's first message, else a note with the date whenever the day
+ * has changed since the last message, whichever route the message came in by. `guard()` runs once the chat is
+ * claimed; `counted` messages count toward the daily limit.
+ */
+async function startTurn(ctx, conversation, compose, { guard = null, counted = true } = {}) {
+  const lease = await claimTurn(ctx.env, conversation.id);
+  try {
+    if (guard) await guard();
+    await repairTail(ctx.env, conversation.id);
+    const { n: count } = await first(ctx.env, 'SELECT COUNT(*) AS n FROM assistant_messages WHERE conversation_id = ?', [conversation.id]);
+    const notes = [];
+    if (!count) notes.push({ type: 'text', text: openingNote(ctx, conversation, await businessNames(ctx.env)) });
+    else if ((await lastTurnDate(ctx.env, conversation.id)) !== ctx.now.date) notes.push({ type: 'text', text: dayNote(ctx) });
+    const id = await storeMessage(ctx.env, conversation.id, 'user', await compose(notes));
+    if (counted) await claimDailyTurn(ctx, conversation.id, id);
+  } catch (err) {
+    await lease.release();
+    throw err;
+  }
+  return eventStream(ctx, (send) => runTurn(ctx, conversation, send, lease), lease);
 }
 
 /* -------------------------------------------------------------------------
@@ -516,8 +584,11 @@ function renderMessages(rows, names) {
     if (row.role === 'user') {
       if (isToolResults(row.content)) continue;
       reply = null;
-      out.push({ id: row.id, role: 'user', text: userText(row.content), attachments_count: row.content.filter((b) => b.type === 'image').length,
-        created_at: isoTime(row.created_at), tools: [], drafts: [] });
+      const text = userText(row.content);
+      const photos = row.content.filter((b) => b.type === 'image').length;
+      // Only the system's words (the follow-up after Publish): the admin shows just the reply, as it did live.
+      if (!text && !photos) continue;
+      out.push({ id: row.id, role: 'user', text, attachments_count: photos, created_at: isoTime(row.created_at), tools: [], drafts: [] });
       continue;
     }
     if (!reply) {
@@ -541,7 +612,11 @@ export async function getConversation(ctx) {
   requireConfigured(ctx.env);
   const conversation = await loadConversation(ctx);
   const rows = await all(ctx.env, 'SELECT id, role, content_json, created_at FROM assistant_messages WHERE conversation_id = ? ORDER BY id', [conversation.id]);
-  return { conversation: shapeConversation(conversation), messages: renderMessages(rows, await businessNames(ctx.env)) };
+  return {
+    // busy: a turn is still running (for example after the reply was cut off on a phone); the admin waits for it.
+    conversation: { ...shapeConversation(conversation), busy: await turnRunning(ctx.env, conversation.id) },
+    messages: renderMessages(rows, await businessNames(ctx.env)),
+  };
 }
 
 /** POST /api/admin/assistant/conversations/:id/messages { text, images } → text/event-stream */
@@ -556,7 +631,6 @@ export async function postMessage(ctx) {
   if (images.length && !ctx.env.MEDIA) throw notConfigured('Photo attachments need photo storage, which is not set up yet.', 'media_not_configured');
   await checkDailyLimit(ctx);
   await checkLength(ctx.env, conversation.id);
-  const { n: count } = await first(ctx.env, 'SELECT COUNT(*) AS n FROM assistant_messages WHERE conversation_id = ?', [conversation.id]);
   if (images.length) {
     // Every photo is replayed on every request, so a chat holds at most 12 (counted by their stored references).
     const { n: photos } = await first(ctx.env, `SELECT COALESCE(SUM((length(content_json) - length(replace(content_json, ?, ''))) / ?), 0) AS n
@@ -564,20 +638,23 @@ export async function postMessage(ctx) {
     if (photos + images.length > MAX_CHAT_IMAGES) throw conflict(`A chat can hold ${MAX_CHAT_IMAGES} photos. Please start a new chat to send more.`, 'too_many_images');
   }
 
-  const content = [];
-  if (!count) content.push({ type: 'text', text: openingNote(ctx, conversation, await businessNames(ctx.env)) });
-  else if ((await lastTurnDate(ctx.env, conversation.id)) !== ctx.now.date) content.push({ type: 'text', text: dayNote(ctx) });
-  content.push(...(images.length ? await saveImages(ctx.env, conversation.id, images) : []));
-  content.push({ type: 'text', text: text || (images.length === 1 ? '(Photo attached.)' : '(Photos attached.)') });
+  // Text that starts like the system's own notes would be hidden in the chat and could pass for one.
+  const words = text.startsWith(NOTE_MARK) ? `(${text.slice(1)}` : text;
+  const response = await startTurn(ctx, conversation, async (notes) => [
+    ...notes,
+    ...(images.length ? await saveImages(ctx.env, conversation.id, images) : []),
+    { type: 'text', text: words || (images.length === 1 ? '(Photo attached.)' : '(Photos attached.)') },
+  ]);
   if (!conversation.title) {
     await run(ctx.env, 'UPDATE assistant_conversations SET title = ? WHERE id = ?', [(text || 'Photo').replace(/\s+/g, ' ').slice(0, 80), conversation.id]);
   }
-  return startTurn(ctx, conversation, content);
+  return response;
 }
 
 /**
  * POST /api/admin/assistant/conversations/:id/published { change_set_id } → text/event-stream. The admin calls it after
- * the person tapped Publish, so Claude checks the live site with verify_change_set and reports back.
+ * the person tapped Publish, so Claude checks the live site with verify_change_set and reports back. Once per change
+ * set, only in the chat that drafted it; it does not count toward the daily limit (each one follows a real publish).
  */
 export async function published(ctx) {
   requireConfigured(ctx.env);
@@ -586,9 +663,18 @@ export async function published(ctx) {
   if (typeof body.change_set_id !== 'string' || !body.change_set_id) throw bad('change_set_id is required.', 'missing_field');
   const result = await getChangeSet(ctx, body.change_set_id);
   const changeSet = result?.change_set ?? result;
-  if (changeSet?.status !== 'published') throw conflict('That draft has not been published.', 'not_published');
-  // No daily-limit check: this turn is the follow-up to a publish the person already made.
-  return startTurn(ctx, conversation, [{ type: 'text', text: `(Published ${changeSet.title}. Change set ${changeSet.id}.)` }]);
+  if (changeSet?.conversation_id !== conversation.id) throw conflict('That draft was not made in this chat.', 'not_in_chat');
+  if (changeSet.status !== 'published') throw conflict('That draft has not been published.', 'not_published');
+  await checkLength(ctx.env, conversation.id);
+  const note = `${PUBLISHED_NOTE} ${changeSet.id}.`;
+  return startTurn(ctx, conversation, (notes) => [{ type: 'text', text: note }, ...notes], {
+    counted: false,
+    async guard() {
+      const told = await first(ctx.env, "SELECT id FROM assistant_messages WHERE conversation_id = ? AND role = 'user' AND instr(content_json, ?) > 0 LIMIT 1",
+        [conversation.id, JSON.stringify(note).slice(1, -1)]);
+      if (told) throw conflict('The Assistant has already checked that publish in this chat.', 'already_reported');
+    },
+  });
 }
 
 /** GET /api/admin/assistant/usage?days=30 → totals per day and per user (owner/admin) */
@@ -607,8 +693,8 @@ export async function usage(ctx) {
       SUM(cost_usd) AS cost_usd FROM assistant_usage WHERE date(created_at, ?) >= ? GROUP BY day, user_id`, [modifier, modifier, since]),
     all(ctx.env, `SELECT date(m.created_at, ?) AS day, c.user_id, COUNT(*) AS turns FROM assistant_messages m
       JOIN assistant_conversations c ON c.id = m.conversation_id
-      WHERE m.role = 'user' AND substr(m.content_json, 1, ?) <> ? AND date(m.created_at, ?) >= ? GROUP BY day, c.user_id`,
-    [modifier, TOOL_RESULT_PREFIX.length, TOOL_RESULT_PREFIX, modifier, since]),
+      WHERE ${PERSON_TURN} AND date(m.created_at, ?) >= ? GROUP BY day, c.user_id`,
+    [modifier, ...PERSON_TURN_BINDS, modifier, since]),
   ]);
   const blank = () => ({ turns: 0, calls: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost_usd: 0 });
   const add = (into, row) => { for (const key of Object.keys(into)) into[key] += Number(row[key]) || 0; };

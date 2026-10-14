@@ -185,11 +185,11 @@ export async function bootstrap(ctx) {
   return { token, user: shapeUser(row, await allSlugs(ctx.env)) };
 }
 
-export async function login(ctx) {
-  const body = await readBody(ctx.request);
-  const email = String(body.email || '').trim().toLowerCase();
-  const password = typeof body.password === 'string' ? body.password : '';
-  if (!email || !password) throw bad('Email and password are required.', 'missing_field');
+/**
+ * Checks an email (lower-cased) and password with the lockouts every sign-in shares: this route and the Claude app's
+ * sign-in page (worker/lib/mcp.js). Returns the users row; throws 429 while locked out, 401 when they do not match.
+ */
+export async function checkLogin(ctx, email, password) {
   // Brute force is stopped per IP. The per-email cap is much looser so that someone who knows a staff
   // address cannot lock that person out from elsewhere; a successful login clears the email's failures.
   const tries = await first(ctx.env, `SELECT SUM(ip = ?) AS by_ip, SUM(email = ?) AS by_email FROM login_attempts
@@ -206,6 +206,15 @@ export async function login(ctx) {
   await run(ctx.env, 'DELETE FROM login_attempts WHERE email = ?', [email]);
   await prune(ctx.env);
   await run(ctx.env, "UPDATE users SET last_login_at = datetime('now') WHERE id = ?", [row.id]);
+  return row;
+}
+
+export async function login(ctx) {
+  const body = await readBody(ctx.request);
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!email || !password) throw bad('Email and password are required.', 'missing_field');
+  const row = await checkLogin(ctx, email, password);
   const token = await createSession(ctx.env, row.id);
   return { token, user: shapeUser(row, await allSlugs(ctx.env)) };
 }

@@ -1,6 +1,7 @@
 // Live screen check: serves the repo plus a fake /api from the public fixture, then drives
 // signage/live.html with Playwright at 1920x1080, screenshots every scene, and proves the page
-// keeps showing cached data when the API goes away.
+// keeps showing cached data when the API goes away. A named screen (?screen=) is checked too:
+// heartbeats, scene switches, and reloading its data when staff tap "Refresh all screens now".
 //
 //   node signage/tv-test.mjs [--out <dir>] [--keep]
 //
@@ -161,8 +162,23 @@ function bigGalleryBundle() {
   return b;
 }
 
+/* A named screen (section 11): scene switches, an older flat key, and a refresh_version the test bumps. The fake
+   heartbeat endpoint records what the player sends and answers like worker/lib/screens.js. */
+const tvScreen = { version: 3, refreshed: false, beatStatus: 200, beats: [], fetches: 0 };
+function tvScreenBundle() {
+  tvScreen.fetches++;
+  const b = signageBundle();
+  // scenes{} wins over the older flat key (the menu stays on); a scene it leaves out follows its flat key (catering off).
+  b.signage = { seconds_per_scene: 10, scenes: { notice: false, featured: false, menu: true }, show_menu_board: false, show_catering: false, refresh_version: tvScreen.version };
+  if (tvScreen.refreshed) {
+    b.announcements.push({ id: 99, business_slug: 'peachs', title: 'FIXTURE: news after "Refresh all screens now"', body: null, link_url: null, link_label: null, image_url: null, starts_at: '2026-10-01', ends_at: null, show_on_tv: true });
+  }
+  return b;
+}
+
 const API = {
   '/api/public/signage/peachs': signageBundle,
+  '/api/public/signage/tv-screen': tvScreenBundle,
   '/api/public/catering': cateringBundle,
   // The real API includes Blanc's catalog in its bundle; Peach's screen must ignore it.
   '/api/public/blanc': () => ({ ...blancBundle(), features: { artworks: true }, artworks: clone(BLANC_ARTWORKS) }),
@@ -178,6 +194,18 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname.startsWith('/api/')) {
+    const beat = /^\/api\/public\/screens\/([^/]+)\/heartbeat$/.exec(url.pathname);
+    if (beat && req.method === 'POST') {
+      let raw = '';
+      for await (const chunk of req) raw += chunk;
+      let body = null;
+      try { body = JSON.parse(raw); } catch { /* recorded as null; the test fails on it */ }
+      tvScreen.beats.push({ id: decodeURIComponent(beat[1]), type: req.headers['content-type'] || '', body });
+      const ok = tvScreen.beatStatus === 200;
+      res.writeHead(tvScreen.beatStatus, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+      res.end(JSON.stringify(ok ? { refresh_version: tvScreen.version, seconds_per_scene: 10 } : { error: 'Not now', code: tvScreen.beatStatus === 429 ? 'rate_limited' : 'not_found' }));
+      return;
+    }
     const make = API[url.pathname];
     res.writeHead(make ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=60' });
     res.end(JSON.stringify(make ? make() : { error: 'Not found', code: 'not_found' }));
@@ -471,6 +499,93 @@ try {
   assert.deepEqual(window3, Array.from({ length: 20 }, (_, i) => 'artwork-' + (100 + (40 + i) % 45)), 'third pass wraps: 41–45 then 1–15');
   assert.deepEqual(big.errors, [], 'no console errors with a big show');
   await bigCtx.close();
+
+  /* ---- 11. A named screen (?screen=): heartbeats, scene switches, "Refresh all screens now" ---- */
+  assert.equal(tvScreen.beats.length, 0, 'pages without ?screen= send no heartbeats');
+  const screenCtx = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const sp = await openPage(screenCtx);
+  await sp.clock.install(); // time runs as usual; fastForward() below stands in for a minute of waiting
+  // Playwright turns the HTTP cache off on routed pages, so the cache mode each bundle request asks for is recorded.
+  await sp.addInitScript(() => {
+    const realFetch = window.fetch;
+    window.__bundleCache = [];
+    window.fetch = (url, init) => {
+      if (/\/api\/public\/signage\//.test(String(url))) window.__bundleCache.push((init && init.cache) || 'default');
+      return realFetch(url, init);
+    };
+  });
+  await sp.goto(PAGE.replace('live.html?', 'live.html?business=tv-screen&screen=scrtest12345&'), { waitUntil: 'load' });
+  await waitReady(sp);
+  await sp.waitForFunction(() => window.__tv.state().lastBeatAt !== null, null, { timeout: 10000 });
+  assert.equal(tvScreen.beats.length, 1, 'one heartbeat once the data is in');
+  const firstBeat = tvScreen.beats[0];
+  assert.equal(firstBeat.id, 'scrtest12345');
+  assert.match(firstBeat.type, /^text\/plain/, 'sent as text/plain, so a cross-origin player needs no preflight');
+  assert.deepEqual(Object.keys(firstBeat.body || {}).sort(), ['scene', 'version']);
+  assert.equal(firstBeat.body.version, '3', 'reports the refresh version it has');
+  assert.equal(firstBeat.body.scene, await sp.evaluate(() => window.__tv.current()), 'reports the scene on screen');
+  assert.equal((await sp.evaluate(() => window.__tv.state())).version, 3);
+  assert.deepEqual(await sp.evaluate(() => window.__bundleCache), ['default'], 'the first load may use the browser cache');
+
+  // Switched-off scenes are not planned and never come up in the rotation.
+  const tvScenes = await sp.evaluate(() => window.__tv.scenes());
+  assert.deepEqual(tvScenes, ['welcome', 'announcement-1', 'announcement-2', 'announcement-3', 'menu-1-1', 'menu-1-2', 'menu-2', 'events', 'closing'],
+    'notice and featured off (scenes), menu on (scenes beats show_menu_board), catering off (show_catering)');
+  await sp.evaluate(() => window.__tv.goto('welcome'));
+  const rotation = [await sp.evaluate(() => window.__tv.current())];
+  for (let i = 1; i < tvScenes.length; i++) rotation.push(await sp.evaluate(() => { window.__tv.next(); return window.__tv.current(); }));
+  assert.deepEqual(rotation, tvScenes, 'one full pass shows exactly the scenes that are on');
+
+  // The heartbeat runs every minute; the same version means nothing to reload.
+  const fetchesBefore = tvScreen.fetches;
+  await sp.clock.fastForward(61000);
+  for (let t = 0; t < 50 && tvScreen.beats.length < 2; t++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(tvScreen.beats.length, 2, 'a second heartbeat a minute later');
+  assert.equal(tvScreen.fetches, fetchesBefore, 'same version: no extra fetch');
+
+  // Staff tap "Refresh all screens now": the next answer has a new version and the data is fetched again at once,
+  // past the browser's copy (the API allows a minute of caching, so a plain fetch could get the old bundle back).
+  tvScreen.version = 4;
+  tvScreen.refreshed = true;
+  await sp.evaluate(() => window.__tv.heartbeat());
+  await sp.waitForFunction(() => window.__tv.state().version === 4, null, { timeout: 10000 });
+  assert.equal(tvScreen.fetches, fetchesBefore + 1, 'a new version: fetched again at once');
+  assert.deepEqual(await sp.evaluate(() => window.__bundleCache), ['default', 'reload'], 'past the browser cache');
+  assert.ok((await sp.evaluate(() => window.__tv.scenes())).includes('announcement-99'), 'the new data is on the screen');
+  await sp.evaluate(() => window.__tv.heartbeat());
+  assert.equal(tvScreen.beats[tvScreen.beats.length - 1].body.version, '4', 'and the next heartbeat reports it');
+  assert.equal(tvScreen.fetches, fetchesBefore + 1, 'no second reload for the same version');
+
+  // A refused heartbeat (429, or 404 once the screen is removed in the admin) changes nothing on screen.
+  const beatAt = (await sp.evaluate(() => window.__tv.state())).lastBeatAt;
+  tvScreen.beatStatus = 429;
+  await sp.evaluate(() => window.__tv.heartbeat());
+  tvScreen.beatStatus = 404;
+  await sp.evaluate(() => window.__tv.heartbeat());
+  const afterRefused = await sp.evaluate(() => window.__tv.state());
+  assert.equal(afterRefused.lastBeatAt, beatAt, 'a refused heartbeat is not counted');
+  assert.ok(afterRefused.errors.some((e) => /404 for the heartbeat/.test(e.message)), 'a 404 is noted in the debug overlay');
+  assert.ok(!afterRefused.errors.some((e) => /429/.test(e.message)), 'a 429 is expected after a restart and not noted');
+  assert.equal(afterRefused.version, 4);
+  tvScreen.beatStatus = 200;
+  await settle(sp);
+  assert.equal(await sp.evaluate(() => document.querySelectorAll('#scenes .scene.is-on').length), 1, 'a scene is on after the reload');
+  assert.equal(await sp.evaluate(() => document.getElementById('brand').classList.contains('is-on')), false, 'not the brand screen');
+  await sp.keyboard.press('d');
+  assert.match(await sp.evaluate(() => document.getElementById('debug').textContent), /scrtest12345 · last heartbeat .+ · refresh version 4/, 'debug overlay shows the player id');
+  await shot(sp, 'named-screen-debug');
+  await sp.keyboard.press('d');
+  assert.deepEqual(sp.errors, [], 'no console errors on a named screen');
+
+  // A preview of a draft never reports in, even with ?screen= in its address.
+  const beatsSoFar = tvScreen.beats.length;
+  const pv = await openPage(screenCtx);
+  await pv.goto(PAGE.replace('live.html?', 'live.html?business=tv-screen&screen=scrtest12345&preview=previewtest12345&'), { waitUntil: 'load' });
+  await waitReady(pv);
+  await pv.waitForTimeout(500);
+  assert.equal(tvScreen.beats.length, beatsSoFar, 'a preview sends no heartbeats');
+  assert.equal((await pv.evaluate(() => window.__tv.state())).screen, null);
+  await screenCtx.close();
 } catch (e) {
   problems.push(e);
 } finally {

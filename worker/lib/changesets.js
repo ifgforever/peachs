@@ -18,6 +18,7 @@ import * as menu from './admin-menu.js';
 import * as announcements from './admin-announcements.js';
 import * as artworks from './admin-artworks.js';
 import * as settings from './admin-settings.js';
+import { bumpRefreshVersion, refreshVersion } from './screens.js';
 
 const MAX_OPS = 40;
 const BIG_CHANGE = 15;           // more ops than this gets a "check the preview carefully" warning
@@ -38,6 +39,10 @@ const ENTITY_WORDS = {
 };
 const PRICE_DISPLAY_TEXT = { show: 'Show the price', on_request: 'Price on request', hidden: "Don't show the price" };
 const HIDDEN_DETAIL = 'Saved. Not on the website right now: it is hidden, a draft, or outside its dates.';
+/** Fields that hold a link or a photo address; a new outside site in one of them gets a warning. */
+const LINK_FIELDS = ['website_url', 'instagram_url', 'facebook_url', 'map_url', 'order_url', 'book_url', 'link_url', 'image_url', 'url', 'thumb_url'];
+const KNOWN_HOSTS = Symbol('known hosts'); // on a business's rows: the sites it already links to, before the draft
+const PATH_BASE = 'https://path.invalid';
 
 /* -------------------------------------------------------------------------
    Small helpers
@@ -58,6 +63,24 @@ const virtualId = (index) => -(index + 1);
 function dayText(date) {
   const p = parseDate(date);
   return p ? `${shortDate(date)}, ${p.y}` : String(date);
+}
+
+/**
+ * A short fingerprint of what a draft would do (its title and ops). The draft card sends it back with Publish, so a
+ * draft the Assistant replaced after the person looked at it is not published under the old summary.
+ */
+function versionOf(row) {
+  const text = `${row.title}\n${row.ops_json}`;
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
 /** 22 URL-safe characters from 16 random bytes (128 bits): the id is also the preview link's secret. */
@@ -157,6 +180,61 @@ function deleteCheck(c, what, photos, featured) {
   if (parts.length) warn(c, `${what} ${listWords(parts)}; deleting it takes that off the website too.`);
 }
 
+/** The site a link goes to ("tickets.example"), or null for this site's own pages and photos and for mailto:/tel:. */
+function outsideHost(link, ctx) {
+  let url;
+  try { url = new URL(String(link), PATH_BASE); } catch { return null; }
+  if (!/^https?:$/.test(url.protocol) || url.origin === PATH_BASE) return null;
+  const own = [ctx?.url?.host, (() => { try { return new URL(ctx?.env?.PUBLIC_BASE_URL || '').host; } catch { return null; } })()];
+  if (own.includes(url.host)) return null;
+  return url.hostname.toLowerCase().replace(/^www\./, '');
+}
+
+/** Every outside site a business's rows already link to (its links, event, announcement and artwork links and photos). */
+function collectHosts(rows, ctx) {
+  const hosts = new Set();
+  const add = (link) => { const host = link ? outsideHost(link, ctx) : null; if (host) hosts.add(host); };
+  if (rows.business) for (const key of LINK_FIELDS) add(rows.business[key]);
+  for (const list of [rows.events, rows.announcements, rows.artworkImages]) {
+    for (const row of list || []) for (const key of ['link_url', 'image_url', 'url', 'thumb_url']) add(row[key]);
+  }
+  return hosts;
+}
+
+/**
+ * A link or photo that points at a site this business does not link to anywhere yet is worth a look: an address
+ * copied from an inquiry or a photo note could be a look-alike of the real one.
+ */
+function linkCheck(c, what, values) {
+  for (const key of LINK_FIELDS) {
+    const host = values[key] ? outsideHost(values[key], c.ctx) : null;
+    if (!host) continue;
+    if (!c.rows[KNOWN_HOSTS]) c.rows[KNOWN_HOSTS] = collectHosts(c.rows, c.ctx);
+    if (c.rows[KNOWN_HOSTS].has(host)) continue;
+    const photo = key === 'image_url' || key === 'url' || key === 'thumb_url';
+    warn(c, photo
+      ? `${what}: the photo comes from ${host}, a site ${c.name} does not use anywhere yet. Make sure it is the right one.`
+      : `${what}: the ${fieldLabel(key)} goes to ${host}, a site ${c.name} does not link to anywhere yet. Make sure it is the right address.`);
+  }
+}
+
+/** Form emails going to a new inbox are easy to miss in a list of changes, so each new address is named. */
+function inboxCheck(c, before, after) {
+  const split = (v) => String(v || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+  const old = new Set(split(before));
+  const added = split(after).filter((e) => !old.has(e));
+  if (added.length) warn(c, `Website form emails for ${c.name} will also go to ${listWords(added)}. Make sure ${added.length === 1 ? 'that address is' : 'those addresses are'} right.`);
+}
+
+/** One line per detail a new item gets beyond its headline, so nothing in it is hidden from the summary. */
+function detailLines(c, prefix, row, keys, labels = {}) {
+  for (const key of keys) {
+    if (key === 'featured' && !row[key]) continue; // only "Featured: Yes" is news
+    const value = shown(key, row[key], c);
+    if (value != null) addLine(c, `${prefix}: ${labels[key] || fieldLabel(key)}`, null, value, key);
+  }
+}
+
 const eventWhen = (ev) => [eventDateText(ev.start_date, ev.end_date), eventTimeText(ev.start_time, ev.end_time)].filter(Boolean).join(' · ');
 const eventName = (ev) => `${capitalize(ev.kind || 'event')} ${quote(ev.title)}`;
 
@@ -244,7 +322,10 @@ const OPS = {
     apply(c, args) {
       const fields = readFields(args, businesses.BUSINESS_FIELDS, 'patch');
       const biz = c.rows.business;
+      const inboxes = biz.inquiry_emails;
       const changed = patchLines(c, biz, fields, null);
+      linkCheck(c, c.name, pick(fields, changed));
+      if (changed.includes('inquiry_emails')) inboxCheck(c, inboxes, biz.inquiry_emails);
       if ((changed.includes('notice') || changed.includes('notice_until')) && biz.notice && biz.notice_until && biz.notice_until < c.today) {
         block(c, `The notice's end date (${dayText(biz.notice_until)}) has already passed, so the notice would not show. Pick a later date or leave it empty.`);
       }
@@ -306,6 +387,8 @@ const OPS = {
       events.checkDates(fields);
       const row = { ...nulls(events.EVENT_COLUMNS), id: c.vid, business_slug: c.slug, ...fields };
       addLine(c, `New ${row.kind} ${quote(row.title)}`, null, `${eventWhen(row)}${row.published ? '' : ' · hidden (draft)'}`);
+      detailLines(c, `New ${row.kind} ${quote(row.title)}`, row, ['subtitle', 'location', 'description', 'link_url', 'link_label', 'image_url']);
+      linkCheck(c, eventName(row), row);
       pastEventCheck(c, row);
       c.rows.events.push(row);
       return c.vid;
@@ -318,6 +401,7 @@ const OPS = {
       const fields = readFields(rest, events.EVENT_FIELDS, 'patch');
       events.checkDates({ ...row, ...fields });
       const changed = patchLines(c, row, fields, eventName(row));
+      linkCheck(c, eventName(row), pick(fields, changed));
       if (changed.some((k) => k === 'start_date' || k === 'end_date')) pastEventCheck(c, row);
     },
   },
@@ -343,6 +427,7 @@ const OPS = {
       if (fields.sort_order == null) fields.sort_order = nextPosition(c.rows.sections);
       const row = { ...nulls(menu.SECTION_COLUMNS), id: c.vid, business_slug: c.slug, ...fields };
       addLine(c, `New menu section ${quote(row.title)}`, null, shown('published', row.published, c));
+      detailLines(c, `New menu section ${quote(row.title)}`, row, ['short_title', 'description']);
       c.rows.sections.push(row);
       return c.vid;
     },
@@ -376,6 +461,7 @@ const OPS = {
       if (cols.sort_order == null) cols.sort_order = nextPosition(c.rows.items.filter((i) => i.section_id === section.id));
       const row = { ...nulls(menu.ITEM_COLUMNS), id: c.vid, ...cols, section_id: section.id };
       addLine(c, `New menu item ${quote(row.name)} in ${section.title}`, null, itemText(row));
+      detailLines(c, `New menu item ${quote(row.name)}`, row, ['portion', 'description', 'allergens_json', 'featured']);
       priceCheck(c, quote(row.name), null, row.price);
       pricesCheck(c, quote(row.name), null, row.prices_json);
       c.rows.items.push(row);
@@ -415,6 +501,8 @@ const OPS = {
       announcements.checkDates(fields);
       const row = { ...nulls(announcements.ANNOUNCEMENT_COLUMNS), id: c.vid, ...fields, business_slug: c.slug };
       addLine(c, `New ${c.slug ? '' : 'family-wide '}announcement ${quote(row.title)}`, null, announcementText(row));
+      detailLines(c, `New announcement ${quote(row.title)}`, row, ['body', 'link_url', 'link_label', 'image_url']);
+      linkCheck(c, `Announcement ${quote(row.title)}`, row);
       endedCheck(c, row);
       c.rows.announcements.push(row);
       return c.vid;
@@ -427,6 +515,7 @@ const OPS = {
       const fields = readFields(rest, announcements.ANNOUNCEMENT_FIELDS, 'patch');
       announcements.checkDates({ ...row, ...fields });
       const changed = patchLines(c, row, fields, `Announcement ${quote(row.title)}`);
+      linkCheck(c, `Announcement ${quote(row.title)}`, pick(fields, changed));
       if (changed.includes('ends_at')) endedCheck(c, row);
     },
   },
@@ -450,6 +539,7 @@ const OPS = {
       checkExhibition(c, fields.event_id);
       const row = { ...nulls(artworks.ARTWORK_COLUMNS), id: c.vid, business_slug: c.slug, ...fields, sort_order: nextPosition(list) };
       addLine(c, `New artwork ${quote(row.title)}${row.artist ? ` by ${row.artist}` : ''}`, null, artworkText(row, c));
+      detailLines(c, `New artwork ${quote(row.title)}`, row, ['year', 'medium', 'dimensions', 'description', 'featured']);
       artworkChecks(c, row, null, fields);
       list.push(row);
       return c.vid;
@@ -489,6 +579,8 @@ const OPS = {
       if (images.length >= artworks.MAX_IMAGES) throw conflict(`A piece can have at most ${artworks.MAX_IMAGES} photos. Remove one first.`, 'too_many_images');
       const row = { ...nulls(artworks.IMAGE_COLUMNS), id: c.vid, ...fields, artwork_id: art.id, sort_order: nextPosition(images) };
       addLine(c, `Add a photo to ${quote(art.title)}`, null, row.alt || photoName(row.url));
+      detailLines(c, `New photo of ${quote(art.title)}`, row, ['url'], { url: 'photo link' });
+      linkCheck(c, `The new photo of ${quote(art.title)}`, row);
       if (!row.alt) warn(c, `The new photo of ${quote(art.title)} has no description. Add one for people who use screen readers.`);
       c.rows.artworkImages.push(row);
       return c.vid;
@@ -598,13 +690,18 @@ function routeFor(def, op, args) {
    ------------------------------------------------------------------------- */
 const FAMILY = '*';
 
-/** The rows of one business (everything, drafts included), or of the family-wide announcements (slug null). */
-async function rowsFor(env, slug, now, cache) {
+/**
+ * The rows of one business (everything, drafts included), or of the family-wide announcements (slug null), with the
+ * outside sites they link to noted before any op changes them (for linkCheck).
+ */
+async function rowsFor(ctx, slug, cache) {
   const key = slug ?? FAMILY;
   if (!cache.has(key)) {
-    cache.set(key, slug == null
-      ? { business: null, announcements: await all(env, 'SELECT * FROM announcements WHERE business_slug IS NULL') }
-      : await loadBundleRows(env, slug, now, { signage: true, artworks: true }));
+    const rows = slug == null
+      ? { business: null, announcements: await all(ctx.env, 'SELECT * FROM announcements WHERE business_slug IS NULL') }
+      : await loadBundleRows(ctx.env, slug, ctx.now, { signage: true, artworks: true });
+    if (rows) rows[KNOWN_HOSTS] = collectHosts(rows, ctx);
+    cache.set(key, rows);
   }
   const rows = cache.get(key);
   if (!rows) throw notFound(`There is no business called "${slug}".`, 'unknown_business');
@@ -635,7 +732,7 @@ async function simulate(ctx, ops) {
       } else if (!canEdit(ctx.user, slug)) {
         throw forbidden(`You can only change the businesses assigned to you, and "${slug}" is not one of them. An owner or admin can make this change.`);
       }
-      const rows = await rowsFor(ctx.env, slug, ctx.now, cache);
+      const rows = await rowsFor(ctx, slug, cache);
       const c = opContext(ctx, index, rows, slug);
       const args = resolveRefs(def, ops[index].args || {}, index, (i) => refs[i]);
       const created = def.apply(c, args);
@@ -689,6 +786,7 @@ function shapeChangeSet(env, row, names) {
   return {
     id: row.id,
     title: row.title,
+    version: versionOf(row),
     status: effectiveStatus(row),
     source: row.source,
     conversation_id: row.conversation_id,
@@ -792,24 +890,64 @@ async function restoreAll(ctx, auditIds, done = new Set()) {
   return { restored, failed };
 }
 
+const draftChanged = () => conflict('This draft changed since you looked at it. Check the new version, then publish.', 'change_set_changed');
+
+/** Every business whose TV screens a change set can change: the ones it touches, or all of them for a family-wide op. */
+async function screenSlugs(env, ops, touched) {
+  if (!ops.some((op) => isObject(op) && op.business_slug == null)) return touched;
+  return (await all(env, 'SELECT slug FROM businesses ORDER BY sort_order, slug')).map((b) => b.slug);
+}
+
+/** The refresh_version each business's TV setting holds now: the floor for bumpTvs. */
+async function tvVersions(env, slugs) {
+  const out = new Map();
+  for (const slug of slugs) out.set(slug, await refreshVersion(env, slug));
+  return out;
+}
+
+/**
+ * After a publish or undo, every named TV screen of those businesses fetches its data again at its next heartbeat
+ * (within a minute) instead of at its next five-minute refresh. → { slug: new refresh_version } for the History entry.
+ */
+async function bumpTvs(env, floors) {
+  const out = {};
+  for (const [slug, floor] of floors) {
+    try {
+      out[slug] = (await bumpRefreshVersion(env, slug, floor)).version;
+    } catch (err) {
+      console.error(`Could not ask the TV screens of ${slug} to reload:`, err); // they still catch up within minutes
+    }
+  }
+  return out;
+}
+
 /**
  * Publishes a draft (its creator, or an owner/admin): checks it again against today's data, then runs each op through
  * its admin handler as this user. → { change_set, results }. A failing op rolls back the earlier ones (409 publish_failed).
+ * With `version` (from the change set the person reviewed), a draft that has been replaced since is refused (409).
  */
-export async function publishChangeSet(ctx, id) {
+export async function publishChangeSet(ctx, id, { version = null } = {}) {
   const row = await loadChangeSet(ctx, id);
   assertDraft(row);
+  if (version != null && version !== versionOf(row)) throw draftChanged();
   const ops = parseJson(row.ops_json, []);
   const sim = await simulate(ctx, ops);
   if (sim.problems.length) throw invalidChangeSet(sim.problems, 'The data changed since this draft was made, so it needs fixing first');
   const blocking = sim.checks.filter((k) => k.level === 'block');
   if (blocking.length) throw conflict(`This draft has a problem to fix before it can be published: ${blocking.map((k) => k.message).join(' ')}`, 'change_set_blocked');
 
-  // Claim the draft first, so a second tap on Publish cannot run the same ops twice.
+  // Claim the draft first, so a second tap on Publish cannot run the same ops twice; only the version just checked
+  // (and simulated) is claimed, so a draft replaced in the meantime is not published under this summary.
   const claim = await run(ctx.env, `UPDATE change_sets SET status = 'published', published_at = datetime('now'), updated_at = datetime('now'),
-    summary_json = ?, checks_json = ?, businesses_json = ? WHERE id = ? AND status = 'draft' AND expires_at > datetime('now')`,
-  [JSON.stringify(sim.summary), JSON.stringify(sim.checks), JSON.stringify(sim.businesses), row.id]);
-  if (!claim.meta.changes) throw conflict('This draft is already being published, or it has just expired.', 'not_a_draft');
+    summary_json = ?, checks_json = ?, businesses_json = ? WHERE id = ? AND status = 'draft' AND expires_at > datetime('now')
+    AND title = ? AND ops_json = ?`,
+  [JSON.stringify(sim.summary), JSON.stringify(sim.checks), JSON.stringify(sim.businesses), row.id, row.title, row.ops_json]);
+  if (!claim.meta.changes) {
+    const now = await first(ctx.env, 'SELECT status, title, ops_json FROM change_sets WHERE id = ?', [row.id]);
+    if (now?.status === 'draft' && versionOf(now) !== versionOf(row)) throw draftChanged();
+    throw conflict('This draft is already being published, or it has just expired.', 'not_a_draft');
+  }
+  const floors = await tvVersions(ctx.env, await screenSlugs(ctx.env, ops, sim.businesses));
 
   const auditSource = SOURCES[row.source] || SOURCES.assistant;
   const results = [];
@@ -827,9 +965,11 @@ export async function publishChangeSet(ctx, id) {
       if (!(err instanceof ApiError)) console.error(`Change set ${row.id}: op ${index} (${op.op}) failed:`, err);
       const error = `Change ${index + 1} could not be made: ${messageOf(err)}`;
       results.push({ op_index: index, op: op.op, business_slug: op.business_slug ?? null, ok: false, error: messageOf(err), audit_ids: opCtx.auditIds });
-      const rollback = await restoreAll(ctx, results.flatMap((r) => r.audit_ids));
+      // Recorded before the rollback, so a rollback that cannot finish still leaves the failure and its audit ids.
       await run(ctx.env, "UPDATE change_sets SET status = 'failed', updated_at = datetime('now'), result_json = ? WHERE id = ?",
-        [JSON.stringify({ error, results, rollback }), row.id]);
+        [JSON.stringify({ error, results }), row.id]);
+      const rollback = await restoreAll(ctx, results.flatMap((r) => r.audit_ids));
+      await run(ctx.env, "UPDATE change_sets SET result_json = ? WHERE id = ?", [JSON.stringify({ error, results, rollback }), row.id]);
       const after = rollback.failed.length
         ? ` ${rollback.failed.length} earlier change${rollback.failed.length === 1 ? '' : 's'} could not be put back automatically; check History.`
         : ' Nothing was changed: the earlier changes were put back.';
@@ -838,10 +978,11 @@ export async function publishChangeSet(ctx, id) {
   }
 
   const auditIds = results.flatMap((r) => r.audit_ids);
+  const tvRefresh = await bumpTvs(ctx.env, floors);
   const published = { ...ctx, auditIds: [] };
   await audit(published, {
     business_slug: sim.businesses.length === 1 ? sim.businesses[0] : null, entity: 'change_set', entity_id: row.id, action: 'update',
-    summary: `Published "${row.title}" (${ops.length} change${ops.length === 1 ? '' : 's'})`, after: { audit_ids: auditIds },
+    summary: `Published "${row.title}" (${ops.length} change${ops.length === 1 ? '' : 's'})`, after: { audit_ids: auditIds, tv_refresh: tvRefresh },
   });
   await run(ctx.env, "UPDATE change_sets SET result_json = ?, updated_at = datetime('now') WHERE id = ?",
     [JSON.stringify({ results, audit_ids: auditIds, published_audit_id: published.auditIds[0] ?? null }), row.id]);
@@ -867,7 +1008,11 @@ export async function undoChangeSet(ctx, id) {
     throw conflict(`Changes published more than ${UNDO_DAYS} days ago cannot be undone all at once. Use History to restore single changes.`, 'undo_too_late');
   }
   const result = parseJson(row.result_json, {}) || {};
-  const auditIds = Array.isArray(result.audit_ids) ? result.audit_ids : [];
+  // A publish cut off part-way (a time or query limit, a deploy) never wrote its list; "undoing" it would put nothing back.
+  if (!Array.isArray(result.audit_ids)) {
+    throw conflict('This publish did not finish recording its changes, so it cannot be undone all at once. Use History to undo each one.', 'undo_unavailable');
+  }
+  const auditIds = result.audit_ids;
   const done = new Set(result.undone_audit_ids || []);
   // Undo needs the same rights as restoring each entry by hand.
   const entries = auditIds.length ? await all(ctx.env, 'SELECT id, business_slug FROM audit_log WHERE id IN (SELECT value FROM json_each(?))', [JSON.stringify(auditIds)]) : [];
@@ -878,18 +1023,21 @@ export async function undoChangeSet(ctx, id) {
   const claim = await run(ctx.env, "UPDATE change_sets SET status = 'undone', updated_at = datetime('now') WHERE id = ? AND status = 'published'", [row.id]);
   if (!claim.meta.changes) throw conflict('This change set is already being undone.', 'not_published');
 
+  const ops = parseJson(row.ops_json, []);
+  const floors = await tvVersions(ctx.env, await screenSlugs(ctx.env, ops, parseJson(row.businesses_json, [])));
   const { restored, failed } = await restoreAll(ctx, auditIds, done);
   for (const x of restored) done.add(x);
+  const tvRefresh = restored.length ? await bumpTvs(ctx.env, floors) : {};
   const next = { ...result, undone_audit_ids: [...done], undo_failed: failed };
   if (failed.length) {
     await run(ctx.env, "UPDATE change_sets SET status = 'published', updated_at = datetime('now'), result_json = ? WHERE id = ?", [JSON.stringify(next), row.id]);
     throw conflict(`${done.size} of ${auditIds.length} changes were put back, but ${failed.length} could not be: ${failed[0].error} Try again, or use History.`, 'undo_failed');
   }
   const slugs = parseJson(row.businesses_json, []);
-  const n = parseJson(row.ops_json, []).length;
+  const n = ops.length;
   await audit(ctx, {
     business_slug: slugs.length === 1 ? slugs[0] : null, entity: 'change_set', entity_id: row.id, action: 'update',
-    summary: `Undid "${row.title}" (${n} change${n === 1 ? '' : 's'})`, after: { restored_audit_ids: [...done] },
+    summary: `Undid "${row.title}" (${n} change${n === 1 ? '' : 's'})`, after: { restored_audit_ids: [...done], tv_refresh: tvRefresh },
   });
   await run(ctx.env, "UPDATE change_sets SET result_json = ? WHERE id = ?", [JSON.stringify(next), row.id]);
   return { change_set: await shapeOne(ctx.env, row.id) };
@@ -907,7 +1055,7 @@ const ON_WEBSITE = {
 };
 
 function liveDetail(def, bundle, id, field) {
-  if (def.entity === 'settings') return 'Saved. The TV screens pick it up within a few minutes.';
+  if (def.entity === 'settings') return 'Saved. The TV screens pick it up within a minute or two.';
   if (field === 'inquiry_emails') return 'Saved. Form emails go there; it is not shown on the website.';
   const check = ON_WEBSITE[def.entity];
   return !check || check(bundle, id) ? 'Live on the website.' : HIDDEN_DETAIL;
@@ -1056,12 +1204,19 @@ async function createRoute(ctx) {
   return proposeChangeSet(ctx, { title: body.title, ops: body.ops, source: body.source || 'assistant', conversation_id: body.conversation_id ?? null, replace_id: body.replace_id ?? null });
 }
 
+/** POST /api/admin/change-sets/:id/publish { version? } — version is the one on the card the person reviewed. */
+async function publishRoute(ctx) {
+  const body = await readBody(ctx.request);
+  const version = body.version == null || body.version === '' ? null : String(body.version);
+  return publishChangeSet(ctx, ctx.params.id, { version });
+}
+
 /** Adds this module's routes. `admin` wraps a handler so it requires a signed-in user. */
 export function register(router, admin) {
   router.get('/api/admin/change-sets', admin(listRoute));
   router.post('/api/admin/change-sets', admin(withDetails(createRoute)));
   router.get('/api/admin/change-sets/:id', admin(async (ctx) => ({ change_set: await getChangeSet(ctx, ctx.params.id) })));
-  router.post('/api/admin/change-sets/:id/publish', admin(withDetails((ctx) => publishChangeSet(ctx, ctx.params.id))));
+  router.post('/api/admin/change-sets/:id/publish', admin(withDetails(publishRoute)));
   router.post('/api/admin/change-sets/:id/discard', admin((ctx) => discardChangeSet(ctx, ctx.params.id)));
   router.post('/api/admin/change-sets/:id/undo', admin((ctx) => undoChangeSet(ctx, ctx.params.id)));
   router.get('/api/admin/change-sets/:id/verify', admin((ctx) => verifyChangeSet(ctx, ctx.params.id)));

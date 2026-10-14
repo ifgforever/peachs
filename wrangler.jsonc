@@ -9,8 +9,9 @@
     "directory": ".",
     "binding": "ASSETS",
     // Only these paths run the Worker; everything else is served straight from the files.
-    // /api/* is the admin backend; the .mp4 paths and /loop get byte-range video serving (worker/lib/video.js).
-    "run_worker_first": ["/api/*", "/signage/*.mp4", "/docs/demo/*.mp4", "/loop"]
+    // /api/* is the admin backend; the .mp4 paths and /loop get byte-range video serving (worker/lib/video.js);
+    // /mcp, /authorize, /token, /register and /.well-known/* are the Claude app connector (worker/lib/mcp.js).
+    "run_worker_first": ["/api/*", "/signage/*.mp4", "/docs/demo/*.mp4", "/loop", "/mcp", "/authorize", "/token", "/register", "/.well-known/*"]
   },
   "d1_databases": [
     {
@@ -24,7 +25,9 @@
   // Sign-in for the Claude app connector (OAuth clients, grants, tokens). Namespace created 2026-10-14.
   "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "14753048e70b4aaf99fed941817546da" }],
   "vars": {
-    "PUBLIC_BASE_URL": ""
+    "PUBLIC_BASE_URL": "",
+    // Where the Claude app connector's sign-in may send its code (worker/lib/mcp.js): Claude's own sites, comma-separated.
+    "OAUTH_REDIRECT_HOSTS": "claude.ai,claude.com"
   },
   "observability": { "enabled": true }
 }

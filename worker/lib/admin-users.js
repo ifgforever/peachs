@@ -60,6 +60,20 @@ export async function create(ctx) {
   return { user: publicUserRow(row) };
 }
 
+/**
+ * Ends someone's Claude app connections too (worker/lib/mcp.js), so switching the account on again later does not bring
+ * them back. mcp.js is loaded only here, when needed: through the tool layer it imports History, which imports this module.
+ * A failure is logged, not shown: a switched-off account is refused by the connector anyway.
+ */
+async function disconnectApps(ctx, userId) {
+  try {
+    const { revokeUserGrants } = await import('./mcp.js');
+    await revokeUserGrants(ctx.env, userId, ctx.url.origin);
+  } catch (err) {
+    console.error(`Could not disconnect the Claude app connections of user ${userId}:`, err);
+  }
+}
+
 async function loadUser(ctx) {
   const row = await first(ctx.env, 'SELECT * FROM users WHERE id = ?', [Number(ctx.params.id) || 0]);
   if (!row) throw notFound('No such user.');
@@ -97,6 +111,7 @@ export async function patch(ctx) {
   if (values.active === 0 || changed.includes('password_hash') || changed.includes('role')) {
     await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ? AND token <> ?', [row.id, ctx.user.session]);
   }
+  if (changed.includes('active') && values.active === 0) await disconnectApps(ctx, row.id);
 
   let summary;
   if (changed.includes('password_hash')) summary = `Reset the password of ${row.email}`;
@@ -119,6 +134,7 @@ export async function remove(ctx) {
   if (await isLastActiveOwner(ctx.env, row)) throw conflict('There must always be one active owner.', 'last_owner');
   await run(ctx.env, 'DELETE FROM sessions WHERE user_id = ?', [row.id]);
   await run(ctx.env, 'DELETE FROM users WHERE id = ?', [row.id]);
+  await disconnectApps(ctx, row.id);
   // The full row (hash included) is kept so Restore can bring the account back; the history API redacts it.
   await audit(ctx, { entity: 'user', entity_id: row.id, action: 'delete', summary: `Removed ${describe(row)}`, before: row });
   return { ok: true };

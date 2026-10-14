@@ -1116,10 +1116,84 @@ await step('Change sets: artworks, a photo, family-wide news and TV settings in 
   expectStatus(done, 200, 'publish');
   const verify = (await csApi('GET', `/api/admin/change-sets/${d.id}/verify`)).data;
   expect(verify.ok === true, `verify ${JSON.stringify(verify)}`);
+  const tvPublished = (await csApi('GET', `/api/admin/settings/signage:${art}`)).data.value;
+  expect(tvPublished.refresh_version > (Number(tvBefore.refresh_version) || 0), `publishing asks the TV screens to reload: ${JSON.stringify(tvPublished)}`);
   expectStatus(await csApi('POST', `/api/admin/change-sets/${d.id}/undo`), 200, 'undo');
   const back = (await publicGet(`/api/public/${art}`)).data;
   expect(!JSON.stringify(back).includes('Smoke CS'), 'all gone after undo');
-  expect(JSON.stringify((await csApi('GET', `/api/admin/settings/signage:${art}`)).data.value) === JSON.stringify(tvBefore), 'TV settings back');
+  // Everything back, apart from refresh_version: undo asks the screens to reload again, with a newer number.
+  const { refresh_version: tvAfterVersion, ...tvAfter } = (await csApi('GET', `/api/admin/settings/signage:${art}`)).data.value;
+  const { refresh_version: unusedVersion, ...tvWas } = tvBefore;
+  expect(JSON.stringify(tvAfter) === JSON.stringify(tvWas) && tvAfterVersion > tvPublished.refresh_version, `TV settings back ${JSON.stringify({ tvAfter, tvAfterVersion })}`);
+});
+
+await step('Change sets: TV settings never saved before can be published and undone', async () => {
+  if (state.role === 'editor') return 'skipped (logged in as an editor)';
+  const slugs = (await csApi('GET', '/api/admin/businesses')).data.businesses.map((b) => b.slug);
+  const slug = slugs.includes('catering') ? 'catering' : cs.other || cs.slug;
+  if (PERSIST) await localSql(`DELETE FROM settings WHERE key = 'signage:${slug}'`); // no row at all, as on a fresh database
+  const before = (await csApi('GET', `/api/admin/settings/signage:${slug}`)).data.value;
+  const res = await propose('Smoke TV settings', [{ op: 'screen_settings.put', business_slug: slug, args: { value: { ...before, seconds_per_scene: 15, scenes: { menu: false } } } }]);
+  expectStatus(res, 200, 'draft');
+  const d = res.data.change_set;
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${d.id}/publish`, { version: d.version }), 200, 'publish');
+  const live = (await csApi('GET', `/api/admin/settings/signage:${slug}`)).data.value;
+  expect(live.seconds_per_scene === 15 && live.scenes?.menu === false && live.refresh_version > (Number(before.refresh_version) || 0), `published ${JSON.stringify(live)}`);
+  const undo = await csApi('POST', `/api/admin/change-sets/${d.id}/undo`);
+  expectStatus(undo, 200, `Undo all ${JSON.stringify(undo.data)}`);
+  expect(undo.data.change_set.status === 'undone', `status ${undo.data.change_set.status}`);
+  const { refresh_version: version, ...after } = (await csApi('GET', `/api/admin/settings/signage:${slug}`)).data.value;
+  const { refresh_version: unusedVersion, ...was } = before;
+  expect(JSON.stringify(after) === JSON.stringify(was) && version > live.refresh_version, `after undo ${JSON.stringify({ after, version })}`);
+  return slug;
+});
+
+await step('Change sets: Publish checks the version the person saw; a replaced draft is refused', async () => {
+  const first = await propose('Smoke version one', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke version one' } }]);
+  expectStatus(first, 200, 'draft');
+  const seen = first.data.change_set;
+  expect(typeof seen.version === 'string' && seen.version.length > 4, `version ${seen.version}`);
+  const second = await propose('Smoke version two', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke version two' } }], { replace_id: seen.id });
+  expectStatus(second, 200, 'replaced');
+  expect(second.data.change_set.id === seen.id && second.data.change_set.version !== seen.version, 'same draft, new version');
+  const stale = await csApi('POST', `/api/admin/change-sets/${seen.id}/publish`, { version: seen.version });
+  expectStatus(stale, 409, 'publish the version the person did not see');
+  expect(stale.data.code === 'change_set_changed', `code ${stale.data.code}`);
+  expect((await publicGet(`/api/public/${cs.slug}`)).data.business.tagline === cs.tagline, 'nothing went live');
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${seen.id}/discard`), 200, 'discard');
+});
+
+await step('Change sets: new items show every detail; links to new sites and new form inboxes are flagged', async () => {
+  const res = await propose('Smoke details', [
+    { op: 'event.create', business_slug: cs.slug, args: { title: 'Smoke ticketed brunch', start_date: chicagoToday(8), location: 'Back patio',
+      description: 'Smoke description', link_url: 'https://peachs-tickets.example/pay', link_label: 'Buy tickets', image_url: 'https://images.example.org/x.jpg' } },
+    { op: 'business.patch', business_slug: cs.slug, args: { inquiry_emails: 'smoke-new-inbox@example.net' } },
+  ]);
+  expectStatus(res, 200, 'draft');
+  const d = res.data.change_set;
+  const line = (what) => d.summary.find((l) => l.line === `New event 'Smoke ticketed brunch': ${what}`);
+  expect(line('link')?.after === 'https://peachs-tickets.example/pay' && line('location')?.after === 'Back patio' && line('description') && line('photo') && line('link label'),
+    `detail lines ${JSON.stringify(d.summary.map((l) => l.line))}`);
+  expect(d.checks.some((k) => k.level === 'warn' && k.op_index === 0 && /peachs-tickets\.example/.test(k.message)), `link warning ${JSON.stringify(d.checks)}`);
+  expect(d.checks.some((k) => k.level === 'warn' && k.op_index === 1 && /also go to smoke-new-inbox@example\.net/.test(k.message)), 'new inbox warning');
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${d.id}/discard`), 200, 'discard');
+});
+
+await step('Change sets: a publish that never recorded its changes is not "undone"', async () => {
+  if (!PERSIST) return 'skipped (set SMOKE_PERSIST_TO to the folder wrangler dev uses for --persist-to)';
+  const res = await propose('Smoke cut-off publish', [{ op: 'business.patch', business_slug: cs.slug, args: { tagline: 'Smoke cut-off tagline' } }]);
+  expectStatus(res, 200, 'draft');
+  const id = res.data.change_set.id;
+  expectStatus(await csApi('POST', `/api/admin/change-sets/${id}/publish`), 200, 'publish');
+  try {
+    await localSql(`UPDATE change_sets SET result_json = NULL WHERE id = '${id}'`); // as if the Worker stopped before the end
+    const undo = await csApi('POST', `/api/admin/change-sets/${id}/undo`);
+    expectStatus(undo, 409, 'undo');
+    expect(undo.data.code === 'undo_unavailable' && /History/.test(undo.data.error), `answer ${JSON.stringify(undo.data)}`);
+    expect((await csApi('GET', `/api/admin/change-sets/${id}`)).data.change_set.status === 'published', 'still published');
+  } finally {
+    await csApi('PATCH', `/api/admin/businesses/${cs.slug}`, { tagline: cs.tagline });
+  }
 });
 
 await step('Change sets: cleanup and sign out', async () => {
@@ -1135,6 +1209,289 @@ await step('Change sets: cleanup and sign out', async () => {
     if (now.business.tagline !== cs.tagline) await csApi('PATCH', `/api/admin/businesses/${cs.slug}`, { tagline: cs.tagline });
   }
   expectStatus(await csApi('POST', '/api/auth/logout'), 200, 'logout');
+  expect(!errors.length, errors.join('; '));
+});
+
+/* ---------- Photo library and TV screens (docs/assistant-api.md §5 and §6) ---------- */
+// These steps sign in again, work on the same business as the steps above (and a second one for moves and the editor),
+// and remove what they create. With SMOKE_PERSIST_TO set, a heartbeat is also backdated to see a screen go offline.
+const ps = { token: null, slug: null, other: null, albumId: null, otherAlbumId: null, photo: null, linkPhoto: null, files: [],
+  eventId: null, announcementId: null, screen: null, screen2: null, tv: null, tvRaw: null, editorId: null };
+const psApi = (method, path, body, auth = ps.token) => api(method, path, body, { auth });
+const needPhotos = () => expect(ps.photo && ps.linkPhoto, 'needs the photos from the "add photos" step, which failed');
+const needScreen = () => expect(ps.screen, 'needs the screen from the "add a screen" step, which failed');
+/** What signage/live.js sends: a text/plain JSON body (no CORS preflight), no login. */
+const beat = (id, body = { scene: 'welcome', version: '0' }) => api('POST', `/api/public/screens/${id}/heartbeat`, JSON.stringify(body),
+  { auth: null, headers: { 'Content-Type': 'text/plain;charset=UTF-8' } });
+async function uploadPng(slug, variant) {
+  const fd = new FormData();
+  fd.append('business', slug);
+  fd.append('variant', variant);
+  fd.append('width', '3');
+  fd.append('height', '2');
+  fd.append('file', new Blob([tinyPng(3, 2)], { type: 'image/png' }), 'Smoke Library.png');
+  const res = await fetch(`${BASE}/api/admin/media`, { method: 'POST', headers: { Authorization: `Bearer ${ps.token}` }, body: fd });
+  return { status: res.status, data: await res.json() };
+}
+
+await step('Photo library: sign in; albums: list, add, rename, no duplicate names', async () => {
+  const login = await api('POST', '/api/auth/login', { email: EMAIL, password: PASSWORD }, { auth: null });
+  expectStatus(login, 200, 'login');
+  ps.token = login.data.token;
+  const list = (await psApi('GET', '/api/admin/businesses')).data.businesses;
+  ps.slug = state.slug || list[0].slug;
+  ps.other = list.find((b) => b.slug !== ps.slug)?.slug || null;
+  const before = await psApi('GET', `/api/admin/businesses/${ps.slug}/albums`);
+  expectStatus(before, 200, 'albums');
+  expect(before.data.albums.every((a) => Number.isInteger(a.id) && a.name && Number.isInteger(a.count)), `albums shape ${JSON.stringify(before.data)}`);
+  const made = await psApi('POST', `/api/admin/businesses/${ps.slug}/albums`, { name: 'Smoke Album' });
+  expectStatus(made, 200, 'add album');
+  ps.albumId = made.data.album.id;
+  expect(made.data.album.count === 0 && made.data.album.sort_order > Math.max(0, ...before.data.albums.map((a) => a.sort_order)), 'a new album is empty and goes last');
+  const dup = await psApi('POST', `/api/admin/businesses/${ps.slug}/albums`, { name: 'smoke album' });
+  expect(dup.status === 409 && dup.data.code === 'album_exists', `same name in other letters: ${dup.status} ${JSON.stringify(dup.data)}`);
+  expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/albums`, { name: '  ' }), 400, 'empty name');
+  const renamed = await psApi('PATCH', `/api/admin/albums/${ps.albumId}`, { name: 'Smoke Brunch Album' });
+  expectStatus(renamed, 200, 'rename');
+  expect(renamed.data.album.name === 'Smoke Brunch Album', 'renamed');
+  if (ps.other) {
+    const theirs = await psApi('POST', `/api/admin/businesses/${ps.other}/albums`, { name: 'Smoke Other Album' });
+    expectStatus(theirs, 200, 'album of the other business');
+    ps.otherAlbumId = theirs.data.album.id;
+  }
+  const hist = (await psApi('GET', `/api/admin/businesses/${ps.slug}/history?limit=5`)).data.entries;
+  expect(hist.some((e) => e.entity === 'album' && e.summary === "Renamed the photo album 'Smoke Album' to 'Smoke Brunch Album'" && e.can_restore === false), 'History: the rename, as a record');
+  return `${before.data.albums.length} albums before`;
+});
+
+await step('Photo library: add photos, then list, filter by album, search and page', async () => {
+  expect(ps.albumId, 'needs the album step, which failed');
+  const full = await uploadPng(ps.slug, 'full');
+  let fields;
+  if (full.status === 501) {
+    fields = { url: 'https://example.com/smoke/brunch-full.jpg', thumb_url: 'https://example.com/smoke/brunch-thumb.jpg' };
+  } else {
+    expectStatus(full, 200, 'upload full size');
+    const thumb = await uploadPng(ps.slug, 'thumb');
+    expectStatus(thumb, 200, 'upload thumbnail');
+    fields = { url: full.data.url, thumb_url: thumb.data.url, r2_key: full.data.key, thumb_r2_key: thumb.data.key };
+    ps.files = [full.data.key, thumb.data.key];
+  }
+  const add = await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { ...fields, note: 'Smoke brunch special', alt: 'A peach-coloured square',
+    album_id: ps.albumId, width: 3, height: 2, bytes: 120, taken_at: '2026-10-13T09:15' });
+  expectStatus(add, 200, 'add photo');
+  const p = add.data.photo;
+  ps.photo = p;
+  expect(p.url === fields.url && p.thumb_url === fields.thumb_url && p.album_id === ps.albumId && p.album_name === 'Smoke Brunch Album'
+    && p.note === 'Smoke brunch special' && p.taken_at === '2026-10-13T09:15' && p.width === 3 && p.uploaded_by_name
+    && Array.isArray(p.in_use) && !p.in_use.length && /Z$/.test(p.created_at), `photo shape ${JSON.stringify(p)}`);
+  const again = await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, fields);
+  expect(again.status === 409 && again.data.code === 'already_in_library', `the same photo twice: ${again.status}`);
+  expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: 'javascript:alert(1)' }), 400, 'a script link');
+  expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: 'https://example.com/x.jpg', taken_at: 'yesterday' }), 400, 'a bad date taken');
+  if (ps.files.length) {
+    const elsewhere = ps.other || 'blanc';
+    const theirs = await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: `/api/media/uploads/${elsewhere}/1-x.png`, r2_key: `uploads/${elsewhere}/1-x.png` });
+    expectStatus(theirs, 400, 'a file of another business');
+    expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: `/api/media/uploads/${ps.slug}/1-missing.png` }), 400, 'a file that was never uploaded');
+  }
+  if (ps.otherAlbumId) expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: 'https://example.com/y.jpg', album_id: ps.otherAlbumId }), 400, 'an album of another business');
+  const link = await psApi('POST', `/api/admin/businesses/${ps.slug}/media`, { url: 'https://example.com/smoke/flyer.jpg', note: 'Smoke 50%_off flyer' });
+  expectStatus(link, 200, 'a photo by link, with no album');
+  ps.linkPhoto = link.data.photo;
+  expect(ps.linkPhoto.thumb_url === ps.linkPhoto.url && ps.linkPhoto.album_id === null, 'no thumbnail: thumb_url is the photo itself');
+
+  const listed = await psApi('GET', `/api/admin/businesses/${ps.slug}/media`);
+  expectStatus(listed, 200, 'list');
+  const ids = listed.data.photos.map((x) => x.id);
+  expect(ids.includes(ps.linkPhoto.id) && ids.indexOf(p.id) > ids.indexOf(ps.linkPhoto.id), 'newest first');
+  expect(listed.data.albums.find((a) => a.id === ps.albumId)?.count === 1 && listed.data.total >= 2 && listed.data.no_album >= 1, `counts ${JSON.stringify({ ...listed.data, photos: undefined })}`);
+  const inAlbum = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media?album_id=${ps.albumId}`)).data.photos.map((x) => x.id);
+  expect(JSON.stringify(inAlbum) === JSON.stringify([p.id]), 'album filter');
+  const none = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media?album_id=none`)).data.photos.map((x) => x.id);
+  expect(none.includes(ps.linkPhoto.id) && !none.includes(p.id), '"No album" filter');
+  expectStatus(await psApi('GET', `/api/admin/businesses/${ps.slug}/media?album_id=abc`), 400, 'a bad album filter');
+  const search = async (q, path = `/api/admin/businesses/${ps.slug}/media`) => (await psApi('GET', `${path}?q=${encodeURIComponent(q)}`)).data.photos;
+  expect(JSON.stringify((await search('brunch special')).map((x) => x.id)) === JSON.stringify([p.id]), 'search the note');
+  expect((await search('Smoke Brunch Album')).some((x) => x.id === p.id), 'search the album name');
+  expect(JSON.stringify((await search('50%_off')).map((x) => x.id)) === JSON.stringify([ps.linkPhoto.id]), '% and _ are matched literally');
+  const page1 = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media?limit=1`)).data;
+  expect(page1.photos.length === 1 && page1.next_before === page1.photos[0].id, `page 1: ${JSON.stringify(page1.next_before)}`);
+  const page2 = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media?limit=1&before=${page1.next_before}`)).data;
+  expect(page2.photos.length === 1 && page2.photos[0].id < page1.photos[0].id, 'page 2');
+  const everywhere = await search('Smoke brunch special', '/api/admin/media');
+  expect(everywhere.length === 1 && everywhere[0].business_slug === ps.slug && everywhere[0].business_name, 'search across businesses');
+  return ps.files.length ? 'with uploaded files' : 'links only (MEDIA is not bound)';
+});
+
+await step('Photo library: move to another business and back; in use → 409; delete removes the files', async () => {
+  needPhotos();
+  if (ps.other) {
+    const moved = await psApi('PATCH', `/api/admin/media/${ps.photo.id}`, { business_slug: ps.other, note: 'Smoke brunch special (moved)' });
+    expectStatus(moved, 200, 'move');
+    expect(moved.data.photo.business_slug === ps.other && moved.data.photo.album_id === null && moved.data.photo.note === 'Smoke brunch special (moved)', `moved: ${JSON.stringify(moved.data.photo)}`);
+    const hist = (await psApi('GET', `/api/admin/businesses/${ps.slug}/history?limit=5`)).data.entries;
+    expect(hist.some((e) => e.entity === 'photo' && /^Moved photo 'Smoke brunch special' to the photo library of .+ and changed its note$/.test(e.summary)), 'History says where it went');
+    expectStatus(await psApi('PATCH', `/api/admin/media/${ps.photo.id}`, { business_slug: ps.slug, album_id: ps.otherAlbumId }), 400, 'an album of the business it is leaving');
+    expectStatus(await psApi('PATCH', `/api/admin/media/${ps.photo.id}`, { business_slug: 'no-such-business' }), 404, 'an unknown business');
+    const back = await psApi('PATCH', `/api/admin/media/${ps.photo.id}`, { business_slug: ps.slug, album_id: ps.albumId, note: 'Smoke brunch special' });
+    expectStatus(back, 200, 'move back into its album');
+    expect(back.data.photo.business_slug === ps.slug && back.data.photo.album_id === ps.albumId, 'back home');
+  }
+  // An event uses the photo, its link written as a path (the library has it absolute); an announcement uses the other.
+  const link = ps.files.length ? `/api/media/${ps.files[0]}` : ps.photo.url;
+  const ev = await psApi('POST', `/api/admin/businesses/${ps.slug}/events`, { title: 'Smoke photo event', start_date: chicagoToday(30), image_url: link, published: false });
+  expectStatus(ev, 200, 'event with the photo');
+  ps.eventId = ev.data.event.id;
+  const news = await psApi('POST', `/api/admin/businesses/${ps.slug}/announcements`, { title: 'Smoke photo news', image_url: ps.linkPhoto.url, published: false });
+  expectStatus(news, 200, 'announcement with the link photo');
+  ps.announcementId = news.data.announcement.id;
+  const listed = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media`)).data.photos;
+  const used = listed.find((x) => x.id === ps.photo.id).in_use;
+  expect(used.length === 1 && used[0].kind === 'event' && used[0].id === ps.eventId && used[0].title === 'Smoke photo event', `in_use: ${JSON.stringify(used)}`);
+  expect(listed.find((x) => x.id === ps.linkPhoto.id).in_use[0]?.kind === 'announcement', 'the announcement counts too');
+  const blocked = await psApi('DELETE', `/api/admin/media/${ps.photo.id}`);
+  expect(blocked.status === 409 && blocked.data.code === 'in_use' && blocked.data.in_use[0]?.id === ps.eventId
+    && blocked.data.error.includes("the event 'Smoke photo event'"), `delete while in use: ${blocked.status} ${JSON.stringify(blocked.data)}`);
+  if (ps.files.length) expect((await fetch(`${BASE}/api/media/${ps.files[0]}`)).status === 200, 'the file is still there');
+  expectStatus(await psApi('PATCH', `/api/admin/events/${ps.eventId}`, { image_url: null }), 200, 'take the photo off the event');
+  expectStatus(await psApi('DELETE', `/api/admin/media/${ps.photo.id}`), 200, 'delete');
+  for (const key of ps.files) expect((await fetch(`${BASE}/api/media/${key}`)).status === 404, `file ${key} is gone from storage`);
+  expectStatus(await psApi('DELETE', `/api/admin/media/${ps.photo.id}`), 404, 'already gone');
+  const hist = (await psApi('GET', `/api/admin/businesses/${ps.slug}/history?limit=5`)).data.entries;
+  expect(hist.some((e) => e.entity === 'photo' && e.action === 'delete' && e.summary === "Deleted photo 'Smoke brunch special' from the photo library"), 'History: the delete');
+  return ps.files.length ? 'both files deleted from R2' : 'links only';
+});
+
+await step('TV screens: add, list with the settings, rename', async () => {
+  expect(ps.token, 'needs the sign-in step, which failed');
+  const before = await psApi('GET', `/api/admin/businesses/${ps.slug}/screens`);
+  expectStatus(before, 200, 'list');
+  const s = before.data.settings;
+  ps.tv = s;
+  ps.tvRaw = (await psApi('GET', `/api/admin/settings/signage:${ps.slug}`)).data.value;
+  expect(Number.isInteger(s.seconds_per_scene) && Number.isInteger(s.refresh_version)
+    && ['welcome', 'notice', 'announcements', 'featured', 'menu', 'catering', 'events', 'artworks'].every((k) => typeof s.scenes[k] === 'boolean'), `settings shape ${JSON.stringify(s)}`);
+  const add = await psApi('POST', `/api/admin/businesses/${ps.slug}/screens`, { name: 'Smoke counter TV', notes: 'Above the register' });
+  expectStatus(add, 200, 'add');
+  const tv = add.data.screen;
+  ps.screen = tv;
+  expect(/^[a-z0-9]{12}$/.test(tv.id) && tv.status === 'never' && tv.last_seen_at === null, `new screen ${JSON.stringify(tv)}`);
+  expect(/^https?:\/\//.test(tv.player_url) && tv.player_url.endsWith(`/signage/live.html?business=${ps.slug}&screen=${tv.id}`) && !tv.preview_url.includes('screen='), 'player link, and a preview link that sends no heartbeats');
+  expectStatus(await psApi('POST', `/api/admin/businesses/${ps.slug}/screens`, { name: '' }), 400, 'a name is needed');
+  const renamed = await psApi('PATCH', `/api/admin/screens/${tv.id}`, { name: 'Smoke front TV' });
+  expectStatus(renamed, 200, 'rename');
+  expect(renamed.data.screen.name === 'Smoke front TV' && renamed.data.screen.notes === 'Above the register', 'renamed, notes kept');
+  expect((await psApi('GET', `/api/admin/businesses/${ps.slug}/screens`)).data.screens.some((x) => x.id === tv.id && x.name === 'Smoke front TV'), 'listed');
+  expectStatus(await psApi('PATCH', '/api/admin/screens/nosuchscreen1', { name: 'x' }), 404, 'unknown screen');
+  const hist = (await psApi('GET', `/api/admin/businesses/${ps.slug}/history?limit=5`)).data.entries;
+  expect(hist.some((e) => e.entity === 'screen' && e.summary === "Changed name of the TV screen 'Smoke counter TV'"), 'History: the rename');
+  return tv.id;
+});
+
+await step('TV screens: heartbeat → online (one per 20 s), refresh bumps the version, scene switches reach the TV', async () => {
+  needScreen();
+  const id = ps.screen.id;
+  const v0 = ps.tv.refresh_version;
+  const first = await beat(id, { scene: 'menu-12', version: String(v0) });
+  expectStatus(first, 200, 'heartbeat');
+  expect(first.data.refresh_version === v0 && first.data.seconds_per_scene === ps.tv.seconds_per_scene, `heartbeat answer ${JSON.stringify(first.data)}`);
+  expect(first.headers.get('access-control-allow-origin') === '*', 'any origin may send it');
+  const second = await beat(id);
+  expect(second.status === 429 && second.data.code === 'rate_limited' && second.headers.get('retry-after') === '20', `a second one within 20 s: ${second.status} ${JSON.stringify(second.data)}`);
+  expectStatus(await beat('zzzzzzzzzzzz'), 404, 'unknown screen');
+  expectStatus(await beat('NOT-AN-ID!'), 404, 'not a screen id');
+  const online = (await psApi('GET', `/api/admin/businesses/${ps.slug}/screens`)).data.screens.find((x) => x.id === id);
+  expect(online.status === 'online' && online.last_scene === 'menu-12' && online.last_version === String(v0)
+    && Math.abs(Date.now() - Date.parse(online.last_seen_at)) < 120000, `online: ${JSON.stringify(online)}`);
+  // Refresh: the version goes up by one and nothing else changes; the TV bundle and every next heartbeat carry it.
+  const refreshed = await psApi('POST', `/api/admin/businesses/${ps.slug}/screens/refresh`);
+  expectStatus(refreshed, 200, 'refresh');
+  const v = v0 + 1;
+  expect(refreshed.data.refresh_version === v && refreshed.data.settings.refresh_version === v && refreshed.data.settings.seconds_per_scene === ps.tv.seconds_per_scene, `refresh answer ${JSON.stringify(refreshed.data)}`);
+  const raw = (await psApi('GET', `/api/admin/settings/signage:${ps.slug}`)).data.value;
+  expect(raw.refresh_version === v && Object.keys(ps.tvRaw).every((k) => k === 'refresh_version' || JSON.stringify(raw[k]) === JSON.stringify(ps.tvRaw[k])), 'only refresh_version changed in the stored setting');
+  expect((await publicGet(`/api/public/signage/${ps.slug}`)).data.signage.refresh_version === v, 'the TV bundle carries the new version');
+  const other = await psApi('POST', `/api/admin/businesses/${ps.slug}/screens`, { name: 'Smoke back TV' });
+  expectStatus(other, 200, 'second screen');
+  ps.screen2 = other.data.screen;
+  const told = await beat(ps.screen2.id, { scene: 'welcome', version: String(v0) });
+  expect(told.status === 200 && told.data.refresh_version === v, 'the next heartbeat says "reload"');
+  const hist = (await psApi('GET', `/api/admin/businesses/${ps.slug}/history?limit=5`)).data.entries;
+  expect(hist.some((e) => e.entity === 'screen' && /^Asked every TV screen of .+ to reload$/.test(e.summary)), 'History: the refresh');
+  // Scene switches saved through the settings route show in the screens list and in the TV bundle.
+  const scenes = { ...refreshed.data.settings.scenes, menu: false, notice: false };
+  expectStatus(await psApi('PUT', `/api/admin/settings/signage:${ps.slug}`, { value: { ...refreshed.data.settings, scenes } }), 200, 'save the switches');
+  const after = (await psApi('GET', `/api/admin/businesses/${ps.slug}/screens`)).data.settings;
+  expect(after.scenes.menu === false && after.scenes.notice === false && after.scenes.welcome === true && after.refresh_version === v, `switches: ${JSON.stringify(after)}`);
+  expect((await publicGet(`/api/public/signage/${ps.slug}`)).data.signage.scenes.menu === false, 'the TV bundle has the switches');
+  // A screen not heard from for more than 10 minutes is offline (needs the local database to backdate it).
+  if (!PERSIST) return 'offline check skipped (SMOKE_PERSIST_TO not set)';
+  await localSql(`UPDATE screens SET last_seen_at = datetime('now', '-11 minutes') WHERE id = '${id}'`);
+  const stale = (await psApi('GET', `/api/admin/businesses/${ps.slug}/screens`)).data.screens.find((x) => x.id === id);
+  expect(stale.status === 'offline', `offline after 11 minutes: ${stale.status}`);
+  expectStatus(await beat(id), 200, 'a heartbeat after the gap counts again');
+  return 'offline checked';
+});
+
+await step('Photo library and TV screens: an editor of another business is blocked', async () => {
+  needPhotos();
+  needScreen();
+  if (!ps.other) return 'skipped (only one business)';
+  const email = `smoke-media-editor-${Date.now()}@example.com`;
+  const made = await psApi('POST', '/api/admin/users', { email, name: 'Smoke Media Editor', role: 'editor', businesses: [ps.other], password: 'smoke-media-pass-1' });
+  expectStatus(made, 200, 'create editor');
+  ps.editorId = made.data.user.id;
+  const login = await api('POST', '/api/auth/login', { email, password: 'smoke-media-pass-1' }, { auth: null });
+  expectStatus(login, 200, 'editor login');
+  const as = (method, path, body) => psApi(method, path, body, login.data.token);
+  const blocked = [
+    ['GET', `/api/admin/businesses/${ps.slug}/media`], ['POST', `/api/admin/businesses/${ps.slug}/media`, { url: 'https://example.com/e.jpg' }],
+    ['PATCH', `/api/admin/media/${ps.linkPhoto.id}`, { note: 'nope' }], ['DELETE', `/api/admin/media/${ps.linkPhoto.id}`],
+    ['GET', `/api/admin/businesses/${ps.slug}/albums`], ['POST', `/api/admin/businesses/${ps.slug}/albums`, { name: 'Nope' }],
+    ['PATCH', `/api/admin/albums/${ps.albumId}`, { name: 'Nope' }], ['DELETE', `/api/admin/albums/${ps.albumId}`],
+    ['GET', `/api/admin/businesses/${ps.slug}/screens`], ['POST', `/api/admin/businesses/${ps.slug}/screens`, { name: 'Nope' }],
+    ['PATCH', `/api/admin/screens/${ps.screen.id}`, { name: 'Nope' }], ['DELETE', `/api/admin/screens/${ps.screen.id}`],
+    ['POST', `/api/admin/businesses/${ps.slug}/screens/refresh`],
+  ];
+  for (const [method, path, body] of blocked) expectStatus(await as(method, path, body), 403, `${method} ${path}`);
+  // Their own business works, but a photo of theirs cannot move into a business they cannot edit.
+  const own = await as('POST', `/api/admin/businesses/${ps.other}/media`, { url: 'https://example.com/smoke/editor.jpg', note: 'Smoke editor photo' });
+  expectStatus(own, 200, 'editor adds a photo to their business');
+  const move = await as('PATCH', `/api/admin/media/${own.data.photo.id}`, { business_slug: ps.slug });
+  expect(move.status === 403 && /businesses you can edit/.test(move.data.error), `move out: ${move.status} ${JSON.stringify(move.data)}`);
+  const mine = (await as('GET', `/api/admin/media?q=${encodeURIComponent('Smoke')}`)).data.photos;
+  expect(mine.length >= 1 && mine.every((x) => x.business_slug === ps.other), 'their search covers only their business');
+  expectStatus(await as('GET', `/api/admin/businesses/${ps.other}/screens`), 200, 'their own screens');
+  expectStatus(await as('DELETE', `/api/admin/media/${own.data.photo.id}`), 200, 'delete their own photo');
+  expectStatus(await as('POST', '/api/auth/logout'), 200, 'editor logout');
+  return `editor limited to ${ps.other}`;
+});
+
+await step('Photo library and TV screens: deleting an album keeps its photos; cleanup and sign out', async () => {
+  const errors = [];
+  const del = async (path) => { const r = await psApi('DELETE', path); if (r.status !== 200) errors.push(`${path} → ${r.status}`); return r; };
+  if (ps.albumId && ps.linkPhoto) {
+    expectStatus(await psApi('PATCH', `/api/admin/media/${ps.linkPhoto.id}`, { album_id: ps.albumId }), 200, 'put the link photo in the album');
+    const gone = await del(`/api/admin/albums/${ps.albumId}`);
+    expect(gone.data?.photos_moved === 1, `photos_moved: ${JSON.stringify(gone.data)}`);
+    const kept = (await psApi('GET', `/api/admin/businesses/${ps.slug}/media?album_id=none`)).data.photos.find((x) => x.id === ps.linkPhoto.id);
+    expect(kept && kept.album_id === null && kept.album_name === null, 'the photo stays, with no album');
+    ps.albumId = null;
+  }
+  if (ps.announcementId) await del(`/api/admin/announcements/${ps.announcementId}`);
+  if (ps.linkPhoto) await del(`/api/admin/media/${ps.linkPhoto.id}`);
+  if (ps.albumId) await del(`/api/admin/albums/${ps.albumId}`);
+  if (ps.otherAlbumId) await del(`/api/admin/albums/${ps.otherAlbumId}`);
+  if (ps.eventId) await del(`/api/admin/events/${ps.eventId}`);
+  for (const tv of [ps.screen, ps.screen2]) if (tv) await del(`/api/admin/screens/${tv.id}`);
+  if (ps.screen) expectStatus(await beat(ps.screen.id), 404, 'a removed screen cannot report in');
+  if (ps.editorId) await del(`/api/admin/users/${ps.editorId}`);
+  if (ps.tvRaw) {
+    const r = await psApi('PUT', `/api/admin/settings/signage:${ps.slug}`, { value: ps.tvRaw });
+    if (r.status !== 200) errors.push(`TV settings → ${r.status}`);
+  }
+  expectStatus(await psApi('POST', '/api/auth/logout'), 200, 'logout');
   expect(!errors.length, errors.join('; '));
 });
 

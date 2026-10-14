@@ -8,7 +8,8 @@
 //   { type: 'thinking' } | { type: 'text', text } | { type: 'tool_use', name, input } | { type: 'fallback', to? }
 // (a fallback block marks where a refusal fallback took over mid-reply, as the API streams it; the message model
 // becomes `to`, default claude-opus-5)
-// (stop_reason defaults to tool_use when there is a tool call, else end_turn; `times` repeats the reply), or
+// (stop_reason defaults to tool_use when there is a tool call, else end_turn; `times` repeats the reply; `delay_ms`
+// waits that long, at most a minute, before answering, like a slow reply), or
 // { status, error: { type, message } } for an HTTP error. With an empty queue it answers a short text.
 // Each POST /v1/messages is answered as a stream of Server-Sent Events the way the API streams them (message_start,
 // content_block_start / delta / stop for thinking, text and tool_use with input_json_delta, message_delta with the
@@ -186,6 +187,7 @@ export function startMock({ port = 8932, host = '127.0.0.1', log = null } = {}) 
         res.writeHead(reply.status, { 'Content-Type': 'application/json' }).end(errorBody(reply.error?.type || 'api_error', reply.error?.message || 'Mock error.'));
         return;
       }
+      if (reply.delay_ms) await new Promise((resolve) => { setTimeout(resolve, Math.min(Number(reply.delay_ms) || 0, 60000)); });
       streamReply(res, reply, n, body.model);
     } catch (err) {
       res.writeHead(400, { 'Content-Type': 'application/json' }).end(errorBody('invalid_request_error', String(err.message || err)));

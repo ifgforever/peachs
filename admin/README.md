@@ -44,11 +44,17 @@ static files, and wrangler watches that folder for changes. Its own runtime file
 "Reloading local server…" loop. Keeping the local database one level up, next to the
 repo, avoids that. Delete that folder to start from a clean database.
 
+To try the Assistant without a real Anthropic key, run the stand-in for Claude's API
+(`node worker/assistant-mock.mjs --port 8932`) and start wrangler with an env file that has
+`ANTHROPIC_API_KEY=test` and `ANTHROPIC_BASE_URL=http://127.0.0.1:8932` as well as the setup
+token (`npx wrangler@4 dev … --env-file <that file>`). The mock answers with a short text
+unless a test scripts its replies (see the top of `worker/assistant-mock.mjs`).
+
 Checks you can run while the dev server is up:
 
 ```sh
-node worker/smoke-test.mjs http://localhost:8787   # 31 API checks, creates smoke-owner@example.com on an empty database
-node admin/ui-test.mjs                             # drives the admin in a headless browser against a fake API
+node worker/smoke-test.mjs http://localhost:8787   # the API checks; creates smoke-owner@example.com on an empty database
+node admin/ui-test.mjs                             # drives the admin in a headless browser against a fake API (Assistant, Photos and TV screens included)
 node signage/tv-test.mjs                           # same for the TV page
 ```
 
@@ -167,6 +173,90 @@ already exists, so photo uploads work as soon as the deploy finishes. If the cod
 deployed before the migration runs, nothing breaks: the sites and admin work as before,
 and the Artworks screen and the website's catalog appear once the migration has run.
 
+### Upgrading the live site (Assistant, photo library, TV screens, October 2026)
+
+This release adds the Assistant, the Photos page, the TV screens page and the Claude app
+connector. On Lance's Mac, in the `peachs` folder, run these four commands in this order:
+
+```sh
+git pull
+npm install
+npx wrangler@4 d1 execute romesjoy-admin --remote --file worker/migrations/2026-10-14-assistant.sql
+npx wrangler@4 deploy
+```
+
+- `npm install` fetches the three new packages the Assistant and the connector need
+  (wrangler bundles them into the Worker when it deploys).
+- The migration only adds new tables (drafts, chats, AI usage, photo library, albums,
+  TV screens) and the starter albums; it changes no existing rows and is safe to run again.
+  Run it before the deploy: until it has run, the Assistant, Photos and TV screens pages
+  only say "The server had a problem" (the websites and everything else keep working).
+- `ANTHROPIC_API_KEY` is already set as a secret on the Worker, so the Assistant works as
+  soon as the deploy finishes. The `OAUTH_KV` namespace the connector uses also already
+  exists. Nothing else to set up.
+
+Then add the connector in the Claude app (once per person who wants it; full steps in
+"The Claude app connector" below): Settings → Connectors → **Add custom connector** →
+`https://peachs.tvinstallchicago.workers.dev/mcp` → sign in with the back office email and
+password → **Allow**.
+
+To check it worked: open https://peachs.tvinstallchicago.workers.dev/admin/, tap
+**Assistant** and ask "What are Peach's hours this week?"; the Overview shows
+"AI usage this month" for owners and admins.
+
+#### The Assistant: switching it on
+
+The key is already set on the live Worker. These steps are for a new Cloudflare account, or
+to replace the key:
+
+1. Sign in at https://console.anthropic.com with the account that pays for it.
+2. Settings → Limits: set a monthly spend limit (for example $50). The Assistant stops
+   when it is reached and the back office keeps working by hand.
+3. Settings → API keys → Create key. Copy it.
+4. `npx wrangler@4 secret put ANTHROPIC_API_KEY` and paste the key. No deploy is needed
+   for a secret change.
+
+Each person can send 60 Assistant messages a day. To change that for everyone (here to 100):
+
+```sh
+npx wrangler@4 d1 execute romesjoy-admin --remote --command "INSERT INTO settings (key, value_json) VALUES ('assistant:limits', '{\"daily_turns\": 100}') ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json"
+```
+
+Owners and admins see the month's estimated cost on the Overview ("AI usage this month").
+It is an estimate from the token counts; the Anthropic Console has the real bill. The
+automatic check after each Publish does not count toward the 60 messages.
+
+Big drafts and the Workers plan: publishing runs every change through the database, and
+on the free Workers plan one request may make at most 50 database queries. That is enough
+for about 8 changes in one draft; a bigger draft can stop part-way. If that happens,
+History has the changes that were made, and each can be undone there. On Workers Paid
+(1,000 queries) drafts of up to 40 changes publish fine. On the free plan, ask for big changes in a few smaller
+drafts (or lower `MAX_OPS` in `worker/lib/changesets.js`).
+
+#### The Claude app connector: adding it in Claude
+
+Anyone with a back office login can manage the sites from the Claude app (it uses their
+Claude plan, not the API key above), with exactly the rights of their login.
+
+1. In the Claude app (or claude.ai): Settings → Connectors → **Add custom connector**.
+2. Name: `Rome's Joy`. URL: `https://peachs.tvinstallchicago.workers.dev/mcp` (the
+   Account page in the back office shows this address with a Copy button).
+3. Claude opens the back office sign-in: sign in with your email and password, then
+   tap **Allow** on "Allow Claude to manage … as …".
+4. In a chat, turn the connector on and ask, e.g. "Close Peach's early this Friday at noon".
+   Claude drafts the change and shows the preview links. **Claude cannot publish**: when
+   you want it live, it gives you a link to the draft in the back office. Open it (signed
+   in), check the changes and tap **Publish** there, then tell Claude it is done and it
+   checks the live website for you. (This way nothing written in a website inquiry or a
+   photo note can talk Claude into publishing.)
+
+To disconnect: back office → Account → "Claude app" → **Disconnect**. Changing your
+password also ends the connection; connect again from Claude to carry on. Switching
+someone off (or removing them) in Users disconnects their Claude app too, for good.
+
+Only Claude's own sign-in pages (claude.ai and claude.com) can receive a sign-in. To allow
+another address, add its host to `OAUTH_REDIRECT_HOSTS` in `wrangler.jsonc` and deploy.
+
 ### Pointing the GitHub Pages copies at the Worker
 
 The sites can also be hosted as plain files (GitHub Pages or any web host). They
@@ -229,15 +319,110 @@ Websites update within a minute."
 - **Announcements**: news and promos with start and end dates, for one business or
   the whole family ("Whole family" tab, owners and admins only). "Show on TV"
   puts it in the screen rotation.
+- **Photos**: the business's photo library, in albums. See "Photos" below.
+- **TV screens**: every TV, whether it is on, what the screens show. See "TV screens" below.
 - **Inquiries**: form submissions, newest first. Open one to see every field; Mark
   handled, Spam, or Resend email.
 - **History**: every change with who made it and when. "Restore" puts the earlier
   version back (and is itself recorded).
 - **Users**: owners and admins add staff and set what they may edit.
-- **Account**: change your password, sign out.
+- **Account**: change your password, sign out, and connect the Claude app.
+- **Assistant** (top bar, on every page): ask for changes in plain English. See below.
 
 The in-store screen reads the same data: see `signage/README.md` for setting up
 the TV and what each setting does.
+
+On a phone, the back office can sit on the home screen like an app: in Safari tap
+Share → **Add to Home Screen**; in Chrome tap ⋮ → **Add to Home screen**. It opens as
+"Back Office" without the browser bars (it still needs the internet).
+
+### The Assistant
+
+Tap **Assistant** in the top bar (the sparkle button on a phone). It opens beside the
+page on a computer and full screen on a phone. Tell it what you want in your own words,
+the way you would tell a manager:
+
+- "Close Peach's early this Friday at noon."
+- "Put up a notice: closed Thanksgiving Day."
+- "Add the peach cobbler to the dessert menu at $9."
+- "Use the photo I took this morning for the Saturday brunch event."
+
+You can also tap the **microphone** and speak (where the phone or browser supports it),
+or tap the **camera** to send a photo of a menu board, a flyer or an artwork label so it
+can read prices, dates and titles from it.
+
+How it works:
+
+1. It reads what is there now and **asks about anything missing** (which day, am or pm,
+   the price, whether it should show on the TV). It never makes up prices, dates,
+   allergens or names.
+2. It **drafts** the change. A card shows **before → after** for each business, its
+   **checks** (green: fine; amber: worth a look, e.g. a price that tripled or an allergen
+   removed; red: must be fixed first, e.g. a notice that ends in the past), and
+   **Preview** buttons that open the website and the TV screen as they *will* look, with
+   a "Preview — not live yet" banner. **Copy preview link** or **Share** sends the preview
+   to someone else to check (it works for 48 hours).
+3. **Nothing is live until you tap Publish.** Publish is greyed out while a red check is
+   showing: tell the Assistant what to change and it updates the same draft.
+4. After **Publish**, the card checks the live website ("Checked: it is all live.") and
+   the Assistant says what changed. The websites update within a minute and the TV
+   screens within a minute or two. **Undo** puts everything back (within 30 days); each
+   change is also in History, marked "Assistant:".
+5. **Discard** throws a draft away; drafts nobody publishes expire after 48 hours.
+
+**Chats** lists your last 30 chats; **New chat** starts fresh (do that for a new topic,
+or when it says the chat has got long). It can only change the businesses your login can
+change, and says who to ask for the rest. If it says "The Assistant is not switched on
+yet", see "Upgrading the live site (Assistant…)" above; if it says you have used today's
+messages, it resets at midnight and you can still edit by hand.
+
+If the phone locks or the signal drops while it is replying, it keeps working: the chat
+says so, waits, and shows the reply when it is done (Send stays off until then).
+
+### Photos
+
+The **Photos** page is the business's photo library. Take a photo now, use it later.
+
+- **Take or choose photos**: on a phone this offers the camera or the photo library. Pick
+  the **album** first (it starts on the album you are looking at) and, if you like, a short
+  **note** ("brunch special", "new piece, Hamilton"): the Assistant finds photos by their
+  note. Big photos are shrunk before they upload. If the wifi drops, **Try again** resends
+  the ones that failed.
+- **Albums** are the buttons above the photos (each with its count). **New album** adds
+  one; when an album is selected, **Rename album** and **Delete album** appear (deleting an
+  album keeps its photos, under "No album").
+- **Move**: tick the box on one or more photos, choose an album (or another business you can
+  edit) under "Move to", and tap **Move**.
+- **Edit** opens a photo: change its note, its description (what it shows, for people who
+  use screen readers; it is used when the photo goes on the website) and its album, and see
+  **where it is used**.
+- **Delete** removes a photo for good. A photo that is on the website (an event, an
+  announcement, an artwork or the notice) cannot be deleted: it says where it is used, with
+  a link, so you can take it off there first.
+- **Search** looks through notes, descriptions and album names.
+
+Every photo field (events, announcements, artworks) has **Choose from library** next to the
+upload button: pick a photo from the albums and its link goes into the form. Save the form
+to keep it.
+
+### TV screens
+
+The **TV screens** page lists every TV that plays this business's screen.
+
+1. **Add screen** and give it a name you will recognise ("Counter", "Dining room").
+2. Open its **Player link** on that TV (Copy, then paste it into the TV's browser or
+   signage player, full screen). See `signage/README.md` for the TV set-up.
+3. From then on the TV reports in every minute: the page shows **Online** (seen in the last
+   10 minutes), **Offline**, or **Not connected yet**, with "last seen 2 min ago". The page
+   checks again every 30 seconds; **Check again** checks now.
+
+Each screen has a small **live preview** of what it shows (**Open preview** opens it big).
+**What the screens show** switches scenes on or off (welcome, notice, announcements,
+featured dishes, menu board, catering, events, artworks) and sets the seconds per scene;
+tap **Save screen settings**. **Refresh all screens now** makes every TV of this business
+load the latest data within about a minute (use it after a change that must show at once).
+**Rename** and **Remove** are on each screen; a removed TV keeps playing but no longer
+reports in.
 
 ### Artworks (Blanc)
 

@@ -9,6 +9,7 @@ const IMAGE_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'we
 const MAX_UPLOAD = 8 * 1024 * 1024;
 const VARIANTS = ['full', 'thumb'];
 const MAX_DIMENSION = 100000;
+const PUBLIC_PREFIX = 'uploads/';   // the only part of the MEDIA bucket GET /api/media/* serves
 
 const signageSlug = (key) => (key.startsWith('signage:') ? key.slice('signage:'.length) : null);
 
@@ -36,12 +37,14 @@ export async function put(ctx) {
   const text = JSON.stringify(body.value ?? null);
   if (text.length > 100000) throw bad('That value is too large.', 'invalid_field');
   const previous = await first(ctx.env, 'SELECT value_json FROM settings WHERE key = ?', [key]);
+  const business = slug ? await first(ctx.env, 'SELECT name FROM businesses WHERE slug = ?', [slug]) : null;
   await run(ctx.env, `INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`, [key, text]);
   await audit(ctx, {
     business_slug: slug, entity: 'settings', entity_id: key, action: 'update',
-    summary: slug ? `Changed the TV screen settings for ${slug}` : `Changed the setting ${key}`,
-    before: previous ? parseJson(previous.value_json, null) : null, after: body.value ?? null,
+    summary: slug ? `Changed the TV screen settings for ${business?.name || slug}` : `Changed the setting ${key}`,
+    // No stored row reads as {} (all defaults), so History → Restore and Undo all can put "nothing set" back.
+    before: previous ? parseJson(previous.value_json, null) : {}, after: body.value ?? null,
   });
   return { value: body.value ?? null };
 }
@@ -103,11 +106,14 @@ export async function upload(ctx) {
   return { url, key, width, height };
 }
 
-/** GET /api/media/<key> — public, cached for a year. */
+/**
+ * GET /api/media/<key> — public, cached for a year. Only uploads/… (photos uploaded for the websites) are served;
+ * anything else in the bucket, such as photos sent in an Assistant chat (assistant/…), stays private.
+ */
 export async function serve(ctx) {
   if (!ctx.env.MEDIA) throw notConfigured('Media storage is not set up.', 'media_not_configured');
   const key = ctx.params.rest || '';
-  const object = key ? await ctx.env.MEDIA.get(key) : null;
+  const object = key.startsWith(PUBLIC_PREFIX) ? await ctx.env.MEDIA.get(key) : null;
   if (!object) throw notFound('No such file.');
   const headers = new Headers();
   object.writeHttpMetadata(headers);

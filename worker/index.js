@@ -1,5 +1,6 @@
 // Rome's Joy admin: the Cloudflare Worker behind every site and the in-store screens.
-// It only handles /api/* (see wrangler.jsonc); everything else is served from the static files.
+// It only handles /api/*, the video paths and the Claude app connector (/mcp and its OAuth endpoints; see
+// wrangler.jsonc); everything else is served from the static files.
 // The contract is docs/admin-api.md; the database is worker/schema.sql.
 import { createRouter } from './lib/router.js';
 import { ApiError, clientIp, json } from './lib/http.js';
@@ -21,6 +22,7 @@ import * as changesets from './lib/changesets.js';
 import * as assistant from './lib/assistant.js';
 import * as mediaLibrary from './lib/media-library.js';
 import * as screens from './lib/screens.js';
+import * as mcp from './lib/mcp.js';
 
 const { admin } = auth;
 const router = createRouter();
@@ -111,6 +113,7 @@ changesets.register(router, admin);
 assistant.register(router, admin);
 mediaLibrary.register(router, admin);
 screens.register(router, admin);
+mcp.register(router, admin); // connected apps (the Claude app connector's grants)
 
 /* -------------------------------------------------------------------------
    CORS: public and form routes allow any origin; admin routes echo the caller's origin.
@@ -160,6 +163,7 @@ async function handle(request, env, executionCtx, url) {
 export default {
   async fetch(request, env, executionCtx) {
     const url = new URL(request.url);
+    if (mcp.handles(url.pathname)) return mcp.serve(request, env, executionCtx); // Claude app connector (worker/lib/mcp.js)
     if (isVideoPath(url.pathname)) return video.fetch(request, env, executionCtx);
     if (!url.pathname.startsWith('/api/')) {
       return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });

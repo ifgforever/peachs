@@ -50,7 +50,7 @@ CREATE INDEX IF NOT EXISTS idx_change_sets_user ON change_sets (user_id, created
 |---|---|---|
 | **Read** | `list_businesses`, `get_business` (contact, notice, hours, special days), `list_events`, `get_menu`, `list_announcements`, `list_inquiries` (summaries only, no visitor contact details unless asked and permitted), `list_artworks`, `get_history` | Reads with the person's permissions. Returns compact JSON. |
 | **Draft** | `propose_changes` with `{ title, ops: [...] }` | Validates + permission-checks every op, computes the before/after summary and the double-check, stores/updates the person's open draft change set, returns `{ change_set_id, summary, checks, preview_urls }` or the validation errors for the AI to fix. Calling it again **replaces** the open draft (the conversation converges on one draft). |
-| **Commit** | none for the AI | The AI never publishes. Publishing is a button in the admin (`POST /api/admin/change-sets/:id/publish`) or, in the Claude app, the `publish_change_set` tool **which only succeeds after the person typed an explicit confirmation**: it requires `confirm_phrase` equal to `PUBLISH <first 6 chars of the id>`, which the AI must ask the person to type. |
+| **Commit** | none for the AI | The AI never publishes. Publishing is the Publish button in the admin (`POST /api/admin/change-sets/:id/publish`), on the draft card in the chat or on the draft's own page. In the Claude app, `get_publish_link` hands the person a link to that page. (An earlier design let the Claude app publish after the person typed `PUBLISH <first 6 chars of the id>`; the model sees the id, so text in an inquiry or a photo note could talk it into doing that itself.) |
 | **Verify** | `verify_change_set` | After publish, re-reads the live public bundle(s) and reports whether each summary line is now true. The assistant calls it automatically and tells the person. |
 
 Images: the admin assistant accepts photo attachments (menu boards, flyers, artwork labels). They are sent to Claude as image content blocks (resized in the browser to ≤ 1600 px JPEG first) so it can read prices, dates and titles. Photos the person wants **on the website** are uploaded through the existing media pipeline and referenced by URL in the ops.
@@ -67,9 +67,9 @@ Images: the admin assistant accepts photo attachments (menu boards, flyers, artw
 
 ## 5. Claude app connector (MCP)
 
-- **Endpoint:** `https://<worker>/mcp`, MCP Streamable HTTP, exposing the same read tools, `propose_changes`, `publish_change_set` (with the typed confirmation phrase) and `verify_change_set`.
+- **Endpoint:** `https://<worker>/mcp`, MCP Streamable HTTP, exposing the same read tools, `propose_changes`, `get_publish_link` (a link to the draft in the back office, where the person taps Publish) and `verify_change_set`.
 - **Sign-in:** OAuth 2.1 with PKCE and Dynamic Client Registration (what Claude's custom connectors use), implemented with Cloudflare's OAuth provider library for Workers; the authorization page is the admin's own sign-in (same email + password, same lockouts), then an "Allow Claude to manage <businesses> as <name>?" consent screen. Tokens map to the existing `users` row, so permissions are identical. Owners can see and revoke connected apps on the Account screen.
-- **Previews in the Claude app:** `propose_changes` returns the preview links; Claude shows them and the summary, and only publishes after the person types the confirmation phrase.
+- **Previews in the Claude app:** `propose_changes` returns the preview links; Claude shows them and the summary. To publish, it gives the person the back office link; they publish there, signed in, and Claude then checks the live site with `verify_change_set`.
 
 ## 6. What Lance does once
 

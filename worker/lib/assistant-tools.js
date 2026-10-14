@@ -6,6 +6,7 @@ import { ApiError } from './http.js';
 import { all, first, isoTime, parseJson } from './db.js';
 import { requireBusiness } from './auth.js';
 import { isDate } from './validate.js';
+import { chicagoModifier, chicagoNow } from './time.js';
 import { listBusinesses } from './public.js';
 import * as businesses from './admin-businesses.js';
 import * as events from './admin-events.js';
@@ -14,7 +15,7 @@ import * as announcements from './admin-announcements.js';
 import * as artworks from './admin-artworks.js';
 import * as inquiries from './admin-inquiries.js';
 import * as history from './admin-history.js';
-import { discardChangeSet, getChangeSet, proposeChangeSet, publishChangeSet, verifyChangeSet } from './changesets.js';
+import { discardChangeSet, getChangeSet, proposeChangeSet, verifyChangeSet } from './changesets.js';
 
 const LIST_CAP = 50;
 const ONLINE_MINUTES = 10;
@@ -78,6 +79,25 @@ const nameOf = (names, slug) => (slug && names?.[slug]) || slug || 'the business
 
 /** The table is created by the assistant migration; before it runs the photo and screen tools answer politely. */
 const missingTable = (err) => /no such table/i.test(String(err?.message));
+
+/** "2026-10-13 09:14" in Chicago for a UTC time (SQLite's or ISO); null when it cannot be read. */
+function chicagoStamp(value) {
+  const ms = Date.parse(isoTime(value));
+  if (Number.isNaN(ms)) return null;
+  const local = chicagoNow(new Date(ms));
+  return `${local.date} ${String(Math.floor(local.minutes / 60)).padStart(2, '0')}:${String(local.minutes % 60).padStart(2, '0')}`;
+}
+
+/**
+ * When a photo was taken, as Chicago time: the camera's own clock when the time has no zone (what phones write), else
+ * converted. "2026-10-13 09:14", or just the date.
+ */
+function takenLocal(value) {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(text)) return chicagoStamp(text);
+  return text.replace('T', ' ').slice(0, 16);
+}
 
 /** getChangeSet may hand back the change set itself or { change_set }. */
 const unwrap = (result) => result?.change_set ?? result;
@@ -208,12 +228,16 @@ async function listPhotosTool(ctx, { slug, album, query, since }) {
     where.push("(m.note LIKE ? ESCAPE '\\' OR m.alt LIKE ? ESCAPE '\\' OR a.name LIKE ? ESCAPE '\\')");
     binds.push(pattern, pattern, pattern);
   }
-  if (since) { where.push('substr(COALESCE(m.taken_at, m.created_at), 1, 10) >= ?'); binds.push(since); }
+  if (since) {
+    // taken_at is the camera's (Chicago) date; created_at is UTC, so it is turned into a Chicago date first.
+    where.push("(CASE WHEN m.taken_at IS NOT NULL AND m.taken_at <> '' THEN substr(m.taken_at, 1, 10) ELSE date(m.created_at, ?) END) >= ?");
+    binds.push(chicagoModifier(), since);
+  }
   let rows;
   let albums;
   try {
     rows = await all(ctx.env, `SELECT m.*, a.name AS album_name FROM media m LEFT JOIN media_albums a ON a.id = m.album_id
-      WHERE ${where.join(' AND ')} ORDER BY COALESCE(m.taken_at, m.created_at) DESC, m.id DESC LIMIT ?`, [...binds, LIST_CAP + 1]);
+      WHERE ${where.join(' AND ')} ORDER BY m.created_at DESC, m.id DESC LIMIT ?`, [...binds, LIST_CAP + 1]);
     albums = await all(ctx.env, `SELECT a.name, COUNT(m.id) AS count FROM media_albums a LEFT JOIN media m ON m.album_id = a.id
       WHERE a.business_slug = ? GROUP BY a.id ORDER BY a.sort_order, a.name`, [business.slug]);
   } catch (err) {
@@ -224,8 +248,8 @@ async function listPhotosTool(ctx, { slug, album, query, since }) {
     photos: rows.slice(0, LIST_CAP).map((p) => ({
       ...compact(p, ['id', 'url', 'thumb_url', 'note', 'alt', 'width', 'height']),
       album: p.album_name || null,
-      taken_at: p.taken_at || null,
-      added_at: isoTime(p.created_at),
+      taken_at_local: takenLocal(p.taken_at),
+      added_at_local: chicagoStamp(p.created_at),
     })),
     albums,
     ...(rows.length > LIST_CAP ? { note: `Showing the newest ${LIST_CAP}. Narrow it down with album, query or since.` } : {}),
@@ -286,11 +310,27 @@ async function discardTool(ctx, { id }) {
   return { change_set_id: cs.id, status: cs.status };
 }
 
-async function publishTool(ctx, { id, confirm_phrase: phrase }) {
-  const expected = `PUBLISH ${String(id).slice(0, 6).toUpperCase()}`;
-  if (String(phrase ?? '').trim() !== expected) return { error: `Ask the person to type: ${expected}` };
-  const { change_set: cs } = await publishChangeSet(ctx, id);
-  return { ...draftResult(cs), next: 'Call verify_change_set now and tell the person what is live.' };
+/**
+ * The Claude app cannot publish: anything the model can see (an inquiry, a photo note) could talk it into a confirmation
+ * step it runs itself. It hands the person a link to the draft in the back office instead, where they tap Publish while
+ * signed in.
+ */
+async function publishLinkTool(ctx, { id }) {
+  const cs = unwrap(await getChangeSet(ctx, id));
+  if (cs.status !== 'draft') {
+    const why = {
+      published: 'This draft is already published. Call verify_change_set to check what is live.',
+      expired: 'This draft expired (drafts last 48 hours). Draft it again with propose_changes.',
+    };
+    return { error: why[cs.status] || `This draft is ${cs.status}, so it cannot be published. Draft it again if the person still wants it.`, status: cs.status };
+  }
+  const base = String(ctx.env.PUBLIC_BASE_URL || ctx.url?.origin || '').replace(/\/+$/, '');
+  return {
+    ...draftResult(cs),
+    publish_url: `${base}/admin/#/draft/${encodeURIComponent(cs.id)}`,
+    next: 'Nothing is live yet. Give the person this link. They open it in the back office (signed in), check the summary and '
+      + 'the preview, and tap Publish there. When they say it is published, call verify_change_set and tell them what is live.',
+  };
 }
 
 const verifyTool = (ctx, { id }) => verifyChangeSet(ctx, id);
@@ -420,9 +460,11 @@ export const TOOLS = [
   {
     name: 'list_photos',
     kind: 'read',
-    description: 'Searches the photo library of a business (photos staff took or uploaded), newest first, with the note '
-      + 'staff typed, the album, and when it was taken. Use it whenever a change needs a photo, for example "the photo I '
-      + 'took this morning"; use the url (and thumb_url) it returns. If more than one photo could fit, ask which one.',
+    description: 'Searches the photo library of a business (photos staff took or uploaded), most recently added first, '
+      + 'with the note staff typed, the album, added_at_local (when it was added, Chicago time) and taken_at_local (when it '
+      + 'was taken, from the camera\'s clock, Chicago time; missing for some photos). Use it whenever a change needs a photo, '
+      + 'for example "the photo I took this morning"; use the url (and thumb_url) it returns. If more than one photo could '
+      + 'fit, ask which one.',
     input_schema: object({
       slug: SLUG,
       album: nullable('string', 'Only this album (by name), "none" for photos without an album, or null for all albums.'),
@@ -480,17 +522,16 @@ export const TOOLS = [
     handler: discardTool,
   },
   {
-    name: 'publish_change_set',
-    kind: 'commit',
-    description: 'Publishes a draft change set so it goes live on the website and TV. Only after the person has seen the '
-      + 'summary and preview and typed the confirmation phrase PUBLISH followed by the first 6 characters of the change set '
-      + 'id in capitals (for example PUBLISH 3FQ9ZK). Pass exactly what they typed. Then call verify_change_set.',
-    input_schema: object({
-      id: CHANGE_SET_ID,
-      confirm_phrase: prop('string', 'The confirmation phrase exactly as the person typed it.'),
-    }),
-    label: () => 'Publishing…',
-    handler: publishTool,
+    name: 'get_publish_link',
+    kind: 'read',
+    only: 'mcp',
+    description: 'Gets the back office link where the person publishes a draft. You cannot publish: the person opens the '
+      + 'link, signed in to the back office, checks the draft and taps Publish there. Call it when they have seen the '
+      + 'summary and the preview and want the change live, and give them the link. After they say it is published, call '
+      + 'verify_change_set.',
+    input_schema: object({ id: CHANGE_SET_ID }),
+    label: () => 'Getting the link to publish…',
+    handler: publishLinkTool,
   },
   {
     name: 'verify_change_set',
@@ -503,9 +544,12 @@ export const TOOLS = [
   },
 ];
 
-/** The tools each front door offers: the admin Assistant never publishes (people tap Publish); the Claude app may. */
+/**
+ * The tools each front door offers. Neither publishes: people tap Publish in the back office. The Claude app also gets
+ * get_publish_link, because its drafts are not on a card in front of the person.
+ */
 export function toolsFor(surface) {
-  return surface === 'mcp' ? TOOLS : TOOLS.filter((t) => t.kind !== 'commit');
+  return surface === 'mcp' ? TOOLS : TOOLS.filter((t) => t.only !== 'mcp');
 }
 
 /* -------------------------------------------------------------------------
@@ -554,8 +598,8 @@ export async function runTool(ctx, name, input) {
   const tool = TOOLS.find((t) => t.name === name);
   if (!tool) return { error: `There is no tool called ${name}.` };
   if (!ctx.user) return { error: 'Please sign in again.', code: 'unauthorized' };
-  if (tool.kind === 'commit' && ctx.surface === 'assistant') {
-    return { error: 'Publishing happens when the person taps Publish in the back office, not from the chat.' };
+  if (tool.only === 'mcp' && ctx.surface === 'assistant') {
+    return { error: 'The person publishes with the Publish button on the draft card in this chat.' };
   }
   const problem = checkInput(tool.input_schema, input ?? {});
   if (problem) return { error: `That does not fit the ${name} tool: ${problem}.` };

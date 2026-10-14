@@ -114,6 +114,26 @@ function freshState() {
     blancEvent(803, 'exhibition', 'This Could Be//The Permanent Rebellion', '2026-08-01', '2026-10-18'),
     blancEvent(804, 'exhibition', 'Raised In It!', '2026-03-01', '2026-05-30'),
   );
+  // Photo library (docs/assistant-api.md §5): starter albums, and one photo an event already uses.
+  db.albums = [
+    { id: 61, business_slug: 'peachs', name: 'Food', sort_order: 1 }, { id: 62, business_slug: 'peachs', name: 'Dining room', sort_order: 2 },
+    { id: 63, business_slug: 'peachs', name: 'Team', sort_order: 3 }, { id: 64, business_slug: 'peachs', name: 'Events', sort_order: 4 },
+    { id: 65, business_slug: 'blanc', name: 'Artworks', sort_order: 1 },
+  ];
+  db.media.set('uploads/peachs/seed-brunch-full.png', { type: 'image/png', bytes: makePng(1200, 800, 4) });
+  db.media.set('uploads/peachs/seed-brunch-thumb.png', { type: 'image/png', bytes: makePng(640, 427, 4) });
+  db.library = [{
+    id: 71, business_slug: 'peachs', album_id: 61, url: '/api/media/uploads/peachs/seed-brunch-full.png', thumb_url: '/api/media/uploads/peachs/seed-brunch-thumb.png',
+    r2_key: 'uploads/peachs/seed-brunch-full.png', thumb_r2_key: 'uploads/peachs/seed-brunch-thumb.png', note: 'Saturday brunch table', alt: 'Chicken and waffles with peach butter',
+    width: 1200, height: 800, bytes: 90000, taken_at: '2026-10-11T10:20:00', uploaded_by: null, created_at: '2026-10-11 15:21:00',
+  }];
+  db.events[0].image_url = db.library[0].url;
+  // TV screens (§6), the Assistant (§3) and its drafts (§1), the Claude app connector (§4).
+  db.screens = [];
+  db.assistantConfigured = true;
+  db.conversations = [];
+  db.changeSets = new Map();
+  db.connectedApps = [{ id: 'grant-claude-1', name: 'Claude', host: 'claude.ai', connected_at: '2026-10-12T15:04:00Z', expires_at: null, needs_sign_in: false }];
   nextId = 2000;
 }
 
@@ -252,7 +272,14 @@ route('POST', /^\/api\/auth\/change-password$/, (c) => {
   c.user.must_change_password = 0;
   json(c.res, 200, { ok: true });
 });
-route('GET', /^\/api\/public\/([a-z-]+)$/, (c) => (db.businesses.some((b) => b.slug === c.m[1]) ? json(c.res, 200, publicBundle(c.m[1])) : fail(c.res, 404, 'No such business', 'not_found')));
+route('GET', /^\/api\/public\/([a-z-]+)$/, (c) => {
+  if (c.m[1] === 'catering') return json(c.res, 200, { ...publicBundle('peachs'), business: { ...publicBundle('peachs').business, slug: 'catering' } }); // the TV page's side bundle
+  return db.businesses.some((b) => b.slug === c.m[1]) ? json(c.res, 200, publicBundle(c.m[1])) : fail(c.res, 404, 'No such business', 'not_found');
+});
+// The TV page in the screens panel's mini previews reads this.
+route('GET', /^\/api\/public\/signage\/([a-z-]+)$/, (c) => (db.businesses.some((b) => b.slug === c.m[1])
+  ? json(c.res, 200, { ...publicBundle(c.m[1]), signage: db.settings[`signage:${c.m[1]}`] || {}, family: db.businesses.map((b) => ({ slug: b.slug, name: b.name, tagline: b.tagline, hours_summary: fixture.hours_summary })) })
+  : fail(c.res, 404, 'No such business', 'not_found')));
 
 // Everything below needs a signed-in user.
 const admin = (method, pattern, handler) => route(method, pattern, (c) => (c.user ? handler(c) : fail(c.res, 401, 'Not signed in', 'unauthorized')));
@@ -558,10 +585,264 @@ admin('DELETE', /^\/api\/admin\/artwork-images\/(\d+)$/, (c) => {
   json(c.res, 200, { ok: true });
 });
 
+// --- Photo library (docs/assistant-api.md §5) ---
+const mediaKey = (link) => { const m = /\/api\/media\/(.+)$/.exec(String(link || '')); return m ? m[1] : null; };
+const inUse = (p) => {
+  const keys = new Set([p.url, p.thumb_url].map(mediaKey).filter(Boolean));
+  const places = [];
+  for (const e of db.events) if (keys.has(mediaKey(e.image_url))) places.push({ kind: 'event', id: e.id, title: e.title, business_slug: e.business_slug });
+  for (const a of db.announcements) if (keys.has(mediaKey(a.image_url))) places.push({ kind: 'announcement', id: a.id, title: a.title, business_slug: a.business_slug });
+  for (const i of db.images) if (keys.has(mediaKey(i.url)) || keys.has(mediaKey(i.thumb_url))) { const a = db.artworks.find((x) => x.id === i.artwork_id); places.push({ kind: 'artwork', id: a.id, title: a.title, business_slug: a.business_slug }); }
+  return places;
+};
+const shapePhoto = (p) => ({
+  ...p, business_name: db.businesses.find((b) => b.slug === p.business_slug)?.name, thumb_url: p.thumb_url || p.url,
+  album_name: db.albums.find((a) => a.id === p.album_id)?.name || null, created_at: `${p.created_at.replace(' ', 'T')}Z`, uploaded_by_name: db.users.find((u) => u.id === p.uploaded_by)?.name || null, in_use: inUse(p),
+});
+const albumsOf = (slug) => db.albums.filter((a) => a.business_slug === slug).sort((a, b) => a.sort_order - b.sort_order).map((a) => ({ ...a, count: db.library.filter((p) => p.album_id === a.id).length }));
+admin('GET', /^\/api\/admin\/businesses\/([a-z-]+)\/media$/, (c) => {
+  const slug = c.m[1];
+  const album = c.url.searchParams.get('album_id');
+  const q = (c.url.searchParams.get('q') || '').toLowerCase();
+  const before = Number(c.url.searchParams.get('before') || 0);
+  const limit = Number(c.url.searchParams.get('limit') || 60);
+  const list = db.library.filter((p) => p.business_slug === slug
+    && (!album || (album === 'none' ? p.album_id == null : p.album_id === Number(album)))
+    && (!q || [p.note, p.alt, db.albums.find((a) => a.id === p.album_id)?.name].some((t) => (t || '').toLowerCase().includes(q)))
+    && (!before || p.id < before)).sort((a, b) => b.id - a.id);
+  const page = list.slice(0, limit);
+  json(c.res, 200, {
+    photos: page.map(shapePhoto), albums: albumsOf(slug), total: db.library.filter((p) => p.business_slug === slug).length,
+    no_album: db.library.filter((p) => p.business_slug === slug && p.album_id == null).length, next_before: list.length > limit ? page[page.length - 1].id : null,
+  });
+});
+admin('POST', /^\/api\/admin\/businesses\/([a-z-]+)\/media$/, (c) => {
+  const b = c.body;
+  if (!b.url) return fail(c.res, 400, 'The photo link is required.', 'missing_field');
+  if (b.album_id != null && !db.albums.some((a) => a.id === b.album_id && a.business_slug === c.m[1])) return fail(c.res, 400, 'That album is not one of this business’s albums.', 'invalid_album');
+  if (b.r2_key != null && b.r2_key !== mediaKey(b.url)) return fail(c.res, 400, 'The photo key does not match its link.', 'invalid_field');
+  if (db.library.some((p) => p.url === b.url)) return fail(c.res, 409, 'That photo is already in the library.', 'already_in_library');
+  const p = { id: nextId++, business_slug: c.m[1], album_id: b.album_id ?? null, url: b.url, thumb_url: b.thumb_url ?? null, r2_key: b.r2_key ?? null, thumb_r2_key: b.thumb_r2_key ?? null, note: b.note ?? null, alt: b.alt ?? null, width: b.width ?? null, height: b.height ?? null, bytes: b.bytes ?? null, taken_at: b.taken_at ?? null, uploaded_by: c.user.id, created_at: now() };
+  db.library.push(p);
+  audit(c.user, p.business_slug, 'photo', p.id, 'create', `Added photo "${p.note || 'photo'}" to the photo library`, null, p);
+  json(c.res, 200, { photo: shapePhoto(p) });
+});
+admin('PATCH', /^\/api\/admin\/media\/(\d+)$/, (c) => {
+  const p = db.library.find((x) => x.id === Number(c.m[1]));
+  if (!p) return fail(c.res, 404, 'No such photo.', 'not_found');
+  if ('business_slug' in c.body && c.body.business_slug !== p.business_slug) {
+    if (!db.businesses.some((b) => b.slug === c.body.business_slug)) return fail(c.res, 404, 'No such business.', 'unknown_business');
+    p.business_slug = c.body.business_slug;
+    if (!('album_id' in c.body)) p.album_id = null;
+  }
+  if ('album_id' in c.body) {
+    if (c.body.album_id != null && !db.albums.some((a) => a.id === c.body.album_id && a.business_slug === p.business_slug)) return fail(c.res, 400, 'That album is not one of this business’s albums.', 'invalid_album');
+    p.album_id = c.body.album_id;
+  }
+  for (const k of ['note', 'alt']) if (k in c.body) p[k] = c.body[k];
+  json(c.res, 200, { photo: shapePhoto(p) });
+});
+admin('DELETE', /^\/api\/admin\/media\/(\d+)$/, (c) => {
+  const p = db.library.find((x) => x.id === Number(c.m[1]));
+  if (!p) return fail(c.res, 404, 'No such photo.', 'not_found');
+  const places = inUse(p);
+  if (places.length) return json(c.res, 409, { error: `This photo is used by the ${places[0].kind} "${places[0].title}". Take it off there first, then delete it.`, code: 'in_use', in_use: places });
+  db.library = db.library.filter((x) => x !== p);
+  for (const k of [p.r2_key, p.thumb_r2_key]) if (k) db.media.delete(k);
+  json(c.res, 200, { ok: true });
+});
+admin('GET', /^\/api\/admin\/businesses\/([a-z-]+)\/albums$/, (c) => json(c.res, 200, { albums: albumsOf(c.m[1]) }));
+admin('POST', /^\/api\/admin\/businesses\/([a-z-]+)\/albums$/, (c) => {
+  const name = String(c.body.name || '').trim();
+  if (!name) return fail(c.res, 400, 'The album name is required.', 'missing_field');
+  if (db.albums.some((a) => a.business_slug === c.m[1] && a.name.toLowerCase() === name.toLowerCase())) return fail(c.res, 409, `There is already an album called "${name}".`, 'album_exists');
+  const a = { id: nextId++, business_slug: c.m[1], name, sort_order: Math.max(0, ...db.albums.filter((x) => x.business_slug === c.m[1]).map((x) => x.sort_order)) + 1 };
+  db.albums.push(a);
+  json(c.res, 200, { album: { ...a, count: 0 } });
+});
+admin('PATCH', /^\/api\/admin\/albums\/(\d+)$/, (c) => {
+  const a = db.albums.find((x) => x.id === Number(c.m[1]));
+  if (!a) return fail(c.res, 404, 'No such album.', 'not_found');
+  if ('name' in c.body) a.name = String(c.body.name).trim();
+  json(c.res, 200, { album: a });
+});
+admin('DELETE', /^\/api\/admin\/albums\/(\d+)$/, (c) => {
+  const id = Number(c.m[1]);
+  let moved = 0;
+  db.library.forEach((p) => { if (p.album_id === id) { p.album_id = null; moved++; } });
+  db.albums = db.albums.filter((x) => x.id !== id);
+  json(c.res, 200, { ok: true, photos_moved: moved });
+});
+
+// --- TV screens (§6) ---
+const screenSettings = (slug) => {
+  const raw = db.settings[`signage:${slug}`] || {};
+  const scenes = {};
+  for (const name of ['welcome', 'notice', 'announcements', 'featured', 'menu', 'catering', 'events', 'artworks']) scenes[name] = raw.scenes?.[name] !== false;
+  return { ...raw, seconds_per_scene: raw.seconds_per_scene || 10, scenes, refresh_version: raw.refresh_version || 0 };
+};
+const shapeScreen = (s, c) => {
+  const seen = s.last_seen_at ? Date.parse(s.last_seen_at) : null;
+  const base = `http://${c.req.headers.host}/signage/live.html?business=${s.business_slug}`;
+  return { ...s, status: seen == null ? 'never' : Date.now() - seen < 600000 ? 'online' : 'offline', preview_url: base, player_url: `${base}&screen=${s.id}` };
+};
+admin('GET', /^\/api\/admin\/businesses\/([a-z-]+)\/screens$/, (c) => json(c.res, 200, { screens: db.screens.filter((s) => s.business_slug === c.m[1]).map((s) => shapeScreen(s, c)), settings: screenSettings(c.m[1]) }));
+admin('POST', /^\/api\/admin\/businesses\/([a-z-]+)\/screens$/, (c) => {
+  if (!String(c.body.name || '').trim()) return fail(c.res, 400, 'The screen name is required.', 'missing_field');
+  const s = { id: `scr${nextId++}abc`, business_slug: c.m[1], name: c.body.name.trim(), notes: c.body.notes ?? null, last_seen_at: null, last_scene: null, last_version: null, created_at: now() };
+  db.screens.push(s);
+  json(c.res, 200, { screen: shapeScreen(s, c) });
+});
+admin('POST', /^\/api\/admin\/businesses\/([a-z-]+)\/screens\/refresh$/, (c) => {
+  const key = `signage:${c.m[1]}`;
+  db.settings[key] = { ...(db.settings[key] || {}), refresh_version: (db.settings[key]?.refresh_version || 0) + 1 };
+  json(c.res, 200, { settings: screenSettings(c.m[1]), refresh_version: db.settings[key].refresh_version });
+});
+admin('PATCH', /^\/api\/admin\/screens\/([a-z0-9]+)$/, (c) => {
+  const s = db.screens.find((x) => x.id === c.m[1]);
+  if (!s) return fail(c.res, 404, 'No such screen.', 'not_found');
+  for (const k of ['name', 'notes']) if (k in c.body) s[k] = c.body[k];
+  json(c.res, 200, { screen: shapeScreen(s, c) });
+});
+admin('DELETE', /^\/api\/admin\/screens\/([a-z0-9]+)$/, (c) => { db.screens = db.screens.filter((x) => x.id !== c.m[1]); json(c.res, 200, { ok: true }); });
+
+// --- The Assistant (§3), streamed as Server-Sent Events, and its change sets (§1) ---
+const ASSISTANT_OFF = { error: 'The Assistant is not switched on yet. An owner needs to add the Anthropic API key.', code: 'assistant_not_configured' };
+const assistantAdmin = (method, pattern, handler) => admin(method, pattern, (c) => (db.assistantConfigured ? handler(c) : json(c.res, 501, ASSISTANT_OFF)));
+const iso = () => new Date().toISOString().slice(0, 19) + 'Z';
+const randomId = () => Array.from({ length: 22 }, () => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-'[Math.floor(Math.random() * 64)]).join('');
+/** Writes the events one by one with a short pause, like a real reply arriving. */
+function sse(res, events) {
+  res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.write(': still working\n\n');
+  let i = 0;
+  const next = () => {
+    if (i >= events.length) return res.end();
+    const [event, data] = events[i++];
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    setTimeout(next, 25);
+  };
+  setTimeout(next, 25);
+}
+function fakeDraft(conversationId, text) {
+  const id = randomId();
+  const blocked = /yesterday/i.test(text);
+  const cs = blocked ? {
+    title: 'Notice until yesterday', ops: [{ op: 'business.patch', business_slug: 'peachs', args: { notice: 'Closed for a private event', notice_until: '2026-10-12' } }],
+    summary: [{ business_slug: 'peachs', business_name: "Peach's", line: 'Notice', before: null, after: 'Closed for a private event' }],
+    checks: [{ level: 'block', message: 'The notice would end on Oct 12, which has already passed.', op_index: 0 }],
+  } : {
+    title: 'Close early Friday', ops: [{ op: 'hours_exception.create', business_slug: 'peachs', args: { date: '2026-10-16', closed: 0, open_min: 480, close_min: 720, label: 'Closing early' } }],
+    summary: [{ business_slug: 'peachs', business_name: "Peach's", line: 'Special hours on Friday, October 16 (Closing early)', before: 'Usual hours: 8 am – 2 pm', after: '8 am – 12 pm' }],
+    checks: [{ level: 'ok', message: 'Checked: nothing unusual.', op_index: null }],
+  };
+  Object.assign(cs, {
+    id, version: `v-${id.slice(0, 6)}`, status: 'draft', source: 'assistant', conversation_id: conversationId, created_at: iso(), updated_at: iso(), expires_at: new Date(Date.now() + 48 * 3600000).toISOString().slice(0, 19) + 'Z',
+    published_at: null, businesses: ['peachs'], error: null,
+    preview_urls: [{ business_slug: 'peachs', label: "Peach's website", url: `/peachs.html?preview=${id}` }, { business_slug: 'peachs', label: 'TV screen', url: `/signage/live.html?business=peachs&preview=${id}` }],
+  });
+  db.changeSets.set(id, cs);
+  return cs;
+}
+const findConversation = (c) => db.conversations.find((x) => x.id === c.m[1] && x.user_id === c.user.id);
+assistantAdmin('GET', /^\/api\/admin\/assistant\/conversations$/, (c) => json(c.res, 200, { conversations: db.conversations.filter((x) => x.user_id === c.user.id).sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1)).map(({ messages, ...x }) => x) }));
+assistantAdmin('POST', /^\/api\/admin\/assistant\/conversations$/, (c) => {
+  const conv = { id: randomId(), user_id: c.user.id, business_slug: c.body.business_slug ?? null, title: null, created_at: iso(), updated_at: iso(), messages: [] };
+  db.conversations.push(conv);
+  const { messages, ...shape } = conv;
+  json(c.res, 200, { conversation: shape });
+});
+assistantAdmin('GET', /^\/api\/admin\/assistant\/conversations\/([\w-]+)$/, (c) => {
+  const conv = findConversation(c);
+  if (!conv) return fail(c.res, 404, 'No such chat.', 'not_found');
+  const { messages, ...shape } = conv;
+  json(c.res, 200, { conversation: shape, messages });
+});
+assistantAdmin('POST', /^\/api\/admin\/assistant\/conversations\/([\w-]+)\/messages$/, (c) => {
+  const conv = findConversation(c);
+  if (!conv) return fail(c.res, 404, 'No such chat.', 'not_found');
+  const text = String(c.body.text || '').trim();
+  const images = Array.isArray(c.body.images) ? c.body.images : [];
+  if (/daily limit/i.test(text)) return fail(c.res, 429, "You have used today's 60 Assistant messages. It resets at midnight. You can still make changes by hand.", 'assistant_limit');
+  if (images.some((img) => img.media_type !== 'image/jpeg' || !/^[A-Za-z0-9+/]+=*$/.test(img.data_base64 || '') || img.data_base64.length * 0.75 > 1.5 * 1024 * 1024)) return fail(c.res, 400, 'Photos must be JPEG, at most 1.5 MB.', 'invalid_field');
+  db.lastImages = images;
+  conv.title = conv.title || text.slice(0, 80) || 'Photo';
+  conv.updated_at = iso();
+  conv.messages.push({ id: nextId++, role: 'user', text, attachments_count: images.length, created_at: iso(), tools: [], drafts: [] });
+  const cs = fakeDraft(conv.id, text);
+  const reply = cs.checks.some((k) => k.level === 'block')
+    ? 'I drafted the notice, but it would end yesterday, so it cannot be published. Which day should it show until?'
+    : 'Here is the draft: Peach’s closes at 12 pm on Friday, October 16. Use the preview to check it. Nothing is live until you tap Publish.';
+  conv.messages.push({ id: nextId++, role: 'assistant', text: reply, attachments_count: 0, created_at: iso(), tools: ["Looking at the details and hours for Peach's…", 'Drafting the changes…'], drafts: [cs.id] });
+  const words = reply.match(/\S+\s*/g);
+  sse(c.res, [
+    ['tool', { name: 'get_business', label: "Looking at the details and hours for Peach's…" }],
+    ['tool', { name: 'propose_changes', label: 'Drafting the changes…' }],
+    ['draft', { change_set: cs }],
+    ...words.map((w) => ['text', { delta: w }]),
+    ['done', { message_id: conv.messages.length, usage: { input_tokens: 1200, output_tokens: 90 } }],
+  ]);
+});
+assistantAdmin('POST', /^\/api\/admin\/assistant\/conversations\/([\w-]+)\/published$/, (c) => {
+  const conv = findConversation(c);
+  const cs = db.changeSets.get(c.body.change_set_id);
+  if (!conv || !cs) return fail(c.res, 404, 'No such chat.', 'not_found');
+  if (cs.status !== 'published') return fail(c.res, 409, 'That draft has not been published.', 'not_published');
+  const reply = 'Checked the live website: Friday’s early closing is now live.';
+  // The real server stores a system note here, which the chat does not show; only the reply comes back.
+  conv.messages.push({ id: nextId++, role: 'assistant', text: reply, attachments_count: 0, created_at: iso(), tools: ['Checking the live website…'], drafts: [] });
+  db.followUps = (db.followUps || 0) + 1;
+  sse(c.res, [['tool', { name: 'verify_change_set', label: 'Checking the live website…' }], ...reply.match(/\S+\s*/g).map((w) => ['text', { delta: w }]), ['done', { message_id: 1, usage: {} }]]);
+});
+assistantAdmin('GET', /^\/api\/admin\/assistant\/usage$/, (c) => (manager(c) ? json(c.res, 200, {
+  days: 30, since: '2026-09-14',
+  totals: { turns: 14, calls: 33, input_tokens: 90000, output_tokens: 4000, cache_read_tokens: 300000, cache_write_tokens: 20000, cost_usd: 1.4 },
+  this_month: { since: '2026-10-01', turns: 12, calls: 30, input_tokens: 80000, output_tokens: 3600, cache_read_tokens: 250000, cache_write_tokens: 18000, cost_usd: 1.234 },
+  by_day: [], by_user: [{ user_id: 1, name: 'Cliff Rome', email: 'owner@example.com', turns: 14, calls: 33, cost_usd: 1.4 }],
+}) : fail(c.res, 403, 'Owners and admins only', 'forbidden')));
+const findChangeSet = (c) => db.changeSets.get(c.m[1]);
+admin('GET', /^\/api\/admin\/change-sets\/([\w-]+)$/, (c) => { const cs = findChangeSet(c); return cs ? json(c.res, 200, { change_set: cs }) : fail(c.res, 404, 'No such change set.', 'not_found'); });
+admin('POST', /^\/api\/admin\/change-sets\/([\w-]+)\/publish$/, (c) => {
+  const cs = findChangeSet(c);
+  if (!cs) return fail(c.res, 404, 'No such change set.', 'not_found');
+  if (cs.status !== 'draft') return fail(c.res, 409, 'This change set was already published.', 'not_a_draft');
+  // The card sends the version it shows, so a draft replaced since is not published under the old summary.
+  if (c.body.version !== cs.version) return fail(c.res, 409, 'This draft changed since you looked at it. Check the new version, then publish.', 'change_set_changed');
+  if (cs.checks.some((k) => k.level === 'block')) return fail(c.res, 409, 'This draft has a problem to fix before it can be published.', 'change_set_blocked');
+  Object.assign(cs, { status: 'published', published_at: iso(), updated_at: iso() });
+  audit(c.user, 'peachs', 'change_set', cs.id, 'update', `Published "${cs.title}" (1 change)`, null, null);
+  json(c.res, 200, { change_set: cs, results: [{ op_index: 0, ok: true }] });
+});
+admin('POST', /^\/api\/admin\/change-sets\/([\w-]+)\/discard$/, (c) => {
+  const cs = findChangeSet(c);
+  if (!cs || cs.status !== 'draft') return fail(c.res, 409, 'This is not a draft.', 'not_a_draft');
+  Object.assign(cs, { status: 'discarded', updated_at: iso() });
+  json(c.res, 200, { change_set: cs });
+});
+admin('POST', /^\/api\/admin\/change-sets\/([\w-]+)\/undo$/, (c) => {
+  const cs = findChangeSet(c);
+  if (!cs || cs.status !== 'published') return fail(c.res, 409, 'Only published changes can be undone.', 'not_published');
+  Object.assign(cs, { status: 'undone', updated_at: iso() });
+  json(c.res, 200, { change_set: cs });
+});
+admin('GET', /^\/api\/admin\/change-sets\/([\w-]+)\/verify$/, (c) => {
+  const cs = findChangeSet(c);
+  if (!cs || cs.status !== 'published') return fail(c.res, 409, 'Only published changes can be checked against the live website.', 'not_published');
+  json(c.res, 200, { ok: true, lines: cs.summary.map((l) => ({ business_slug: l.business_slug, line: l.line, ok: true, detail: 'Live on the website.' })) });
+});
+
+// --- The Claude app connector (§4): the Account screen's list ---
+admin('GET', /^\/api\/admin\/connected-apps$/, (c) => json(c.res, 200, { connected_apps: db.connectedApps }));
+admin('DELETE', /^\/api\/admin\/connected-apps\/([\w-]+)$/, (c) => {
+  if (!db.connectedApps.some((a) => a.id === c.m[1])) return fail(c.res, 404, 'That connected app was not found.', 'not_found');
+  db.connectedApps = db.connectedApps.filter((a) => a.id !== c.m[1]);
+  json(c.res, 200, { ok: true });
+});
+
 /* -------------------------------------------------------------------------
    Static files + API dispatch
    ------------------------------------------------------------------------- */
-const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+const TYPES = { '.webmanifest': 'application/manifest+json', '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
 const apiCalls = [];
 
 async function handle(req, res) {
@@ -609,20 +890,25 @@ async function run() {
         if (/fonts\.g(oogleapis|static)/.test(where)) return;                       // offline run: fonts fall back
         if (where.endsWith('/api/auth/login') && /\b401\b/.test(msg.text())) return; // the deliberate wrong password
         if (where.endsWith('/api/admin/media') && /\b503\b/.test(msg.text())) return; // the deliberate failed upload
+        if (/\/api\/admin\/media\/71$/.test(where) && /\b409\b/.test(msg.text())) return; // deleting a photo in use
+        if (/\/messages$/.test(where) && /\b429\b/.test(msg.text())) return; // the Assistant's daily limit
+        if (/\/api\/admin\/assistant\//.test(where) && /\b501\b/.test(msg.text()) && !db.assistantConfigured) return; // switched off on purpose
         problems.push(`[${name}] console: ${msg.text()} (${where})`);
       });
       page.on('pageerror', (err) => problems.push(`[${name}] page error: ${err.message}`));
-      const shot = async (label, { keepToast = /saved/.test(label) } = {}) => {
+      // full: false keeps the picture to the screen, for the panels and dialogs that sit over the page.
+      const shot = async (label, { keepToast = /saved/.test(label), full = true } = {}) => {
         shots++;
         // Scroll to the top and drop stale toasts (the run is far faster than a person) so the picture shows the layout.
-        await page.evaluate((keep) => { window.scrollTo(0, 0); if (!keep) document.querySelectorAll('.toast').forEach((t) => t.remove()); }, keepToast);
-        await page.screenshot({ path: path.join(OUT, `${name}-${String(shots).padStart(2, '0')}-${label}.png`), fullPage: true });
+        if (full) await page.evaluate(() => window.scrollTo(0, 0));
+        await page.evaluate((keep) => { if (!keep) document.querySelectorAll('.toast').forEach((t) => t.remove()); }, keepToast);
+        await page.screenshot({ path: path.join(OUT, `${name}-${String(shots).padStart(2, '0')}-${label}.png`), fullPage: full });
       };
       // Phones show four items in the bottom bar; everything else is behind "More".
       const nav = async (id) => {
         const direct = page.locator(`[data-nav="${id}"]:visible`).first();
         if (await direct.count()) return direct.click();
-        await page.click('button:has-text("More")');
+        await page.click('.bottomnav button:has-text("More")');
         await page.getByRole('dialog').locator(`[data-nav="${id}"]`).click();
       };
       const heading = (text) => page.getByRole('heading', { level: 1, name: text });
@@ -777,7 +1063,7 @@ async function run() {
       await heading('Users').waitFor();
 
       if (name === 'phone') {
-        await page.click('button:has-text("More")');
+        await page.click('.bottomnav button:has-text("More")');
         await page.getByRole('dialog').getByText('All pages').waitFor();
         await shot('more-sheet');
         await page.keyboard.press('Escape');
@@ -974,6 +1260,274 @@ async function run() {
       await page.selectOption('#business-select', 'peachs');
       await heading("Peach's on 47th").waitFor();
 
+      // --- AI usage card (owners and admins) on the Overview ---
+      await page.getByText('AI usage this month').waitFor();
+      await page.getByText('$1.23').waitFor();
+
+      // --- Assistant: open from the top bar, ask, watch it work, the draft card, preview, Publish, live check, Undo ---
+      await page.click('#assist-toggle');
+      const panel = page.locator('#assist');
+      await panel.getByRole('heading', { name: 'What should we change?' }).waitFor();
+      assert.equal(await page.getAttribute('#assist-toggle', 'aria-expanded'), 'true');
+      if (name === 'phone') {
+        // A full-screen sheet: the page behind it cannot be reached by keyboard or screen reader.
+        assert.equal(await page.locator('#app > .frame[inert]').count(), 1);
+        assert.equal(await page.evaluate(() => document.activeElement?.id), 'assist-title');
+      } else {
+        assert.equal(await page.evaluate(() => document.activeElement?.id), 'assist-input');
+        const box = await panel.boundingBox();
+        assert.ok(box.x >= 1440 - 421 && box.width <= 421, `panel on the right ${JSON.stringify(box)}`);
+        assert.ok((await page.locator('#main').boundingBox()).x + (await page.locator('#main').boundingBox()).width <= box.x + 1, 'the page stays beside the panel');
+      }
+      await shot('assistant-welcome', { full: false });
+      await panel.getByRole('button', { name: 'Close early this Friday at noon' }).click();
+      assert.equal(await page.inputValue('#assist-input'), 'Close early this Friday at noon');
+      await page.fill('#assist-input', "Close Peach's early this Friday at noon");
+      if (name === 'desktop') {
+        // A photo for the Assistant to read is shrunk to a JPEG of at most 1600 px first.
+        await page.setInputFiles('#assist-photo', { name: 'menu-board.png', mimeType: 'image/png', buffer: PNG_WIDE });
+        await panel.locator('.assist__attachment img').waitFor();
+      }
+      await panel.getByRole('button', { name: 'Send' }).click();
+      await panel.locator('.msg--user', { hasText: "Close Peach's early this Friday at noon" }).waitFor();
+      await panel.locator('.msg__tool', { hasText: "Looking at the details and hours for Peach's" }).waitFor();
+      const draftCard = panel.locator('.draft').last();
+      await draftCard.getByText('Special hours on Friday, October 16').waitFor();
+      await draftCard.getByText('8 am – 12 pm').waitFor();
+      await draftCard.getByText('Checked: nothing unusual.').waitFor();
+      await panel.getByText('Nothing is live until you tap Publish.').waitFor(); // the streamed reply
+      const conv = db.conversations[db.conversations.length - 1];
+      const draftId = [...db.changeSets.values()].pop().id;
+      assert.equal(conv.business_slug, 'peachs');
+      if (name === 'desktop') {
+        assert.equal(db.lastImages.length, 1);
+        const sent = imageSize(Buffer.from(db.lastImages[0].data_base64, 'base64'));
+        assert.deepEqual([sent.format, sent.width, sent.height], ['jpeg', 1600, 1067]);
+        assert.equal(await panel.locator('.assist__attachment').count(), 0, 'sent photos leave the composer');
+      }
+      const previewHref = await draftCard.getByRole('link', { name: /Preview the Peach's website/ }).getAttribute('href');
+      assert.equal(previewHref, `${base}/peachs.html?preview=${draftId}`);
+      assert.equal(await draftCard.getByRole('link', { name: /TV screen/ }).getAttribute('target'), '_blank');
+      await draftCard.getByRole('button', { name: /Copy preview link/ }).waitFor();
+      await shot('assistant-draft', { full: false });
+      await draftCard.getByRole('button', { name: 'Publish' }).click();
+      await page.getByRole('dialog', { name: 'Publish this change?' }).getByRole('button', { name: 'Publish' }).click();
+      await draftCard.getByText('Checked: it is all live.').waitFor();
+      await panel.getByText('Friday’s early closing is now live.').waitFor(); // the follow-up turn after publishing
+      assert.equal(db.changeSets.get(draftId).status, 'published');
+      await shot('assistant-published', { full: false });
+      await draftCard.getByRole('button', { name: 'Undo' }).click();
+      await page.getByRole('dialog', { name: 'Undo this change?' }).getByRole('button', { name: 'Undo' }).click();
+      await draftCard.getByText('These changes were undone').waitFor();
+      assert.equal(db.changeSets.get(draftId).status, 'undone');
+
+      if (name === 'desktop') {
+        // A blocking check keeps Publish off; Discard asks first.
+        await page.fill('#assist-input', 'Put up a notice until yesterday');
+        await page.keyboard.press('Enter');
+        const blocked = panel.locator('.draft', { hasText: 'Notice until yesterday' });
+        await blocked.getByText('Must fix:').waitFor();
+        assert.equal(await blocked.getByRole('button', { name: 'Publish' }).isDisabled(), true);
+        await blocked.getByText('Publish is off until').waitFor();
+        await shot('assistant-blocked', { full: false });
+        await blocked.getByRole('button', { name: 'Discard' }).click();
+        await page.getByRole('dialog', { name: 'Discard this draft?' }).getByRole('button', { name: 'Discard' }).click();
+        await blocked.getByText('Discarded. Nothing was changed.').waitFor();
+        // The daily limit: said plainly, and the words stay in the box.
+        await page.fill('#assist-input', 'Over the daily limit now');
+        await panel.getByRole('button', { name: 'Send' }).click();
+        await panel.getByText("You have used today's 60 Assistant messages.", { exact: false }).waitFor();
+        assert.equal(await page.inputValue('#assist-input'), 'Over the daily limit now');
+        await page.fill('#assist-input', '');
+        // The chat list, and reopening a chat with its draft card.
+        await panel.getByRole('button', { name: 'Chats' }).click();
+        await panel.getByRole('heading', { name: 'Your chats' }).waitFor();
+        await shot('assistant-chats', { full: false });
+        await panel.locator('.assist__chat', { hasText: "Close Peach's early" }).first().click();
+        await panel.locator('.draft', { hasText: 'Close early Friday' }).getByText('These changes were undone').waitFor();
+        assert.equal(await panel.locator('.draft').count(), 2);
+      }
+      await panel.getByRole('button', { name: 'Close the Assistant' }).click();
+      await panel.waitFor({ state: 'hidden' });
+      assert.equal(await page.evaluate(() => document.activeElement?.id), 'assist-toggle');
+      assert.equal(await page.locator('[inert]').count(), 0);
+
+      // --- A draft link from the Claude app: the same card on a page of its own; Publish there ---
+      const linked = fakeDraft(null, 'Close early');
+      linked.source = 'mcp';
+      await page.evaluate((id) => { location.hash = `#/draft/${id}`; }, linked.id);
+      await heading('Review a draft').waitFor();
+      await page.getByText('A draft made in the Claude app.', { exact: false }).waitFor();
+      const pageCard = page.locator('main .draft');
+      await pageCard.getByRole('heading', { level: 2, name: 'Close early Friday' }).waitFor();
+      assert.equal(await page.locator('.sidenav__link', { hasText: 'Review a draft' }).count(), 0, 'not in the nav');
+      await shot('draft-page');
+      await pageCard.getByRole('button', { name: 'Publish' }).click();
+      await page.getByRole('dialog', { name: 'Publish this change?' }).getByRole('button', { name: 'Publish' }).click();
+      await pageCard.getByText('tell Claude you published it', { exact: false }).waitFor();
+      assert.equal(db.changeSets.get(linked.id).status, 'published');
+
+      // --- Photos: albums, two photos into "Food", move one to "Team", edit, delete, in-use refusal ---
+      await nav('photos');
+      await heading('Photos').waitFor();
+      await page.locator('.photo-tile', { hasText: 'Saturday brunch table' }).waitFor();
+      await page.locator('.album-chip', { hasText: 'Food' }).click();
+      await page.waitForFunction(() => document.querySelector('.album-chip[aria-pressed="true"]')?.textContent.startsWith('Food'));
+      assert.equal(await page.inputValue('select[name="upload_album"]'), '61'); // new photos go in the album on screen
+      const libraryBefore = db.library.length;
+      const uploadsBefore2 = db.uploads.length;
+      await page.fill('input[name="upload_note"]', `Fried catfish special (${name})`);
+      await page.setInputFiles('.upload-card input[type="file"]', [
+        { name: 'catfish.png', mimeType: 'image/png', buffer: PNG_WIDE },
+        { name: 'catfish-close.png', mimeType: 'image/png', buffer: PNG_TALL },
+      ]);
+      await page.getByText('2 photos added to “Food”.').waitFor({ timeout: 15000 });
+      const added = db.library.slice(libraryBefore);
+      assert.equal(added.length, 2);
+      assert.deepEqual(db.uploads.slice(uploadsBefore2).map((u) => u.variant), ['full', 'thumb', 'full', 'thumb']);
+      for (const p of added) {
+        assert.equal(p.album_id, 61);
+        assert.equal(p.note, `Fried catfish special (${name})`);
+        assert.ok(p.r2_key && p.url.endsWith(p.r2_key) && p.thumb_r2_key && p.thumb_url.endsWith(p.thumb_r2_key), 'file keys are recorded');
+        assert.ok(p.width && p.height && p.bytes > 0);
+      }
+      await page.locator('.photo-tile', { hasText: `Fried catfish special (${name})` }).nth(1).waitFor();
+      await shot('photos');
+      // Tick one, move it to "Team".
+      await page.locator('.photo-tile').first().locator('input[type="checkbox"]').check();
+      await page.locator('.select-bar').getByText('1 photo selected').waitFor();
+      await page.selectOption('.select-bar select', 'album:63');
+      await shot('photos-selected', { full: false });
+      await page.locator('.select-bar').getByRole('button', { name: 'Move' }).click();
+      await page.getByText('Moved 1 photo to “Team”.').waitFor();
+      assert.equal(db.library.find((p) => p.id === added[1].id).album_id, 63);
+      // Edit the other one's note, then delete it.
+      await page.locator('.photo-tile', { hasText: `Fried catfish special (${name})` }).getByRole('button', { name: /^Edit/ }).click();
+      const photoDialog = page.locator('dialog.dialog--photo');
+      await photoDialog.getByLabel('Note').fill(`Catfish plate (${name})`);
+      await photoDialog.getByLabel('Description').fill('Fried catfish with greens and grits');
+      await shot('photo-dialog', { full: false });
+      await photoDialog.getByRole('button', { name: 'Save' }).click();
+      await page.getByText('Photo saved.').waitFor();
+      assert.equal(db.library.find((p) => p.id === added[0].id).alt, 'Fried catfish with greens and grits');
+      await page.locator('.photo-tile', { hasText: `Catfish plate (${name})` }).getByRole('button', { name: /^Edit/ }).click();
+      await photoDialog.getByRole('button', { name: 'Delete' }).click();
+      await page.getByRole('dialog', { name: 'Delete this photo?' }).getByRole('button', { name: 'Delete' }).click();
+      await page.getByText('Photo deleted.').waitFor();
+      assert.equal(db.library.some((p) => p.id === added[0].id), false);
+      // A photo an event uses: the delete is refused and says where (with a link to the event).
+      await page.locator('.album-chip', { hasText: 'All photos' }).click();
+      await page.locator('.photo-tile', { hasText: 'Saturday brunch table' }).getByRole('button', { name: /^Edit/ }).click();
+      await photoDialog.getByText(`Event: ${db.events[0].title}`).first().waitFor();
+      await photoDialog.getByRole('button', { name: 'Delete' }).click();
+      await page.getByRole('dialog', { name: 'Delete this photo?' }).getByRole('button', { name: 'Delete' }).click();
+      await photoDialog.getByRole('alert').getByText('Take it off there first', { exact: false }).waitFor();
+      assert.ok(db.library.some((p) => p.id === 71));
+      await photoDialog.getByRole('button', { name: 'Cancel' }).click();
+      if (name === 'phone') {
+        // Albums: add one, rename it, delete it (its photos stay).
+        await page.getByRole('button', { name: 'New album' }).click();
+        await page.getByRole('dialog', { name: 'New album' }).getByLabel('Album name').fill('Specials');
+        await page.getByRole('dialog', { name: 'New album' }).getByRole('button', { name: 'Add album' }).click();
+        await page.getByText('Album “Specials” added.').waitFor();
+        await page.getByRole('button', { name: /^Rename album/ }).click();
+        await page.getByRole('dialog', { name: 'Rename album' }).getByLabel('Album name').fill('Daily specials');
+        await page.getByRole('dialog', { name: 'Rename album' }).getByRole('button', { name: 'Rename' }).click();
+        await page.locator('.album-chip', { hasText: 'Daily specials' }).waitFor();
+        await page.getByRole('button', { name: /^Delete album/ }).click();
+        await page.getByRole('dialog', { name: 'Delete the album “Daily specials”?' }).getByRole('button', { name: 'Delete album' }).click();
+        await page.getByText('Album “Daily specials” deleted.').waitFor();
+        assert.equal(db.albums.some((a) => a.name === 'Daily specials'), false);
+      }
+      // Search
+      await page.fill('input[name="q"]', 'brunch');
+      await page.getByText('shown here').waitFor();
+      assert.deepEqual(await page.locator('.photo-tile__note').allTextContents(), ['Saturday brunch table']);
+      await page.fill('input[name="q"]', '');
+
+      // --- "Choose from library" in a photo field (an event): the photo's link lands in the field ---
+      await nav('events');
+      await heading('Events').waitFor();
+      await page.locator('a.btn', { hasText: 'Add event' }).first().click();
+      await heading('Add an event').waitFor();
+      await page.getByRole('button', { name: 'Choose from library' }).click();
+      const pickerDialog = page.getByRole('dialog', { name: 'Choose a photo' });
+      await pickerDialog.locator('.picker__photo', { hasText: 'Saturday brunch table' }).waitFor();
+      await shot('library-picker', { full: false });
+      await pickerDialog.locator('.picker__photo', { hasText: 'Saturday brunch table' }).click();
+      await page.getByText('Photo chosen from the library.').waitFor();
+      assert.equal(await page.inputValue('input[name="image_url"]'), db.library.find((p) => p.id === 71).url);
+      await page.fill('input[name="title"]', `Library photo event (${name})`);
+      await page.fill('input[name="start_date"]', '2026-12-12');
+      await page.click('button:has-text("Add event")');
+      await toastSaved();
+      assert.equal(db.events.find((e) => e.title === `Library photo event (${name})`).image_url, db.library.find((p) => p.id === 71).url);
+
+      // --- TV screens: add one, it reports in, scene switches, refresh all ---
+      await nav('screens');
+      await heading('TV screens').waitFor();
+      if (name === 'phone') await page.getByText('No TV screens yet').waitFor();
+      await page.getByRole('button', { name: 'Add screen' }).click();
+      await page.fill('input[name="name"]', `Counter (${name})`);
+      await page.getByRole('form', { name: 'Add a TV screen' }).getByRole('button', { name: 'Add screen' }).click();
+      const screenCard = page.locator('.screen-card', { hasText: `Counter (${name})` });
+      await screenCard.getByText('Not connected yet').waitFor();
+      const created2 = db.screens.find((s) => s.name === `Counter (${name})`);
+      assert.match(await screenCard.locator('input.copy-field__input').inputValue(), new RegExp(`/signage/live\\.html\\?business=peachs&screen=${created2.id}$`));
+      // The mini preview is the TV page without ?screen=, loaded once it is on screen.
+      await page.waitForFunction((id) => document.querySelector(`[data-screen="${id}"] iframe`)?.getAttribute('src')?.includes('/signage/live.html?business=peachs'), created2.id);
+      assert.equal((await screenCard.locator('iframe').getAttribute('src')).includes('screen='), false);
+      created2.last_seen_at = new Date().toISOString(); // as if the TV had just sent its heartbeat
+      await page.getByRole('button', { name: 'Check again' }).click();
+      await screenCard.getByText('Online').waitFor();
+      await screenCard.getByText('last seen just now').waitFor();
+      await page.locator('label.switch', { hasText: 'Catering' }).click();
+      await page.fill('input[name="seconds_per_scene"]', '12');
+      await page.click('button:has-text("Save screen settings")');
+      await page.getByText('Saved. The screens show it within a few minutes', { exact: false }).waitFor();
+      assert.equal(db.settings['signage:peachs'].scenes.catering, name === 'desktop'); // phone switched it off, desktop on again
+      assert.equal(db.settings['signage:peachs'].seconds_per_scene, 12);
+      const versionBefore = db.settings['signage:peachs'].refresh_version || 0;
+      await page.getByRole('button', { name: 'Refresh all screens now' }).click();
+      await page.getByText('Asked every screen to reload.', { exact: false }).waitFor();
+      assert.equal(db.settings['signage:peachs'].refresh_version, versionBefore + 1);
+      await page.waitForTimeout(600); // let the mini preview paint
+      await shot('screens');
+
+      // --- Account: the Claude app connector and connected apps ---
+      await nav('account');
+      await heading('Account').waitFor();
+      await page.getByText('Connector address', { exact: true }).waitFor();
+      assert.equal(await page.locator('input.copy-field__input').inputValue(), `${base}/mcp`);
+      if (name === 'phone') {
+        await page.locator('.list__row', { hasText: 'claude.ai' }).waitFor();
+        await shot('account');
+        await page.getByRole('button', { name: /^Disconnect/ }).click();
+        await page.getByRole('dialog', { name: 'Disconnect Claude?' }).getByRole('button', { name: 'Disconnect' }).click();
+        await page.getByText('Nothing connected yet.').waitFor();
+        assert.equal(db.connectedApps.length, 0);
+      } else {
+        await shot('account');
+      }
+
+      // --- Not switched on (no API key): the panel says so plainly ---
+      if (name === 'phone') {
+        db.assistantConfigured = false;
+        await page.reload();
+        await heading('Account').waitFor();
+        await page.click('#assist-toggle');
+        await panel.getByRole('heading', { name: 'The Assistant is not switched on yet' }).waitFor();
+        assert.equal(await panel.locator('.assist__composer').isHidden(), true);
+        await shot('assistant-off', { full: false });
+        await page.keyboard.press('Escape');
+        await panel.waitFor({ state: 'hidden' });
+        db.assistantConfigured = true;
+        await page.reload();
+        await heading('Account').waitFor();
+      }
+      await nav('overview');
+      await heading("Peach's on 47th").waitFor();
+
       if (name === 'desktop') {
         // --- Add an editor, sign out, sign in as them: they must change the temporary password first ---
         await nav('users');
@@ -1010,6 +1564,7 @@ async function run() {
   } catch (err) {
     // Keep a picture of where it went wrong.
     if (lastPage) await lastPage.screenshot({ path: path.join(OUT, 'failure.png'), fullPage: true }).catch(() => {});
+    if (problems.length) console.error('Problems so far:\n' + problems.join('\n'));
     throw err;
   } finally {
     await browser.close();

@@ -180,7 +180,7 @@ Everything comes from the admin panel; no files need editing.
 | Menu board | Menu → sections and items. Mark an item unavailable to hide it everywhere |
 | Catering scene | the catering business's menu and contact details |
 | Events, "At Blanc Gallery" | Events for the business, and Blanc's events |
-| Seconds per scene and which scenes play | Settings → `signage:peachs` |
+| Seconds per scene and which scenes play | TV screens (see below), or Settings → `signage:peachs` |
 
 The `signage:peachs` setting is a small JSON object. Only `seconds_per_scene` is needed; the rest default to on:
 
@@ -199,6 +199,16 @@ The `signage:peachs` setting is a small JSON object. Only `seconds_per_scene` is
 `seconds_per_scene` is clamped to 4–60; 8–12 reads well. Menu board scenes with many items stay up a little longer on their own. Changes reach the screens within 5 minutes.
 
 The same page works for any business: `live.html?business=blanc` reads Blanc's data (the brand screen then shows the name in type instead of the Peach's logo).
+
+### Managing screens from the admin
+
+The admin's **TV screens** page (per business) lists the TVs and controls what they show.
+
+1. **Add screen** with a name ("Peach's: counter") and copy its player link, `https://<your site host>/signage/live.html?business=peachs&screen=<id>`. Use that link, not the plain one, as the start URL in BrightAuthor, Fully Kiosk or the TV's browser. With `&screen=` the page reports in once a minute, so the admin shows each TV as **online** (heard from in the last 10 minutes), **offline** or **never** (the link has not been opened yet), when it was last seen and which scene it was on. Removing a screen in the admin does not stop the TV; it just stops being listed.
+2. **Scene switches** (welcome, notice, announcements, chef's picks, menu board, catering, events, artworks) and **seconds per scene** apply to every screen of the business. They are stored in the same `signage:<slug>` setting, as `"scenes": { "menu": false, … }`; a scene named there overrides the older `show_*` key above, which still works for scenes it does not name. Changes reach the TVs within 5 minutes.
+3. **Refresh all screens now** makes every TV of the business fetch its data again at its next report (within about a minute), skipping the browser's saved copy. Use it after a change that should be on the TVs right away.
+
+The admin's small live previews and the Assistant's preview links open the page without `&screen=` (a preview never reports in), so they cannot make a screen look online.
 
 ### Blanc gallery screen
 
@@ -246,4 +256,4 @@ Any device with a web browser that can run full screen will show the same page.
 
 ### Checking it automatically
 
-`node signage/tv-test.mjs` serves the repo with a fake API built from `docs/fixtures/public-peachs.json`, opens the page at 1920×1080 in Chromium, screenshots every scene, checks for console errors, then cuts the API off and confirms the page still shows the saved data (and the brand screen when there is nothing saved). It then does the same for Blanc's gallery screen with sample artworks (title card, then each piece; the sold dot; no prices; a broken photo skipped; offline from the saved copy, with and without the photos; more than 20 pieces rotating). Screenshots land in a temp folder, or wherever `--out <dir>` points.
+`node signage/tv-test.mjs` serves the repo with a fake API built from `docs/fixtures/public-peachs.json`, opens the page at 1920×1080 in Chromium, screenshots every scene, checks for console errors, then cuts the API off and confirms the page still shows the saved data (and the brand screen when there is nothing saved). It then does the same for Blanc's gallery screen with sample artworks (title card, then each piece; the sold dot; no prices; a broken photo skipped; offline from the saved copy, with and without the photos; more than 20 pieces rotating), and a named screen (`?screen=`): its heartbeats, scenes switched off, and fetching again past the browser cache when the refresh version changes. Screenshots land in a temp folder, or wherever `--out <dir>` points.

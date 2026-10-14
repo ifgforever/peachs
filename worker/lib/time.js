@@ -30,6 +30,14 @@ export function chicagoNow(date = new Date()) {
 /** "Tuesday, October 13, 2026 at 10:00 AM" in Chicago, for emails. */
 export const chicagoLong = (date = new Date()) => chicagoLongFmt.format(date);
 
+/** Chicago's offset from UTC right now as an SQLite date modifier, e.g. "-300 minutes" (date(created_at, ?) → Chicago date). */
+export function chicagoModifier(now = new Date()) {
+  const local = chicagoNow(now);
+  const utcDate = now.toISOString().slice(0, 10);
+  const dayShift = local.date === utcDate ? 0 : local.date < utcDate ? -1440 : 1440;
+  return `${local.minutes - (now.getUTCHours() * 60 + now.getUTCMinutes()) + dayShift} minutes`;
+}
+
 /* -------------------------------------------------------------------------
    Calendar dates (YYYY-MM-DD) without the Date time-zone traps
    ------------------------------------------------------------------------- */

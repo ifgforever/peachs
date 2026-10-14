@@ -260,7 +260,7 @@ async function runAssistantSteps() {
       expect(!/\d{4}-\d{2}-\d{2}/.test(JSON.stringify(system)), `${at}: no dates in the frozen system prompt`);
       expect(same(body.cache_control, { type: 'ephemeral' }), `${at}: automatic cache breakpoint for the conversation`);
       const names = body.tools.map((t) => t.name);
-      expect(!names.includes('publish_change_set') && names.includes('propose_changes') && names.includes('verify_change_set') && names.includes('list_photos'), `${at}: tool list ${names}`);
+      expect(!names.includes('get_publish_link') && !names.includes('publish_change_set') && names.includes('propose_changes') && names.includes('verify_change_set') && names.includes('list_photos'), `${at}: tool list ${names}`);
       for (const tool of body.tools) {
         expect(tool.strict === true, `${at}: ${tool.name} is strict`);
         const s = tool.input_schema;
@@ -306,6 +306,32 @@ async function runAssistantSteps() {
     const added = request.body.messages.slice(before.body.messages.length);
     expect(added.length === 2 && added[0].role === 'assistant' && added[1].role === 'user', `adds the last reply and the new message ${JSON.stringify(added.map((m) => m.role))}`);
     expect(added[1].content.length === 1 && added[1].content[0].text === 'Thanks!', 'no repeated context note on later turns');
+  });
+
+  await step('One turn at a time: a message sent while a reply is still running gets 409 turn_in_progress', async () => {
+    const path = `/api/admin/assistant/conversations/${state.conversationId}/messages`;
+    const before = logged().slice(-1)[0];
+    await script([{ content: [{ type: 'text', text: 'That took a while.' }], delay_ms: 3000 }, { content: [{ type: 'text', text: 'Here now.' }] }]);
+    // The phone drops the reply part-way (the screen locks): the server carries on with the turn.
+    const dropped = new AbortController();
+    const first = fetch(`${BASE}${path}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'Take your time.' }), signal: dropped.signal });
+    expect((await first).status === 200, 'the reply started');
+    dropped.abort();
+    const busy = await api('GET', `/api/admin/assistant/conversations/${state.conversationId}`);
+    expect(busy.data.conversation.busy === true, `busy while the reply runs ${JSON.stringify(busy.data.conversation)}`);
+    const second = await sse(path, { text: 'Hello? Are you there?' });
+    expect(second.status === 409 && second.data.code === 'turn_in_progress' && /still finishing/.test(second.data.error), `second message ${second.status} ${JSON.stringify(second.data)}`);
+    let after;
+    for (let i = 0; i < 40; i++) {
+      await new Promise((resolve) => { setTimeout(resolve, 250); });
+      after = (await api('GET', `/api/admin/assistant/conversations/${state.conversationId}`)).data;
+      if (!after.conversation.busy) break;
+    }
+    expect(after.conversation.busy === false && after.messages.at(-1).text === 'That took a while.', `the turn finished on the server ${JSON.stringify(after.messages.at(-1))}`);
+    expect(!after.messages.some((m) => m.text === 'Hello? Are you there?'), 'the refused message was not stored');
+    const third = await sse(path, { text: 'Hello again.' });
+    expect(third.of('done').length === 1, 'the next message goes through once it is done');
+    expectAppendOnly([before, ...newRequests()], 'after a dropped reply');
   });
 
   await step('Validation: invalid tool input and bad change sets come back to Claude as errors', async () => {
@@ -471,10 +497,20 @@ async function runAssistantSteps() {
     expect(res.status === 200 && res.of('done').length === 1 && !res.of('error').length, `follow-up ${res.status} ${JSON.stringify(res.data || res.of('error'))}`);
     expect(res.of('tool')[0]?.label === 'Checking the live website…', 'verify label');
     const [request, second] = newRequests();
-    const asked = request.body.messages[request.body.messages.length - 1].content[0].text;
-    expect(asked === `(Published Close early Friday. Change set ${state.changeSetId}.)`, `published message ${asked}`);
+    const asked = request.body.messages[request.body.messages.length - 1].content;
+    // The system's words only (the title was written by Claude); a date note only when the day has changed.
+    expect(asked[0].text === `[Back office note: written by the system] The person published change set ${state.changeSetId}.`
+      && asked.every((b) => b.type === 'text' && b.text.startsWith('[Back office note')), `published message ${JSON.stringify(asked)}`);
     const verified = JSON.parse(second.body.messages[second.body.messages.length - 1].content[0].content);
     expect(typeof verified.ok === 'boolean' && Array.isArray(verified.lines), `verify result ${JSON.stringify(verified)}`);
+    const again = await sse(`/api/admin/assistant/conversations/${state.conversationId}/published`, { change_set_id: state.changeSetId });
+    expect(again.status === 409 && again.data.code === 'already_reported', `a second follow-up ${again.status} ${JSON.stringify(again.data)}`);
+    const other = await api('POST', '/api/admin/assistant/conversations', { business_slug: null });
+    const elsewhere = await sse(`/api/admin/assistant/conversations/${other.data.conversation.id}/published`, { change_set_id: state.changeSetId });
+    expect(elsewhere.status === 409 && elsewhere.data.code === 'not_in_chat', `another chat ${elsewhere.status} ${JSON.stringify(elsewhere.data)}`);
+    expect(newRequests().length === 0, 'Claude was not called for the refused follow-ups');
+    const shown = (await api('GET', `/api/admin/assistant/conversations/${state.conversationId}`)).data.messages;
+    expect(!shown.some((m) => m.role === 'user' && !m.text), 'the system note is not shown as an empty message');
     // Put the local site back the way it was (the change-set route from docs/assistant-api.md §1).
     await api('POST', `/api/admin/change-sets/${state.changeSetId}/undo`, {});
     return verified.ok ? 'verified' : 'verify said not yet';
@@ -513,6 +549,24 @@ async function runAssistantSteps() {
     const second = await sse(`/api/admin/assistant/conversations/${id}/messages`, { text: 'Hello again' });
     expect(second.status === 409 && second.data.code === 'conversation_too_long' && /new chat/.test(second.data.error), `long chat ${second.status} ${JSON.stringify(second.data)}`);
     newRequests();
+  });
+
+  await step('Daily limit: two messages at once at the last one left: one goes through', async () => {
+    const before = await api('GET', '/api/admin/settings/assistant:limits');
+    const usage = (await api('GET', '/api/admin/assistant/usage?days=1')).data;
+    const mine = usage.by_user.find((u) => u.email === EMAIL)?.turns || 0;
+    await api('PUT', '/api/admin/settings/assistant:limits', { value: { daily_turns: mine + 1 } });
+    try {
+      const chats = await Promise.all([0, 1].map(() => api('POST', '/api/admin/assistant/conversations', { business_slug: null })));
+      await script([{ content: [{ type: 'text', text: 'One.' }] }, { content: [{ type: 'text', text: 'Two.' }] }]);
+      const answers = await Promise.all(chats.map((c) => sse(`/api/admin/assistant/conversations/${c.data.conversation.id}/messages`, { text: 'At the same time.' })));
+      const codes = answers.map((a) => a.status).sort();
+      expect(same(codes, [200, 429]) && answers.find((a) => a.status === 429).data.code === 'assistant_limit', `statuses ${JSON.stringify(answers.map((a) => [a.status, a.data?.code]))}`);
+      expect(newRequests().length === 1, 'Claude was called once');
+      await resetMock();
+    } finally {
+      await api('PUT', '/api/admin/settings/assistant:limits', { value: before.data.value || {} });
+    }
   });
 
   await step('Daily limit: 429 assistant_limit with a friendly message', async () => {

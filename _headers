@@ -1,0 +1,8 @@
+# Extra response headers for the static files (Cloudflare Workers static assets read this file; it is not served).
+# The admin keeps a login token in localStorage, so it gets a strict Content-Security-Policy as defence in depth:
+# scripts, fetches and styles only from this origin (plus Google Fonts and inline style attributes), never framed.
+/admin/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff

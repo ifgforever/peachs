@@ -1,4 +1,6 @@
 /* Parkway Social concept: nav, open-now badge, gallery lightbox, event inquiry, reveals. No dependencies. */
+import { sendInquiry, formFields, setBusy } from '../../assets/js/live.js';
+
 (function () {
   'use strict';
   document.documentElement.classList.add('js');
@@ -81,12 +83,15 @@
     });
   }
 
-  /* ---------- Event inquiry: validate, then compose an email ---------- */
+  /* ---------- Event inquiry: validate, post to the admin API, fall back to an email ---------- */
   var form = document.getElementById('inquiry');
   if (form) {
     var err = form.querySelector('[data-form-error]');
+    var formStatus = form.querySelector('[data-form-status]');
+    var setStatus = function (message) { formStatus.textContent = message; formStatus.hidden = !message; };
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      if (form.getAttribute('aria-busy') === 'true') return;
       var bad = [];
       ['name', 'email', 'message'].forEach(function (n) {
         var f = form.elements[n];
@@ -102,18 +107,34 @@
       }
       err.hidden = true;
       var v = function (n) { return form.elements[n].value.trim(); };
-      var body = [
-        'Name: ' + v('name'),
-        'Email: ' + v('email'),
-        'Phone: ' + (v('phone') || '-'),
-        'Event type: ' + v('type'),
-        'Preferred date: ' + (v('date') || '-'),
-        'Guest count: ' + (v('guests') || '-'),
-        '',
-        v('message')
-      ].join('\n');
-      var subject = 'Event inquiry: ' + v('type') + (v('date') ? ' on ' + v('date') : '');
-      window.location.href = 'mailto:parkwaysocial@romesjoy.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      var fields = formFields(form);
+      var payload = {
+        name: fields.name, email: fields.email, phone: fields.phone, message: fields.message,
+        'Event type': fields.type, 'Preferred date': fields.date, 'Guest count': fields.guests, website: fields.website
+      };
+      var openMailApp = function () {
+        var body = [
+          'Name: ' + v('name'),
+          'Email: ' + v('email'),
+          'Phone: ' + (v('phone') || '-'),
+          'Event type: ' + v('type'),
+          'Preferred date: ' + (v('date') || '-'),
+          'Guest count: ' + (v('guests') || '-'),
+          '',
+          v('message')
+        ].join('\n');
+        var subject = 'Event inquiry: ' + v('type') + (v('date') ? ' on ' + v('date') : '');
+        window.location.href = 'mailto:parkwaysocial@romesjoy.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+        setStatus('We couldn’t send that from here, so your email app should open with the details filled in. If it didn’t, email parkwaysocial@romesjoy.com.');
+      };
+      setBusy(form, true);
+      setStatus('Sending…');
+      sendInquiry('parkway-social', 'event', payload).then(function () {
+        form.reset();
+        setStatus('Thanks, we got your inquiry. We’ll reply within one business day with details and availability.');
+        formStatus.setAttribute('tabindex', '-1');
+        formStatus.focus();
+      }, openMailApp).finally(function () { setBusy(form, false); });
     });
   }
 

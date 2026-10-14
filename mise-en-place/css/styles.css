@@ -322,7 +322,36 @@ h3 { font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; text-transform:
 }
 .steps strong { display: block; font-family: var(--f-display); font-size: 1.4rem; text-transform: uppercase; letter-spacing: 0.03em; }
 .steps span:not(.steps__n) { color: #D8D2C0; }
-@media (min-width: 900px) { .apply__grid { grid-template-columns: 1.1fr 1fr; gap: 64px; } }
+@media (min-width: 900px) { .apply__grid { grid-template-columns: 1.1fr 1fr; gap: 64px; align-items: start; } }
+.apply .steps { margin-top: 28px; }
+
+/* Apply form (posted to the admin API; see js/main.js) */
+.apply-form {
+  display: grid; gap: 14px; background: var(--ink-2); border: 1px solid rgba(245,241,230,.14);
+  border-radius: var(--radius); padding: clamp(20px, 3vw, 32px);
+}
+.apply-form__title { font-family: var(--f-display); font-size: 1.9rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--paper); }
+.apply-form__hint { color: #D8D2C0; font-size: 0.95rem; margin-top: -6px; }
+.apply-form__row { display: grid; gap: 14px; }
+@media (min-width: 600px) { .apply-form__row { grid-template-columns: 1fr 1fr; } }
+.apply-form .field { display: grid; gap: 6px; min-width: 0; }
+.apply-form label { font-weight: 700; font-size: 0.92rem; color: var(--paper); }
+.apply-form .field input, .apply-form .field select, .apply-form .field textarea {
+  width: 100%; min-height: 48px; padding: 10px 14px; border: 1.5px solid rgba(245,241,230,.35); border-radius: 8px;
+  background: var(--paper-2); color: var(--ink); font: inherit; font-size: 1rem;
+}
+.apply-form textarea { resize: vertical; }
+.apply-form .field input:focus-visible, .apply-form .field select:focus-visible, .apply-form .field textarea:focus-visible { outline: 3px solid var(--sage); outline-offset: 2px; }
+.apply-form [aria-invalid="true"] { border-color: var(--tomato-light); box-shadow: 0 0 0 2px var(--tomato-light); }
+.apply-form__error { color: #FFB4A6; font-weight: 700; }
+.apply-form__status { background: var(--sage); color: var(--ink); padding: 12px 14px; border-radius: 8px; font-weight: 600; }
+.apply-form .btn { justify-self: start; }
+.apply-form.is-sending { opacity: 0.75; }
+
+/* Notice banner (text from the admin; hidden until there is one) */
+.notice { background: var(--sage); color: var(--ink); font-size: 0.95rem; line-height: 1.35; border-bottom: 1px solid var(--line); }
+.notice__inner { margin: 0; padding-block: 10px; }
+.notice strong { font-family: var(--f-display); font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 0.5em; }
 
 /* ---------- Give ---------- */
 .give__grid { display: grid; gap: 20px; }

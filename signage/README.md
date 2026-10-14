@@ -1,6 +1,6 @@
 # In-store screens
 
-Three TVs, three videos. Each is 1920×1080 and loops on its own BrightSign player.
+Three TVs, three videos. A fourth option, the **live screen**, is a web page that updates itself from the admin panel (hours, menu, notices, events, artworks); see "Live screen" at the end. Each is 1920×1080 and loops on its own BrightSign player.
 
 | Screen | File | Sound | Length |
 |---|---|---|---|
@@ -102,3 +102,158 @@ Do this once per screen, each with its own file. For the entrance screen, the so
    - `node signage/render.mjs family` for Screen 3
 3. Each scene is saved to `signage/build/<loop>/`, then they are joined into the MP4.
 4. To re-render only some scenes, name them after the loop, e.g. `node signage/render.mjs family blanc outro`.
+
+---
+
+## Live screen (updates itself from the admin)
+
+`live.html` (with `live.css` and `live.js`) is a web page built for TVs. Once the sites are deployed on Cloudflare, it lives at:
+
+```
+https://<your site host>/signage/live.html
+```
+
+It asks the admin's API (`/api/public/signage/peachs`) for the current data when it starts and every 5 minutes after that, then rotates through these scenes, about 10 seconds each, with a soft cross-fade:
+
+1. **Welcome**: logo, "Open now · until 2 pm" (or when it opens next), today's hours, the week's hours, address, phone, Instagram.
+2. **Notice**: only while a notice is set on the business (for example a holiday closing).
+3. **Announcements**: one scene per announcement marked "Show on TV", including family-wide ones from Rome's Joy.
+4. **Chef's picks**: menu items marked "featured", 3–4 per scene, with price and description.
+5. **Menu board**: one scene per menu section, big type in two columns. Long sections split over two scenes.
+6. **Catering**: a few items from the catering menu with "Ask about catering", phone and email.
+7. **Coming up**: current and upcoming events, plus what is on view at Blanc Gallery.
+8. **Closing**: logo, hours summary, address, website, Instagram.
+
+Scenes with nothing to show are skipped. A small clock and "updated 3 min ago" sit in the bottom corner.
+
+### What happens when the internet drops
+
+The page keeps the last good copy of the data in the player's browser storage. If the API is slow (more than 6 seconds) or unreachable, the screen keeps rotating through that copy and shows a small "offline" chip in the corner; it tries again every 5 minutes (every minute if it has never loaded anything). If there is no saved copy at all, it shows a calm brand screen with the logo, name and address instead of an error. It never goes blank. The open/closed status is worked out from the saved hours and the player's clock, so it stays right even while offline.
+
+Two things the player does need: a correct clock (BrightSign players set theirs from the internet; a stick or TV from its own settings) and, for the brand fonts, internet access at least once in a while. Without internet the page still works with the player's standard fonts.
+
+### Setting up a BrightSign player (BrightAuthor:connected)
+
+The page is light: plain HTML, CSS fades, no video, no WebGL. It runs on the LS series (LS424/LS425) as well as HD and XD players. BrightSign OS 8.5 or newer is recommended.
+
+**B1. Point the player at the hosted page (recommended, needs internet on the player)**
+
+1. On a computer, install **BrightAuthor:connected** and sign in. Set the player up on the network (Ethernet or Wi-Fi) with the BrightSign setup steps, and give it a name like "Peach's TV 1".
+2. Create a new presentation: 1920×1080, 30p, one full-screen zone.
+3. In the media library choose **Add HTML5 site** (sometimes shown as "HTML5" or "Web page"). Pick the **URL** type and paste:
+   ```
+   https://<your site host>/signage/live.html?business=peachs
+   ```
+   Leave "Enable mouse events" and "Display cursor" off. If there is a "Hardware acceleration" option, leave it on.
+4. Drag that HTML5 item into the zone. With one item in the zone, the page simply stays up; the rotation is inside the page.
+5. In the presentation's player settings, make sure nothing turns the screen off: no "screen blanking", no idle timeout, and no power schedule unless you want one. Do the same on the TV itself (sleep timer and screen saver off; most TVs have a "store" or "retail" mode that keeps the screen on).
+6. **Publish** the presentation to the player over the network, or to its microSD card. A BrightSign player starts its published presentation by itself every time it powers on, so there is nothing else to enable for auto-start. If BrightAuthor shows an "Autorun" or "Automatically start presentation" checkbox, keep it ticked.
+7. Turn the TV on. The brand screen appears first, then the live scenes a moment later.
+
+Repeat for each player, or publish the same presentation to all of them (BrightAuthor lets you pick several players at once).
+
+**B2. Keep the page on the microSD card (works without hosting, still needs internet for the data)**
+
+Use this if you would rather not depend on the site host, or your player cannot open remote URLs.
+
+1. Copy these from the repo onto the card, keeping the folder names:
+   - `signage/live.html`, `signage/live.css`, `signage/live.js`
+   - `assets/img/brand/` (the logo files)
+2. In BrightAuthor:connected, add an HTML5 site of the **local files** type and choose `signage/live.html`.
+3. Tell the page where the data is by adding the API address to the file name in the site dialog:
+   ```
+   signage/live.html?api=https://<your site host>
+   ```
+   `<your site host>` is the Cloudflare host that serves the sites and the admin. If your BrightAuthor version does not accept a `?` after a local file name, use B1 instead.
+4. Continue from step 4 of B1.
+
+### Changing what the screen shows
+
+Everything comes from the admin panel; no files need editing.
+
+| To change | Where in the admin |
+|---|---|
+| Hours, today's status, holiday closings | the business page → Hours and Holiday hours |
+| The notice scene | the business page → Notice (and "until" date). Clear it to remove the scene |
+| Announcements | Announcements → tick **Show on TV**. Family-wide announcements show on every business's screens |
+| Chef's picks | Menu → mark an item **Featured**. Unmark it to take it off the screen |
+| Menu board | Menu → sections and items. Mark an item unavailable to hide it everywhere |
+| Catering scene | the catering business's menu and contact details |
+| Events, "At Blanc Gallery" | Events for the business, and Blanc's events |
+| Seconds per scene and which scenes play | TV screens (see below), or Settings → `signage:peachs` |
+
+The `signage:peachs` setting is a small JSON object. Only `seconds_per_scene` is needed; the rest default to on:
+
+```json
+{
+  "seconds_per_scene": 10,
+  "show_announcements": true,
+  "show_featured": true,
+  "show_menu_board": true,
+  "show_catering": true,
+  "show_events": true,
+  "show_blanc": true
+}
+```
+
+`seconds_per_scene` is clamped to 4–60; 8–12 reads well. Menu board scenes with many items stay up a little longer on their own. Changes reach the screens within 5 minutes.
+
+The same page works for any business: `live.html?business=blanc` reads Blanc's data (the brand screen then shows the name in type instead of the Peach's logo).
+
+### Managing screens from the admin
+
+The admin's **TV screens** page (per business) lists the TVs and controls what they show.
+
+1. **Add screen** with a name ("Peach's: counter") and copy its player link, `https://<your site host>/signage/live.html?business=peachs&screen=<id>`. Use that link, not the plain one, as the start URL in BrightAuthor, Fully Kiosk or the TV's browser. With `&screen=` the page reports in once a minute, so the admin shows each TV as **online** (heard from in the last 10 minutes), **offline** or **never** (the link has not been opened yet), when it was last seen and which scene it was on. Removing a screen in the admin does not stop the TV; it just stops being listed.
+2. **Scene switches** (welcome, notice, announcements, chef's picks, menu board, catering, events, artworks) and **seconds per scene** apply to every screen of the business. They are stored in the same `signage:<slug>` setting, as `"scenes": { "menu": false, … }`; a scene named there overrides the older `show_*` key above, which still works for scenes it does not name. Changes reach the TVs within 5 minutes.
+3. **Refresh all screens now** makes every TV of the business fetch its data again at its next report (within about a minute), skipping the browser's saved copy. Use it after a change that should be on the TVs right away.
+
+The admin's small live previews and the Assistant's preview links open the page without `&screen=` (a preview never reports in), so they cannot make a screen look online.
+
+### Blanc gallery screen
+
+```
+https://peachs.tvinstallchicago.workers.dev/signage/live.html?business=blanc
+```
+
+Blanc's screen is the same page with a gallery slideshow added (any business with the artwork catalog switched on gets it):
+
+1. **Welcome**: name, open/closed, today's and the week's hours.
+2. **Title card**: "Now showing", the exhibition's title and dates (for example "Sep 19 – Nov 1, 2026").
+3. **One scene per artwork** in the current exhibition: the main photo large on a dark gallery wall, with a slow, slight zoom (none on players or computers set to reduce motion), and a wall label: title, artist, year · medium, dimensions, and a small red dot with "Sold" for sold pieces. **Prices are never shown on the TV**, whatever the website shows.
+4. Then the usual scenes: catering, Coming up, closing.
+
+If no exhibition is on right now, the slideshow shows the next exhibition's pieces ("Coming soon"); if that has none either, the pieces marked Featured ("From the collection"). Up to 20 artworks play per round; with more, the next round shows the next 20, and so on.
+
+How to control it, all in the admin (Blanc → Artworks):
+
+| To | Do this |
+|---|---|
+| Put a piece on the screen | Tick **Published**, pick its **Exhibition**, and add at least one photo (the first photo is the one shown). Pieces without a photo are left out |
+| Change the order | Featured pieces come first, then the order on the Artworks page |
+| Show the red dot | Set **Status** to Sold |
+| Take a piece off | Untick **Published** (it also leaves the website) |
+| Change the title card | Edit the exhibition in Events (title, subtitle, dates) |
+| Seconds per scene | the `signage:blanc` setting, `seconds_per_scene` (12 to start with; every scene, artworks included) |
+| Turn the slideshow or the catering card off | `"show_artworks": false` or `"show_catering": false` in the same setting |
+
+Changes reach the screen within 5 minutes. The screen loads each photo before its scene comes up; a photo that will not load is skipped (and tried again ten minutes later), so a broken link never shows as an empty wall. It also remembers which photos it has shown: without internet it plays the saved data and only those photos (the browser keeps the files), and if none of them load it simply skips the slideshow.
+
+### Cheaper fallback: a streaming stick or a smart TV
+
+Any device with a web browser that can run full screen will show the same page.
+
+1. **Fire TV Stick** (any current model): install a kiosk browser from the Amazon app store, for example **Fully Kiosk Browser** or **Wallpanel**. Set its start URL to `https://<your site host>/signage/live.html?business=peachs`, turn on full screen / kiosk mode, "start on boot" and "keep screen on", and turn off the stick's screen saver (Settings → Display & Sounds → Screen saver → Start time: Never). Plug the stick into a USB port that stays powered or a wall adapter.
+2. **Smart TV with a browser** (Samsung, LG, Android TV, Google TV): open the browser, enter the same URL, choose full screen. This works but most TV browsers do not come back by themselves after a power cut, so someone has to reopen it; a stick or a BrightSign player is the better long-term choice.
+3. Either way, set the TV to never sleep.
+
+### Previewing on a computer
+
+- Hosted: open `https://<your site host>/signage/live.html` in any browser. It scales to fit the window, so a laptop screen is fine for a look.
+- Without the Worker: `node signage/tv-test.mjs --keep` starts a local server with sample data and prints a URL to open.
+- Keys: **d** shows a debug overlay (API address, last fetch, errors), **n** skips to the next scene, **r** refetches now.
+- Add `&at=2026-11-26T09:00` to the address to freeze the clock at a date and time and see what the screen says then (for example a holiday).
+
+### Checking it automatically
+
+`node signage/tv-test.mjs` serves the repo with a fake API built from `docs/fixtures/public-peachs.json`, opens the page at 1920×1080 in Chromium, screenshots every scene, checks for console errors, then cuts the API off and confirms the page still shows the saved data (and the brand screen when there is nothing saved). It then does the same for Blanc's gallery screen with sample artworks (title card, then each piece; the sold dot; no prices; a broken photo skipped; offline from the saved copy, with and without the photos; more than 20 pieces rotating), and a named screen (`?screen=`): its heartbeats, scenes switched off, and fetching again past the browser cache when the refresh version changes. Screenshots land in a temp folder, or wherever `--out <dir>` points.

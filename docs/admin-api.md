@@ -1,0 +1,236 @@
+# Rome's Joy admin: API contract
+
+One Cloudflare Worker (`worker/index.js`) with a D1 database (`worker/schema.sql`) is the single source of truth for every site and the in-store screens. The same Worker serves the static sites as assets; it only handles paths under `/api/`.
+
+- Public routes need no login, allow any origin (`Access-Control-Allow-Origin: *`), and are cacheable (`Cache-Control: public, max-age=60`).
+- Admin routes need `Authorization: Bearer <session token>`. Tokens come from `POST /api/auth/login` and last 30 days.
+- Every response is JSON. Errors look like `{ "error": "message", "code": "short_code" }` with a sensible HTTP status (400 bad input, 401 not logged in, 403 not allowed, 404 missing, 409 conflict, 429 too many tries, 501 not configured).
+- Dates are `YYYY-MM-DD`, times of day are `HH:MM` (24-hour), weekdays are `0`–`6` with `0 = Sunday`, and "now" is always America/Chicago.
+- Every admin write records a row in `audit_log` with `before_json` and `after_json`.
+
+## Bindings and secrets
+
+| Name | Kind | Purpose |
+|---|---|---|
+| `DB` | D1 | the database |
+| `ASSETS` | static assets | the sites (the Worker only runs for `/api/*`, see `wrangler.jsonc`) |
+| `MEDIA` | R2 (optional) | photo uploads; without it, `POST /api/admin/media` returns 501 and the admin shows a URL field |
+| `ADMIN_BOOTSTRAP_TOKEN` | secret | one-time token to create the first owner account |
+| `RESEND_API_KEY`, `EMAIL_FROM` | secrets (optional) | outgoing email via Resend; without them inquiries are saved but not emailed |
+| `PUBLIC_BASE_URL` | var (optional) | used in emails to link back to the admin |
+
+Local dev reads secrets from `.dev.vars` (never committed); see `.dev.vars.example`.
+
+## Public
+
+### `GET /api/public/businesses`
+`{ "businesses": [ { slug, name, short_name, tagline, phone, phone_href, address: {...}, hours_summary, open_now }, ... ] }` ordered by `sort_order`.
+
+### `GET /api/public/:slug`
+The bundle a site renders from:
+
+```json
+{
+  "generated_at": "2026-10-13T15:00:00Z",
+  "today": { "date": "2026-10-13", "weekday": 2 },
+  "business": {
+    "slug": "peachs", "name": "Peach's on 47th", "short_name": "Peach's", "tagline": "...", "description": "...",
+    "address": { "line1": "4652 S. King Drive", "line2": null, "city": "Chicago", "state": "IL", "zip": "60653",
+                 "formatted": "4652 S. King Drive, Chicago, IL 60653" },
+    "phone": "773.966.5801", "phone_href": "tel:+17739665801",
+    "public_email": "...", "website_url": "...", "instagram_url": "...", "facebook_url": "...",
+    "map_url": "...", "order_url": "...", "book_url": "...", "hours_note": null,
+    "notice": { "text": "Closed Thanksgiving Day", "until": "2026-11-27" }
+  },
+  "hours": [
+    { "weekday": 1, "label": "Monday", "short": "Mon", "closed": true,  "open_min": null, "close_min": null, "open": null, "close": null, "text": "Closed" },
+    { "weekday": 3, "label": "Wednesday", "short": "Wed", "closed": false, "open_min": 480, "close_min": 840, "open": "8 am", "close": "2 pm", "text": "8 am – 2 pm" }
+  ],
+  "hours_summary": "Wed – Sun · 8 am – 2 pm",
+  "exceptions": [ { "date": "2026-11-26", "closed": true, "open": null, "close": null, "label": "Thanksgiving" } ],
+  "open_now": { "open": true, "text": "Open now · until 2 pm", "checked_at": "2026-10-13T15:00:00Z" },
+  "announcements": [ { "id": 1, "title": "...", "body": "...", "link_url": "...", "link_label": "...", "image_url": null, "starts_at": "...", "ends_at": null } ],
+  "events": {
+    "current":  [ { "id": 7, "kind": "exhibition", "title": "...", "subtitle": "...", "description": "...",
+                    "start_date": "2026-10-24", "end_date": "2026-12-05", "start_time": null, "end_time": null,
+                    "date_text": "Oct 24 – Dec 5, 2026", "time_text": null, "location": "...",
+                    "link_url": "...", "link_label": "...", "image_url": null, "featured": true, "status": "current" } ],
+    "upcoming": [], "past": []
+  },
+  "menu": {
+    "sections": [ { "id": 1, "title": "Peach's Plates", "short_title": "Plates", "description": null,
+                    "items": [ { "id": 10, "name": "...", "portion": null, "price": 23, "prices": null, "description": "...",
+                                 "tags": ["GF","V"], "allergens": [], "featured": false } ] } ]
+  },
+  "dietary": { "GF": "Gluten free", "V": "Vegetarian", "DF": "Dairy free" }
+}
+```
+
+Rules:
+- `hours` is ordered Monday → Sunday (weekdays 1,2,3,4,5,6,0). `text` is ready to print.
+- `hours_summary` groups consecutive days with identical hours ("Mon – Fri · 8:30 am – 5 pm", "Sat & Sun · 11 am – 3 pm").
+- `exceptions` lists only today and the next 60 days.
+- `open_now` applies today's exception first, then the weekly hours. `text` is one of: `Open now · until 2 pm`, `Closed · opens today 8 am`, `Closed · opens Wed 8 am`, `Closed today`.
+- `announcements`: `published = 1`, `starts_at <= today`, and (`ends_at IS NULL` or `ends_at >= today`), newest first. Business-specific ones plus family-wide ones (`business_slug IS NULL`).
+- `events`: `published = 1` only. `status` = `past` when the last day (`end_date` or `start_date`) is before today; `upcoming` when `start_date` is after today; otherwise `current`. `past` holds the 20 most recent. `upcoming` and `current` are sorted by `start_date` ascending, `past` descending. `date_text` examples: `Oct 24, 2026`, `Oct 24 – Dec 5, 2026`, `Dec 28, 2026 – Jan 4, 2027`. `time_text` examples: `5–8 pm`, `11 am – 3 pm`, `7 pm`.
+- `menu`: published sections with `available = 1` items only, in `sort_order`. `prices` is the parsed `prices_json` or `null`.
+- `notice` is `null` when there is no notice or `notice_until` has passed.
+- Additive extras (safe to ignore): each announcement also carries `show_on_tv` and `business_slug` (null = family-wide) so the TV page can filter; each exception also carries `id`, `open_min`, `close_min` and a ready-to-print `text`.
+
+### `GET /api/public/signage/:slug`
+The same bundle plus `"signage": { ...settings["signage:<slug>"] or {} }` and `"family": [ { slug, name, tagline, hours_summary } ]` for every business.
+
+### `POST /api/forms/:slug/:type`
+Accepts JSON or `application/x-www-form-urlencoded` (so a plain HTML `<form>` works). Fields: `name`, `email`, `phone`, `message`, any others (stored in `fields_json`), and the honeypot `website` (must be empty). `:type` is a short word like `contact`, `quote`, `event`, `wholesale`, `apply`.
+
+- Saves an `inquiries` row, then emails every address in the business's `inquiry_emails` (if email is configured) and records `emailed_at` or `email_error`.
+- Returns `{ "ok": true, "id": 123, "emailed": true }`. If the request had `_redirect` (a same-site path) and was form-encoded, respond `303` to it instead. `_redirect` must start with a single `/`, contain no backslash and resolve to the Worker's own origin; anything else is ignored and the JSON answer is returned.
+- The visitor's IP is stored only for the rate limit: it is cleared after a day and is never returned by the admin API.
+- Rejects: honeypot filled (returns `{ok:true}` silently), missing `message` and `email` both, any field over 5,000 characters, more than 20 fields, unknown business, or more than 10 submissions from one IP in 10 minutes (429).
+
+## Auth
+
+- `GET /api/auth/status` → `{ "has_users": true, "email_configured": false, "media_configured": false }` (no login needed). The admin shows the bootstrap screen when `has_users` is false.
+- `POST /api/auth/bootstrap` `{ token, email, password, name }` → creates the first `owner` and returns `{ token, user }`. Only works while there are zero users and `token` equals `ADMIN_BOOTSTRAP_TOKEN` (compared in constant time); otherwise 403. Wrong tokens are counted: after 5 from one IP, or 20 in total, within an hour the route answers 429. `ADMIN_BOOTSTRAP_TOKEN` must be a long random value (`openssl rand -base64 32`) and can be deleted once the first owner exists.
+- `POST /api/auth/login` `{ email, password }` → `{ token, user }`. After 10 failed tries from one IP in 15 minutes (or 50 for one email from anywhere, so a known address cannot be locked out from outside), 429. A successful login clears that email's failures.
+- `POST /api/auth/logout` → `{ ok: true }`.
+- `GET /api/auth/me` → `{ user }`. `user` = `{ id, email, name, role, businesses: [slugs], must_change_password }`.
+- `POST /api/auth/change-password` `{ current_password, new_password }` (min 8 characters) → `{ ok: true }`.
+
+Passwords: PBKDF2-SHA256, 100,000 iterations, random 16-byte salt, stored as `base64(salt):base64(hash)`. Session tokens are random 32-byte values; `sessions.token` holds their SHA-256 (hex), so a copy of the database does not contain usable sessions. Changing a password (self-service or by an owner/admin), changing a role or deactivating an account ends that person's other sessions.
+
+## Permissions
+
+| Role | Can edit | Users page |
+|---|---|---|
+| `owner` | every business | everything, including other owners |
+| `admin` | every business | create/edit editors and admins, not owners |
+| `editor` | only slugs in `businesses_json` | no |
+
+Family-wide announcements (`business_slug = null`) need `owner` or `admin`. A request for a business the user may not edit returns 403.
+
+## Admin: businesses and hours
+
+- `GET /api/admin/businesses` → `{ businesses: [ ...rows the user may edit, with hours_summary and counts: { new_inquiries, upcoming_events, current_events } ] }`. The event counts cover published events only: `upcoming_events` start after today, `current_events` are on today.
+- `GET /api/admin/businesses/:slug` → `{ business, hours: [7 rows, Monday first], exceptions: [all future] }`
+- `PATCH /api/admin/businesses/:slug` with any subset of the editable columns (`name`, `short_name`, `tagline`, `description`, `address1`, `address2`, `city`, `state`, `zip`, `phone`, `public_email`, `inquiry_emails`, `website_url`, `instagram_url`, `facebook_url`, `map_url`, `order_url`, `book_url`, `hours_note`, `notice`, `notice_until`) → `{ business }`. `slug` and `sort_order` are not editable here.
+- `PUT /api/admin/businesses/:slug/hours` body `{ hours: [ { weekday, closed, open_min, close_min } × 7 ] }` → `{ hours }`. Validates 0 ≤ open_min < close_min ≤ 1440 unless closed.
+- `GET /api/admin/businesses/:slug/hours/exceptions`, `POST` `{ date, closed, open_min, close_min, label }` → `{ exception }`, `DELETE /api/admin/hours/exceptions/:id`.
+
+## Admin: events
+
+- `GET /api/admin/businesses/:slug/events?status=all|current|upcoming|past` → `{ events: [ ...with computed status ] }` (includes unpublished).
+- `POST /api/admin/businesses/:slug/events` body = editable columns (`kind`, `title`, `subtitle`, `description`, `start_date`, `end_date`, `start_time`, `end_time`, `location`, `link_url`, `link_label`, `image_url`, `featured`, `published`, `sort_order`) → `{ event }`. `title` and `start_date` required; `end_date` must not be before `start_date`.
+- `PATCH /api/admin/events/:id`, `DELETE /api/admin/events/:id`.
+
+## Admin: menu
+
+- `GET /api/admin/businesses/:slug/menu` → `{ sections: [ { ...section, items: [ ...items with parsed tags, allergens, prices ] } ] }` (includes unpublished and unavailable).
+- `POST /api/admin/businesses/:slug/menu/sections` `{ title, short_title, description, published }` → `{ section }`
+- `PATCH /api/admin/menu/sections/:id`, `DELETE /api/admin/menu/sections/:id` (deletes its items).
+- `POST /api/admin/menu/sections/:id/items` `{ name, portion, price, prices, description, tags, allergens, featured, available }` → `{ item }`. `tags` and `allergens` are arrays; `price` a number or null; `prices` an array of `{label, value}` or null.
+- `PATCH /api/admin/menu/items/:id`, `DELETE /api/admin/menu/items/:id`.
+- `POST /api/admin/businesses/:slug/menu/reorder` `{ sections: [ids in order], items: { "<sectionId>": [item ids in order] } }` → `{ ok: true }`. Either key may be omitted.
+
+## Admin: announcements
+
+- `GET /api/admin/businesses/:slug/announcements` → business-specific rows. `GET /api/admin/announcements?scope=family` → family-wide rows (owner/admin).
+- `POST /api/admin/businesses/:slug/announcements` and `POST /api/admin/announcements` (family-wide) with `{ title, body, link_url, link_label, image_url, starts_at, ends_at, show_on_tv, published }`.
+- `PATCH /api/admin/announcements/:id`, `DELETE /api/admin/announcements/:id`.
+
+## Admin: inquiries
+
+- `GET /api/admin/businesses/:slug/inquiries?status=new|handled|spam|all&limit=50&before=<id>` → `{ inquiries: [ ...with parsed fields ] }` newest first.
+- `GET /api/admin/inquiries/:id` → `{ inquiry }` (additive extra: the deep link in notification emails uses it; 404 when unknown, 403 for a business the user may not edit).
+- `PATCH /api/admin/inquiries/:id` `{ status }` → `{ inquiry }`.
+- `POST /api/admin/inquiries/:id/resend` → tries the email again → `{ emailed: true|false, error }`.
+
+## Admin: history
+
+- `GET /api/admin/businesses/:slug/history?limit=50&before=<id>` → `{ entries: [ { id, user_email, entity, entity_id, action, summary, created_at, can_restore } ] }`. Owners/admins can also call `GET /api/admin/history` for everything.
+- `GET /api/admin/history/:id` → the entry with `before_json` and `after_json` parsed.
+- `POST /api/admin/history/:id/restore` → puts the `before` state back for `update` and `delete` entries (recreating a deleted row with its original id when possible) and removes the row for `create` entries. Writes its own `restore` entry. Returns `{ ok: true }`.
+
+## Admin: users (owner/admin)
+
+- `GET /api/admin/users` → `{ users: [ { id, email, name, role, businesses, active, last_login_at } ] }`
+- `POST /api/admin/users` `{ email, name, role, businesses, password }` → `{ user }` (new users get `must_change_password = 1`).
+- `PATCH /api/admin/users/:id` `{ name, role, businesses, active, password }` (an admin cannot change an owner; nobody can deactivate the last active owner).
+- `DELETE /api/admin/users/:id`.
+
+## Admin: settings and media
+
+- `GET /api/admin/settings/:key` → `{ value }` (`{}` when unset); `PUT /api/admin/settings/:key` `{ value }`. Both: owner/admin, or an editor for `signage:<slug>` of a business they may edit (403 otherwise).
+- `POST /api/admin/media` multipart `file` (jpeg, png, webp, gif, ≤ 8 MB) plus `business` (the slug) → `{ url }` stored in R2 under `uploads/<slug>/<timestamp>-<name>` and served at `GET /api/media/<key>` (public, long cache). `url` is absolute (`PUBLIC_BASE_URL`, or the request's origin), so copies of the sites hosted elsewhere can show the photo. 501 when `MEDIA` is not bound, 404 for an unknown slug.
+
+## Email
+
+`sendEmail({ to: [..], subject, text, html })` tries, in order: Resend (`RESEND_API_KEY` + `EMAIL_FROM`), then returns `{ sent: false, reason: 'not_configured' }`. Inquiry emails include every field, the business name, the time in Chicago, and a link straight to the inquiry (`<PUBLIC_BASE_URL>/admin/?business=<slug>#/inquiries/<id>`) when `PUBLIC_BASE_URL` is set. The admin honours `?business=<slug>` in its URL and then routes by hash (`#/inquiries/<id>`, `#/hours`, …).
+
+## Admin: history and inquiries, shapes the admin relies on
+
+- `GET /api/admin/history/:id` returns both `before`/`after` (parsed) and the raw `before_json`/`after_json`; deleted users have `password_hash` redacted.
+- Inquiry rows carry `fields` (parsed object) as well as `fields_json`.
+- No audit row is written for a write that changes nothing.
+
+## Static files
+
+The Worker's `ASSETS` binding serves everything not under `/api/` with Cloudflare's default `html_handling` (`auto-trailing-slash`): `/peachs.html` redirects (307) to `/peachs`, `/signage/live.html?business=peachs` to `/signage/live?business=peachs` (query strings are kept), and `/admin/` serves `admin/index.html`. Files listed in `.assetsignore` are never uploaded. The root `_headers` file adds a Content-Security-Policy, `Referrer-Policy: no-referrer` and `X-Frame-Options: DENY` to everything under `/admin/`.
+
+## Artwork catalog (added 2026-10-13)
+
+Tables `artworks` and `artwork_images` (see `worker/schema.sql`; existing databases run `worker/migrations/2026-10-13-artworks.sql` once). The catalog is switched on per business by the setting `features:<slug>` = `{ "artworks": true }` (seeded for `blanc`).
+
+### Feature flags
+- `GET /api/admin/businesses` rows gain `features: { artworks: bool }` (read from `settings` key `features:<slug>`; missing = `{}`), and `counts` gains `artworks` (all artworks, any status) and `artworks_available`.
+- `GET /api/public/:slug` (and the signage bundle) gain `features` the same way.
+
+### Public
+`GET /api/public/:slug` gains, only when `features.artworks` is true:
+```json
+"artworks": [
+  { "id": 3, "event_id": 7, "title": "Untitled (Family Portrait)", "artist": "Raja'Nee Hamilton", "year": "2026",
+    "medium": "Archival pigment print", "dimensions": "24 × 30 in.", "description": "...",
+    "status": "available", "status_text": "Available",
+    "price": 1800, "price_text": "$1,800",
+    "featured": true,
+    "images": [ { "id": 9, "url": "https://…/api/media/uploads/blanc/…-full.webp", "thumb_url": "https://…/api/media/uploads/blanc/…-thumb.webp", "alt": "...", "width": 2000, "height": 1500 } ] }
+]
+```
+Rules:
+- Only `published = 1` artworks, ordered by `featured DESC, sort_order, id`. Images ordered by `sort_order, id`. Artworks with zero images are still listed.
+- A piece whose exhibition is still a draft (`events.published = 0`) is left out too, with its photos and price, until the show is published: a gallery can prepare an unannounced show without putting it online. The admin marks such pieces "Hidden: its exhibition is a draft".
+- `status_text`: available → "Available", reserved → "Reserved", sold → "Sold", not_for_sale → "Not for sale".
+- `price_text`: when `price_display = 'show'` and `price` is set → formatted USD without cents when whole ("$1,800", "$950.50"); `on_request` → "Price on request"; `hidden` → `null`. When `status = 'sold'` or `'not_for_sale'`, `price` and `price_text` are always `null` (never show what a sold piece went for).
+- `event_id` lets a page group pieces under the exhibition from `events`; `null` = not tied to a show ("From the collection").
+- Each event object in `events.current|upcoming|past` gains `artwork_count` (published artworks linked to it) when the feature is on.
+
+### Forms
+`POST /api/forms/:slug/artwork` is an ordinary form submission (rules above) whose extra fields include `artwork_id` and `artwork_title`. When `artwork_id` is a published artwork of that business (one the public bundle lists), the Worker stores the canonical title, artist and status in `fields_json` (ignoring client-sent title), and the email subject becomes `Inquiry about "<title>" by <artist> · <Business>`. The inquiry `form_type` is `artwork`.
+
+### Admin
+All routes check the artwork's (or image's) business with `canEdit`; 403 otherwise. Every write is audited (entities `artwork`, `artwork_image`) and restorable via History.
+
+- `GET /api/admin/businesses/:slug/artworks?event_id=<id|none>&status=<status>&q=<text>` → `{ artworks: [ { ...all columns, images: [...], event_title } ] }` (includes unpublished). `q` matches title or artist (case-insensitive, LIKE with escaped wildcards).
+- `POST /api/admin/businesses/:slug/artworks` `{ title (required), artist, year, medium, dimensions, description, price, price_display, status, featured, published, event_id }` → `{ artwork }`. `event_id` must be an event of the same business or null. `price` ≥ 0 or null.
+- `GET /api/admin/artworks/:id` → `{ artwork }` with images.
+- `PATCH /api/admin/artworks/:id` (any subset) → `{ artwork }`. Audit summaries: "Marked 'X' sold", "Changed the price of 'X' to $1,800", "Edited 'X'".
+- `DELETE /api/admin/artworks/:id` → `{ ok: true }` (images rows go with it; files stay in R2 so History → Restore can bring them back).
+- `POST /api/admin/businesses/:slug/artworks/reorder` `{ ids: [...] }` → `{ ok: true }` (ids must all belong to the business).
+- `POST /api/admin/artworks/:id/images` `{ url, thumb_url, alt, width, height }` → `{ image }` appended last. `url`/`thumb_url` must be https URLs or same-site `/api/media/...` paths. Maximum 12 images per artwork (409 `too_many_images`).
+- `PATCH /api/admin/artwork-images/:id` `{ alt }` → `{ image }`; `DELETE /api/admin/artwork-images/:id`.
+- `POST /api/admin/artworks/:id/images/reorder` `{ ids: [...] }` → `{ ok: true }`.
+
+### Photo upload (shared by events, announcements, artworks)
+The admin shrinks photos **in the browser** before uploading: it draws the file onto a canvas and makes a full-size copy (longest side ≤ 2000 px) and a thumbnail (≤ 640 px), as WebP at quality 0.85 (JPEG 0.88 if the browser cannot encode WebP), keeping the orientation the photo was taken in (`createImageBitmap(file, { imageOrientation: 'from-image' })`). It uploads each with `POST /api/admin/media` (multipart `file`, `business`, and `variant` = `full` | `thumb`). The Worker stores them under `uploads/<slug>/<timestamp>-<name>-<variant>.<ext>` and answers `{ url, key, width, height }` (width/height echoed from optional form fields). HEIC files the browser cannot decode get a plain-language error ("This photo format isn't supported by this browser. On iPhone, set Camera → Formats → Most Compatible, or upload a JPEG.").
+
+### Notes where the contract left room (as built)
+- Public `price` is a number only when `price_text` shows an amount; under `on_request` or `hidden` it is `null`. A public image without `thumb_url` gets `url` as its thumbnail (the admin shape returns the stored value).
+- `counts.artworks_available` counts `status = 'available'`, published or not. The admin list is ordered `sort_order, id`; the public list puts featured pieces first.
+- Reorder may send a subset of ids (e.g. one exhibition's pieces); each gets its position. The history entry stores `{ order: { id: sort_order } }` with `entity_id` null and restores it exactly.
+- Photo links also accept absolute links to this Worker's own `/api/media/...` (its origin or `PUBLIC_BASE_URL`), which is what uploads return. Links are judged as a browser resolves them: a path must already be in plain form (no `..` segments, encoded or not), an absolute link must start with `https://` (or `http://` for this Worker's own media), and absolute links are stored normalized (`URL.href`).
+- The artwork form stores `artwork_status` as readable text ("Sold"). `artwork_title`, `artwork_artist` and `artwork_status` are only ever written by the Worker: for an `artwork_id` that is not a piece the website shows (or on any other form type) the visitor's values for them are dropped, `artwork_id` is kept, and the email keeps the generic subject. The admin inbox names the piece only when `form_type` is `artwork` and `artwork_status` is present. "Resend email" uses the artwork subject too while the piece is still public.
+- Uploads without `variant` keep the old key shape `<timestamp>-<name>.<ext>`; the extension always comes from the file type. A bad `variant`, `width` or `height` is a 400.
+- Before the migration has run, `GET /api/admin/businesses`, the public and signage bundles (even with `features.artworks` switched on: no `artworks` then) and artwork forms still work (no catalog, ordinary inquiry); the artwork routes answer 500 `database_missing`.
+- Deleting an event clears `event_id` on its artworks (they stay, "not in a show"). Its History entry keeps their ids as `before.artwork_ids`, and Restore links back those still not in another show.
+- Uploads sent with a `variant` write no History entry of their own (the artwork photo, or the saved event or announcement link, records the change); uploads without one still write "Uploaded photo …".

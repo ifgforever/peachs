@@ -1,0 +1,17 @@
+{
+  "name": "Rome's Joy Back Office",
+  "short_name": "Back Office",
+  "description": "Hours, menus, events, photos, TV screens and the Assistant for every Rome's Joy business.",
+  "id": "/admin/",
+  "start_url": "/admin/",
+  "scope": "/admin/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#FFF4E8",
+  "theme_color": "#2A160C",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

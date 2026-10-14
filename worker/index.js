@@ -1,147 +1,186 @@
-// Serves byte ranges of the site's video files.
-//
-// Cloudflare's static-asset server answers every request with the whole file, even when the browser asks for
-// part of it with a Range header. Chrome copes, but Safari (iPhone, iPad, Mac) won't play a video unless the
-// server returns 206 Partial Content for those requests. wrangler.jsonc runs this Worker first for video paths
-// only; every other file is served straight from static assets, as before.
-//
-// It also answers /loop, a short address to type with a TV remote (the Downloader app on Fire TV, a TV browser):
-// it saves the 1080p entrance loop as a file, to play offline in VLC. Any video URL with ?dl=1 does the same.
+// Rome's Joy admin: the Cloudflare Worker behind every site and the in-store screens.
+// It only handles /api/*, the video paths and the Claude app connector (/mcp and its OAuth endpoints; see
+// wrangler.jsonc); everything else is served from the static files.
+// The contract is docs/admin-api.md; the database is worker/schema.sql.
+import { createRouter } from './lib/router.js';
+import { ApiError, clientIp, json } from './lib/http.js';
+import { chicagoNow } from './lib/time.js';
+import * as auth from './lib/auth.js';
+import * as pub from './lib/public.js';
+import * as forms from './lib/forms.js';
+import * as businesses from './lib/admin-businesses.js';
+import * as events from './lib/admin-events.js';
+import * as artworks from './lib/admin-artworks.js';
+import * as menu from './lib/admin-menu.js';
+import * as announcements from './lib/admin-announcements.js';
+import * as inquiries from './lib/admin-inquiries.js';
+import * as history from './lib/admin-history.js';
+import * as users from './lib/admin-users.js';
+import * as settings from './lib/admin-settings.js';
+import { isVideoPath, video } from './lib/video.js';
+import * as changesets from './lib/changesets.js';
+import * as assistant from './lib/assistant.js';
+import * as mediaLibrary from './lib/media-library.js';
+import * as screens from './lib/screens.js';
+import * as mcp from './lib/mcp.js';
+
+const { admin } = auth;
+const router = createRouter();
+
+/* ---------- Public: no login, any origin, cached for a minute ---------- */
+router.get('/api/public/businesses', pub.businesses);
+router.get('/api/public/signage/:slug', pub.signage);
+router.get('/api/public/:slug', pub.bundle);
+router.post('/api/forms/:slug/:type', forms.submit);
+router.get('/api/media/*', settings.serve);
+
+/* ---------- Auth ---------- */
+router.get('/api/auth/status', auth.status);
+router.post('/api/auth/bootstrap', auth.bootstrap);
+router.post('/api/auth/login', auth.login);
+router.post('/api/auth/logout', auth.logout);
+router.get('/api/auth/me', auth.me);
+router.post('/api/auth/change-password', auth.changePassword);
+
+/* ---------- Admin: businesses and hours ---------- */
+router.get('/api/admin/businesses', admin(businesses.list));
+router.get('/api/admin/businesses/:slug', admin(businesses.get));
+router.patch('/api/admin/businesses/:slug', admin(businesses.patch));
+router.put('/api/admin/businesses/:slug/hours', admin(businesses.putHours));
+router.get('/api/admin/businesses/:slug/hours/exceptions', admin(businesses.listExceptions));
+router.post('/api/admin/businesses/:slug/hours/exceptions', admin(businesses.createException));
+router.delete('/api/admin/hours/exceptions/:id', admin(businesses.deleteException));
+
+/* ---------- Admin: events ---------- */
+router.get('/api/admin/businesses/:slug/events', admin(events.list));
+router.post('/api/admin/businesses/:slug/events', admin(events.create));
+router.patch('/api/admin/events/:id', admin(events.patch));
+router.delete('/api/admin/events/:id', admin(events.remove));
+
+/* ---------- Admin: artwork catalog (Blanc) ---------- */
+router.get('/api/admin/businesses/:slug/artworks', admin(artworks.list));
+router.post('/api/admin/businesses/:slug/artworks', admin(artworks.create));
+router.post('/api/admin/businesses/:slug/artworks/reorder', admin(artworks.reorder));
+router.get('/api/admin/artworks/:id', admin(artworks.get));
+router.patch('/api/admin/artworks/:id', admin(artworks.patch));
+router.delete('/api/admin/artworks/:id', admin(artworks.remove));
+router.post('/api/admin/artworks/:id/images', admin(artworks.addImage));
+router.post('/api/admin/artworks/:id/images/reorder', admin(artworks.reorderImages));
+router.patch('/api/admin/artwork-images/:id', admin(artworks.patchImage));
+router.delete('/api/admin/artwork-images/:id', admin(artworks.removeImage));
+
+/* ---------- Admin: menu ---------- */
+router.get('/api/admin/businesses/:slug/menu', admin(menu.list));
+router.post('/api/admin/businesses/:slug/menu/sections', admin(menu.createSection));
+router.post('/api/admin/businesses/:slug/menu/reorder', admin(menu.reorder));
+router.patch('/api/admin/menu/sections/:id', admin(menu.patchSection));
+router.delete('/api/admin/menu/sections/:id', admin(menu.deleteSection));
+router.post('/api/admin/menu/sections/:id/items', admin(menu.createItem));
+router.patch('/api/admin/menu/items/:id', admin(menu.patchItem));
+router.delete('/api/admin/menu/items/:id', admin(menu.deleteItem));
+
+/* ---------- Admin: announcements ---------- */
+router.get('/api/admin/businesses/:slug/announcements', admin(announcements.listBusiness));
+router.post('/api/admin/businesses/:slug/announcements', admin(announcements.createBusiness));
+router.get('/api/admin/announcements', admin(announcements.listFamily));
+router.post('/api/admin/announcements', admin(announcements.createFamily));
+router.patch('/api/admin/announcements/:id', admin(announcements.patch));
+router.delete('/api/admin/announcements/:id', admin(announcements.remove));
+
+/* ---------- Admin: inquiries ---------- */
+router.get('/api/admin/businesses/:slug/inquiries', admin(inquiries.list));
+router.get('/api/admin/inquiries/:id', admin(inquiries.get));
+router.patch('/api/admin/inquiries/:id', admin(inquiries.patch));
+router.post('/api/admin/inquiries/:id/resend', admin(inquiries.resend));
+
+/* ---------- Admin: history ---------- */
+router.get('/api/admin/businesses/:slug/history', admin(history.listBusiness));
+router.get('/api/admin/history', admin(history.listAll));
+router.get('/api/admin/history/:id', admin(history.get));
+router.post('/api/admin/history/:id/restore', admin(history.restore));
+
+/* ---------- Admin: users, settings, media ---------- */
+router.get('/api/admin/users', admin(users.list));
+router.post('/api/admin/users', admin(users.create));
+router.patch('/api/admin/users/:id', admin(users.patch));
+router.delete('/api/admin/users/:id', admin(users.remove));
+router.get('/api/admin/settings/:key', admin(settings.get));
+router.put('/api/admin/settings/:key', admin(settings.put));
+router.post('/api/admin/media', admin(settings.upload));
+
+/* ---------- Assistant, change sets, photo library, TV screens (docs/assistant-api.md) ---------- */
+changesets.register(router, admin);
+assistant.register(router, admin);
+mediaLibrary.register(router, admin);
+screens.register(router, admin);
+mcp.register(router, admin); // connected apps (the Claude app connector's grants)
+
+/* -------------------------------------------------------------------------
+   CORS: public and form routes allow any origin; admin routes echo the caller's origin.
+   Only bearer tokens are used (no cookies), so credentials are never allowed.
+   ------------------------------------------------------------------------- */
+const OPEN_PREFIXES = ['/api/public/', '/api/forms/', '/api/media/'];
+
+function corsHeaders(request, pathname) {
+  const headers = {
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': request.headers.get('Access-Control-Request-Headers') || 'Authorization, Content-Type',
+    'Access-Control-Max-Age': '86400',
+  };
+  const origin = request.headers.get('Origin');
+  if (OPEN_PREFIXES.some((p) => pathname.startsWith(p))) {
+    headers['Access-Control-Allow-Origin'] = '*';
+  } else if (origin) {
+    headers['Access-Control-Allow-Origin'] = origin;
+    headers.Vary = 'Origin';
+  }
+  return headers;
+}
+
+/** Turns anything thrown by a handler into { error, code } JSON. */
+function errorResponse(err) {
+  if (err instanceof ApiError) return json({ error: err.message, code: err.code }, err.status);
+  const message = String(err?.message || err);
+  if (/UNIQUE constraint/i.test(message)) return json({ error: 'That already exists.', code: 'conflict' }, 409);
+  if (/FOREIGN KEY constraint/i.test(message)) return json({ error: 'That refers to something that no longer exists.', code: 'conflict' }, 409);
+  if (/no such table/i.test(message)) return json({ error: 'The database is not set up yet. Run worker/schema.sql.', code: 'database_missing' }, 500);
+  console.error('Unhandled error:', err);
+  return json({ error: 'Something went wrong on our side.', code: 'internal' }, 500);
+}
+
+async function handle(request, env, executionCtx, url) {
+  const match = router.match(request.method === 'HEAD' ? 'GET' : request.method, url.pathname);
+  if (!match) throw new ApiError(404, 'not_found', 'No such API route.');
+  if (match.methodMismatch) throw new ApiError(405, 'method_not_allowed', `${request.method} is not allowed here.`);
+  const ctx = {
+    request, env, url, params: match.params, ip: clientIp(request), now: chicagoNow(), user: null,
+    waitUntil: (promise) => executionCtx?.waitUntil?.(promise),
+  };
+  const result = await match.handler(ctx);
+  return result instanceof Response ? result : json(result);
+}
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, env, executionCtx) {
     const url = new URL(request.url);
-    if (url.pathname === '/loop') {
-      url.pathname = '/signage/peachs-entrance-loop-tv.mp4';
-      url.search = '?dl=1';
-      request = new Request(url, request);
+    if (mcp.handles(url.pathname)) return mcp.serve(request, env, executionCtx); // Claude app connector (worker/lib/mcp.js)
+    if (isVideoPath(url.pathname)) return video.fetch(request, env, executionCtx);
+    if (!url.pathname.startsWith('/api/')) {
+      return env.ASSETS ? env.ASSETS.fetch(request) : new Response('Not found', { status: 404 });
     }
-    const res = await serve(request, env, ctx);
-    if (!url.searchParams.has('dl') || res.status >= 300) return res;
-    const out = new Response(res.body, res);
-    out.headers.set('Content-Disposition', `attachment; filename="${url.pathname.split('/').pop()}"`);
+    const cors = corsHeaders(request, url.pathname);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+
+    let response;
+    try {
+      response = await handle(request, env, executionCtx, url);
+    } catch (err) {
+      response = errorResponse(err);
+    }
+    const out = new Response(response.body, response);
+    for (const [k, v] of Object.entries(cors)) out.headers.set(k, v);
+    if (!out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'no-store');
+    out.headers.set('X-Content-Type-Options', 'nosniff');
     return out;
   },
 };
-
-// Serves a video file, answering a Range header itself (see the top of this file).
-async function serve(request, env, ctx) {
-  const range = request.headers.get('Range');
-  if (!range || (request.method !== 'GET' && request.method !== 'HEAD')) {
-    return withAcceptRanges(await env.ASSETS.fetch(request));
-  }
-
-  // Ask for the whole file, then cut out the requested bytes.
-  const headers = new Headers(request.headers);
-  headers.delete('Range');
-  headers.delete('If-Range');
-  const full = await env.ASSETS.fetch(new Request(request.url, { method: 'GET', headers }));
-  if (full.status !== 200) return full;
-  const size = await sizeOf(full, () => env.ASSETS.fetch(new Request(request.url)));
-
-  // If-Range: only send part of the file if the browser's copy is still current.
-  const ifRange = request.headers.get('If-Range');
-  if (ifRange && ifRange !== full.headers.get('ETag')) return withAcceptRanges(full, request.method);
-
-  const r = parseRange(range, size);
-  if (r === null) return withAcceptRanges(full, request.method);   // malformed or multi-range: ignore it
-  if (r === 'unsatisfiable') {
-    full.body?.cancel();
-    return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes' } });
-  }
-
-  const out = new Headers(full.headers);
-  out.set('Content-Range', `bytes ${r.start}-${r.end}/${size}`);
-  out.set('Accept-Ranges', 'bytes');
-  const length = r.end - r.start + 1;
-  if (request.method === 'HEAD') {
-    full.body?.cancel();
-    out.set('Content-Length', String(length));
-    return new Response(null, { status: 206, headers: out });
-  }
-  const body = new FixedLengthStream(length);
-  ctx.waitUntil(copySlice(full.body, body.writable, r.start, r.end, size));
-  return new Response(body.readable, { status: 206, headers: out });
-}
-
-// Streams are read in 1 MiB blocks. A plain reader.read() returns 4 KiB at a time, and looping over a 25 MB video
-// that way costs far more CPU than a Worker request is allowed.
-const BLOCK = 1 << 20;
-
-// The asset response inside a Worker carries no Content-Length, so measure the file once by reading a copy to the
-// end, and remember the size per ETag (the ETag is a hash of the file, so a changed file is measured again).
-const sizes = new Map();
-async function sizeOf(res, fetchCopy) {
-  const len = Number(res.headers.get('Content-Length') ?? NaN);
-  if (Number.isSafeInteger(len)) return len;
-  const etag = res.headers.get('ETag');
-  if (etag && sizes.has(etag)) return sizes.get(etag);
-  const reader = (await fetchCopy()).body.getReader({ mode: 'byob' });
-  let n = 0;
-  let view = new Uint8Array(BLOCK);
-  for (;;) {
-    const { done, value } = await reader.readAtLeast(BLOCK, view);
-    n += value?.byteLength ?? 0;
-    if (done) break;
-    view = new Uint8Array(value.buffer);   // reuse the block; nothing else holds it
-  }
-  if (etag) sizes.set(etag, n);
-  return n;
-}
-
-// Parses a single "bytes=" range (RFC 9110 §14.1.2). Returns {start, end} (inclusive), 'unsatisfiable',
-// or null when the header should be ignored and the whole file sent.
-function parseRange(header, size) {
-  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!m || (m[1] === '' && m[2] === '')) return null;
-  if (m[1] === '') {                                  // suffix range: the last N bytes
-    const n = Number(m[2]);
-    if (n === 0 || size === 0) return 'unsatisfiable';
-    return { start: Math.max(size - n, 0), end: size - 1 };
-  }
-  const start = Number(m[1]);
-  const end = m[2] === '' ? size - 1 : Math.min(Number(m[2]), size - 1);
-  if (m[2] !== '' && Number(m[2]) < start) return null;
-  if (start >= size) return 'unsatisfiable';
-  return { start, end };
-}
-
-// Streams bytes start..end (inclusive) of a stream into a writable. JavaScript only handles the blocks before
-// `start` (to skip them) and the block where the range begins. When the range runs to the end of the file, as it
-// does whenever a browser plays or seeks, the runtime pipes the rest without JavaScript in the loop. Only a range
-// that stops short of the end (Safari's 2-byte probe, for one) is finished block by block.
-async function copySlice(source, writable, start, end, size) {
-  const toEnd = end === size - 1;
-  if (start === 0 && toEnd) return source.pipeTo(writable).catch(() => {});
-  const reader = source.getReader({ mode: 'byob' });
-  const writer = writable.getWriter();
-  let pos = 0;
-  try {
-    while (pos <= end) {
-      // A fresh block each time: a block handed to writer.write() may still be queued when the next read starts.
-      const { done, value } = await reader.readAtLeast(BLOCK, new Uint8Array(BLOCK));
-      const got = value?.byteLength ?? 0;
-      const a = Math.max(start - pos, 0);
-      const b = Math.min(end + 1 - pos, got);
-      if (a < b) await writer.write(value.subarray(a, b));
-      pos += got;
-      if (toEnd && pos > start && !done) {
-        reader.releaseLock();
-        writer.releaseLock();
-        return source.pipeTo(writable).catch(() => {});
-      }
-      if (done) break;
-    }
-    await writer.close();
-  } catch (err) {
-    await writer.abort(err).catch(() => {});
-  }
-  reader.cancel().catch(() => {});
-}
-
-function withAcceptRanges(res, method) {
-  if (res.status !== 200) return res;
-  const out = new Response(method === 'HEAD' ? null : res.body, res);
-  out.headers.set('Accept-Ranges', 'bytes');
-  return out;
-}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Peach's live screen</title>
+<!--
+  Live in-store screen, 1920x1080, scaled to fit whatever TV it lands on.
+  Reads GET {api}/api/public/signage/{business} every 5 minutes and rotates through
+  welcome / notice / announcements / featured dishes / menu board / catering / events / closing.
+  Businesses with the artwork catalog (Blanc) also get an exhibition title card and one scene per artwork.
+  Query params: ?business=peachs (default) · ?api=https://worker.example.com (default: same origin)
+  Press "d" for the debug overlay. Setup for the TVs is in signage/README.md (Option B).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,opsz,wght@0,9..40,400..700;1,9..40,400&amp;family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..600&amp;family=Instrument+Serif:ital@0;1&amp;display=swap">
+<link rel="stylesheet" href="live.css">
+</head>
+<body>
+<div class="stage" id="stage">
+  <!-- Scenes are built here by live.js; the one with .is-on is visible, the previous one fades out under it. -->
+  <div class="scenes" id="scenes" aria-live="off"></div>
+
+  <!-- Calm brand screen: what the TV shows before the first bundle arrives, or with no cache and no network.
+       Peach's details are written in so the screen is never empty even if the script fails to load. -->
+  <section class="scene brand is-on" id="brand" data-brand>
+    <span class="wordmark" role="img" aria-label="Peach's" data-brand-wordmark></span>
+    <h1 class="brand__name" data-brand-name>Peach's on 47th</h1>
+    <p class="brand__address" data-brand-address>4652 S. King Drive, Chicago</p>
+  </section>
+
+  <!-- Corner: clock and freshness. Muted so it reads as furniture, not content. -->
+  <div class="hud" aria-hidden="true">
+    <span class="hud__status" data-hud-status hidden>offline</span>
+    <span class="hud__updated" data-hud-updated></span>
+    <span class="hud__clock" data-hud-clock></span>
+  </div>
+
+  <!-- Debug overlay, toggled with the "d" key. -->
+  <section class="debug" id="debug" hidden>
+    <h2 class="debug__title">Live screen debug</h2>
+    <dl class="debug__list" data-debug-list></dl>
+    <h3 class="debug__sub">Errors (newest first)</h3>
+    <ol class="debug__errors" data-debug-errors></ol>
+    <p class="debug__hint">Press d to hide · n for the next scene · r to refetch</p>
+  </section>
+</div>
+<script src="live.js" defer></script>
+</body>
+</html>

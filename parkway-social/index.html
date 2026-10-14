@@ -24,6 +24,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&amp;family=Jost:wght@400;500;600;700&amp;display=swap">
   <link rel="stylesheet" href="css/styles.css">
+  <!-- Live content from the admin API: hours, contact details, notice. Empty = same origin; the static text is the fallback. -->
+  <meta name="live-api" content="">
+  <script type="module" src="../assets/js/live.js" data-business="parkway-social"></script>
   <link rel="preload" as="image" href="img/bar.webp" type="image/webp">
 
   <script type="application/ld+json">
@@ -131,12 +134,17 @@
           <li><a href="#events">Events</a></li>
           <li><a href="#gallery">Gallery</a></li>
           <li><a href="#visit">Visit</a></li>
-          <li class="nav__mobile-extra"><a class="btn btn--primary" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+          <li class="nav__mobile-extra"><a class="btn btn--primary" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a></li>
         </ul>
       </nav>
-      <a class="btn btn--primary btn--sm header__cta" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
+      <a class="btn btn--primary btn--sm header__cta" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
     </div>
   </header>
+
+  <!-- Notice banner: text from the admin, hidden until there is one -->
+  <div class="notice" role="region" aria-label="Notice" data-live-notice hidden>
+    <p class="wrap notice__inner"><strong>Notice</strong> <span data-field="text"></span></p>
+  </div>
 
   <main id="main" tabindex="-1">
 
@@ -148,7 +156,7 @@
           <h1 class="hero__title" id="hero-title">Work, gather, <em>thrive</em> in the historic Parkway&nbsp;Ballroom.</h1>
           <p class="hero__lede">Parkway Social is where culture, connection, and creativity collide: a boutique coworking lounge with deep roots and a bold new look, made for modern professionals and tastemakers.</p>
           <div class="hero__actions">
-            <a class="btn btn--brass" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Book a tour<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span></a>
+            <a class="btn btn--brass" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Book a tour<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg><span class="visually-hidden"> (opens in a new tab)</span></a>
             <a class="btn btn--ghost-light" href="#events">Host an event</a>
           </div>
           <p class="hero__daypass">Just need a desk today? <a href="https://parkwaysocial.coworksapp.com/day-pass-signup/374?plan=10957" target="_blank" rel="noopener">Grab a $25 day pass<span class="visually-hidden"> (opens in a new tab)</span></a></p>
@@ -166,7 +174,7 @@
           <div class="facts__item"><dt>Membership</dt><dd>$150<span>/month</span></dd></div>
           <div class="facts__item"><dt>Day pass</dt><dd>$25<span>/day</span></dd></div>
           <div class="facts__item"><dt>Parlor Room</dt><dd>~5,000<span> sq ft</span></dd></div>
-          <div class="facts__item"><dt>Hours</dt><dd>8:30–5<span> Mon–Fri</span></dd></div>
+          <div class="facts__item"><dt>Hours</dt><dd data-live="hours-summary">8:30–5<span> Mon–Fri</span></dd></div>
         </dl>
       </div>
     </section>
@@ -342,7 +350,7 @@
               <tr><th scope="row">Writer’s Room</th><td>Seats 8</td><td>Board meetings, intimate dinners</td></tr>
             </tbody>
           </table>
-          <p class="events__note">Members save $1,000 on event rentals ($3,000 minimum). Prefer to talk it through? Call <a href="tel:+17733734320">773.373.4320</a>.</p>
+          <p class="events__note">Members save $1,000 on event rentals ($3,000 minimum). Prefer to talk it through? Call <a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a>.</p>
         </div>
 
         <form class="inquiry" id="inquiry" novalidate aria-labelledby="inquiry-title">
@@ -389,9 +397,13 @@
             <label for="f-msg">Tell us about it *</label>
             <textarea id="f-msg" name="message" rows="4" required></textarea>
           </div>
+          <!-- Honeypot: people never see this; bots that fill it are dropped by the API -->
+          <label class="visually-hidden" for="f-website">Leave this field empty</label>
+          <input class="visually-hidden" id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
           <p class="inquiry__error" role="alert" data-form-error hidden></p>
+          <p class="inquiry__status" role="status" data-form-status hidden></p>
           <button class="btn btn--brass btn--block" type="submit">Send inquiry<svg class="icon" aria-hidden="true"><use href="#i-arrow"/></svg></button>
-          <p class="inquiry__fine">Opens your email app addressed to <a href="mailto:parkwaysocial@romesjoy.com">parkwaysocial@romesjoy.com</a>.</p>
+          <p class="inquiry__fine">We reply within one business day. If it can’t be sent from here, your email app opens addressed to <a href="mailto:parkwaysocial@romesjoy.com" data-live="email">parkwaysocial@romesjoy.com</a>.</p>
         </form>
       </div>
     </section>
@@ -435,15 +447,15 @@
           <p class="eyebrow">Visit</p>
           <h2 class="section-title" id="visit-title">Find us on King Drive.</h2>
           <ul class="contact" role="list">
-            <li><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><address>4455 S. King Drive<br>Chicago, IL 60653</address></li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>Monday – Friday<br>8:30 am – 5 pm</span></li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg><a href="tel:+17733734320">773.373.4320</a></li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg><a href="mailto:parkwaysocial@romesjoy.com">parkwaysocial@romesjoy.com</a></li>
-            <li><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg><a href="https://www.instagram.com/parkway.social/" target="_blank" rel="noopener">@parkway.social<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-pin"/></svg><address><span data-live="address-line1">4455 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></address></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span><span data-live="hours-summary">Monday – Friday · 8:30 am – 5 pm</span><span class="visit__hours-note" data-live="hours-note" hidden></span></span></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg><a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-mail"/></svg><a href="mailto:parkwaysocial@romesjoy.com" data-live="email">parkwaysocial@romesjoy.com</a></li>
+            <li><svg class="icon" aria-hidden="true"><use href="#i-instagram"/></svg><a href="https://www.instagram.com/parkway.social/" target="_blank" rel="noopener" data-live="instagram-url">@parkway.social<span class="visually-hidden"> (opens in a new tab)</span></a></li>
           </ul>
           <div class="visit__actions">
-            <a class="btn btn--primary" href="https://www.google.com/maps/search/?api=1&amp;query=Parkway+Social+4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener">Get directions<span class="visually-hidden"> (opens Google Maps in a new tab)</span></a>
-            <a class="btn btn--ghost" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
+            <a class="btn btn--primary" href="https://www.google.com/maps/search/?api=1&amp;query=Parkway+Social+4455+S+King+Drive+Chicago+IL+60653" target="_blank" rel="noopener" data-live="map-url">Get directions<span class="visually-hidden"> (opens Google Maps in a new tab)</span></a>
+            <a class="btn btn--ghost" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
           </div>
           <p class="visit__note">Member parking is included. Inside the historic Parkway Ballroom building in Bronzeville.</p>
         </div>
@@ -458,7 +470,7 @@
       <div class="wrap cta-band__inner">
         <h2 class="cta-band__title" id="cta-title">Come see it for yourself.</h2>
         <div class="cta-band__actions">
-          <a class="btn btn--brass" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
+          <a class="btn btn--brass" href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Book a tour<span class="visually-hidden"> (opens in a new tab)</span></a>
           <a class="btn btn--ghost-light" href="https://parkwaysocial.coworksapp.com/membership-request/374" target="_blank" rel="noopener">Become a member<span class="visually-hidden"> (opens in a new tab)</span></a>
           <a class="btn btn--ghost-light" href="#events">Plan an event</a>
         </div>
@@ -489,16 +501,16 @@
         <div>
           <h2 class="footer__heading">Get started</h2>
           <ul role="list">
-            <li><a href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener">Request a tour<span class="visually-hidden"> (opens in a new tab)</span></a></li>
+            <li><a href="https://parkwaysocial.coworksapp.com/tour-request/374" target="_blank" rel="noopener" data-live="book-url">Request a tour<span class="visually-hidden"> (opens in a new tab)</span></a></li>
             <li><a href="https://parkwaysocial.coworksapp.com/membership-request/374" target="_blank" rel="noopener">Membership inquiry<span class="visually-hidden"> (opens in a new tab)</span></a></li>
             <li><a href="https://parkwaysocial.coworksapp.com/day-pass-signup/374?plan=10957" target="_blank" rel="noopener">Purchase a day pass<span class="visually-hidden"> (opens in a new tab)</span></a></li>
           </ul>
         </div>
         <div>
           <h2 class="footer__heading">Visit</h2>
-          <p>4455 S. King Drive<br>Chicago, IL 60653</p>
-          <p>Mon – Fri, 8:30 am – 5 pm</p>
-          <p><a href="tel:+17733734320">773.373.4320</a></p>
+          <p><span data-live="address-line1">4455 S. King Drive</span><br><span data-live="address-city">Chicago, IL 60653</span></p>
+          <p data-live="hours-summary">Mon – Fri, 8:30 am – 5 pm</p>
+          <p><a href="tel:+17733734320" data-live="phone phone-href">773.373.4320</a></p>
         </div>
       </div>
       <div class="footer__bottom">
@@ -508,6 +520,6 @@
     </div>
   </footer>
 
-  <script src="js/main.js" defer></script>
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

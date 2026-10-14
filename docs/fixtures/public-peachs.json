@@ -1,0 +1,63 @@
+{
+  "generated_at": "2026-10-13T15:00:00Z",
+  "today": { "date": "2026-10-13", "weekday": 2 },
+  "business": {
+    "slug": "peachs",
+    "name": "Peach's on 47th",
+    "short_name": "Peach's",
+    "tagline": "Southern breakfast and brunch in Bronzeville",
+    "description": "Southern breakfast and brunch at 4652 S. King Drive in Chicago's Bronzeville.",
+    "address": { "line1": "4652 S. King Drive", "line2": null, "city": "Chicago", "state": "IL", "zip": "60653", "formatted": "4652 S. King Drive, Chicago, IL 60653" },
+    "phone": "773.966.5801",
+    "phone_href": "tel:+17739665801",
+    "public_email": "ordering@romesjoy.com",
+    "website_url": "https://peachson47th.com/",
+    "instagram_url": "https://www.instagram.com/peachson47th/",
+    "facebook_url": "https://www.facebook.com/Peachson47th/",
+    "map_url": "https://maps.google.com/?q=4652+S+King+Dr+Chicago+IL+60653",
+    "order_url": "https://order.toasttab.com/online/peachs-restaurant-king-dr",
+    "book_url": null,
+    "hours_note": null,
+    "notice": { "text": "FIXTURE NOTICE: Closed Thursday, November 26 for Thanksgiving.", "until": "2026-11-26" }
+  },
+  "hours": [
+    { "weekday": 1, "label": "Monday",    "short": "Mon", "closed": true,  "open_min": null, "close_min": null, "open": null,   "close": null,   "text": "Closed" },
+    { "weekday": 2, "label": "Tuesday",   "short": "Tue", "closed": true,  "open_min": null, "close_min": null, "open": null,   "close": null,   "text": "Closed" },
+    { "weekday": 3, "label": "Wednesday", "short": "Wed", "closed": false, "open_min": 480,  "close_min": 840,  "open": "8 am", "close": "2 pm", "text": "8 am – 2 pm" },
+    { "weekday": 4, "label": "Thursday",  "short": "Thu", "closed": false, "open_min": 480,  "close_min": 840,  "open": "8 am", "close": "2 pm", "text": "8 am – 2 pm" },
+    { "weekday": 5, "label": "Friday",    "short": "Fri", "closed": false, "open_min": 480,  "close_min": 840,  "open": "8 am", "close": "2 pm", "text": "8 am – 2 pm" },
+    { "weekday": 6, "label": "Saturday",  "short": "Sat", "closed": false, "open_min": 480,  "close_min": 900,  "open": "8 am", "close": "3 pm", "text": "8 am – 3 pm" },
+    { "weekday": 0, "label": "Sunday",    "short": "Sun", "closed": false, "open_min": 480,  "close_min": 840,  "open": "8 am", "close": "2 pm", "text": "8 am – 2 pm" }
+  ],
+  "hours_summary": "Wed – Fri & Sun · 8 am – 2 pm · Sat · 8 am – 3 pm",
+  "exceptions": [
+    { "date": "2026-11-26", "closed": true, "open": null, "close": null, "label": "Thanksgiving" }
+  ],
+  "open_now": { "open": false, "text": "Closed · opens Wed 8 am", "checked_at": "2026-10-13T15:00:00Z" },
+  "announcements": [
+    { "id": 1, "title": "Chef Rome's team will lead food service at the Obama Presidential Center", "body": "Rome's Joy Companies, with Bon Appétit, has been chosen to run dining at the Obama Presidential Center.", "link_url": "https://romesjoy.com/news/", "link_label": "Read the news", "image_url": null, "starts_at": "2026-02-10", "ends_at": null },
+    { "id": 2, "title": "FIXTURE: Saturday hours now until 3 pm", "body": "We're open an extra hour on Saturdays.", "link_url": null, "link_label": null, "image_url": null, "starts_at": "2026-10-01", "ends_at": "2026-12-31" }
+  ],
+  "events": {
+    "current": [],
+    "upcoming": [
+      { "id": 11, "kind": "event", "title": "FIXTURE: Holiday brunch tasting", "subtitle": null, "description": "A test event used only in local development.", "start_date": "2026-12-06", "end_date": null, "start_time": "10:00", "end_time": "13:00", "date_text": "Dec 6, 2026", "time_text": "10 am – 1 pm", "location": "Peach's on 47th", "link_url": "https://order.toasttab.com/online/peachs-restaurant-king-dr", "link_label": "Reserve", "image_url": null, "featured": true, "status": "upcoming" }
+    ],
+    "past": [
+      { "id": 10, "kind": "event", "title": "FIXTURE: Juneteenth block party", "subtitle": null, "description": "A test event used only in local development.", "start_date": "2026-06-19", "end_date": null, "start_time": "11:00", "end_time": "15:00", "date_text": "Jun 19, 2026", "time_text": "11 am – 3 pm", "location": "47th Street", "link_url": null, "link_label": null, "image_url": null, "featured": false, "status": "past" }
+    ]
+  },
+  "menu": {
+    "sections": [
+      { "id": 1, "title": "Peach's Plates", "short_title": "Plates", "description": null, "items": [
+        { "id": 10, "name": "Fried Catfish, Greens & Grits", "portion": null, "price": 23, "prices": null, "description": "Cornmeal & flour fried catfish with grits & collard greens", "tags": [], "allergens": [], "featured": false },
+        { "id": 11, "name": "Breakfast Bowl", "portion": null, "price": 17, "prices": null, "description": "Potatoes, green peppers, onions, mushrooms, tomatoes, cheddar cheese & a scallion garnish with your choice of egg", "tags": ["GF", "V"], "allergens": [], "featured": false },
+        { "id": 12, "name": "Hangover Plate", "portion": null, "price": 20, "prices": null, "description": "Fried chicken thighs tossed in our signature sweet & spicy hangover sauce, served with (2) eggs any style & a cup of grits.", "tags": [], "allergens": [], "featured": true }
+      ] },
+      { "id": 2, "title": "Pancakes & French Toast", "short_title": "Pancakes", "description": null, "items": [
+        { "id": 20, "name": "7-Up Pancakes", "portion": null, "price": null, "prices": [ { "label": "Short stack", "value": 9 }, { "label": "Full stack", "value": 12 } ], "description": "Our signature light, fluffy pancakes", "tags": ["V"], "allergens": ["Dairy", "Wheat", "Egg"], "featured": true }
+      ] }
+    ]
+  },
+  "dietary": { "GF": "Gluten free", "V": "Vegetarian", "DF": "Dairy free" }
+}

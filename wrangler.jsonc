@@ -1,13 +1,33 @@
-// Cloudflare Workers Builds config: serve this repo as a static site.
-// worker/index.js runs first only for the videos, to answer byte-range requests (Safari needs them to play video),
-// and for /loop, a short download address for TV remotes.
+// Cloudflare Workers config: one Worker serves the static sites and the /api/* admin backend.
+// Setup steps are in admin/README.md.
 {
   "name": "peachs",
-  "compatibility_date": "2026-10-06",
   "main": "worker/index.js",
+  "compatibility_date": "2026-10-06",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": ".",
     "binding": "ASSETS",
-    "run_worker_first": ["/signage/*.mp4", "/docs/demo/*.mp4", "/loop"]
-  }
+    // Only these paths run the Worker; everything else is served straight from the files.
+    // /api/* is the admin backend; the .mp4 paths and /loop get byte-range video serving (worker/lib/video.js);
+    // /mcp, /authorize, /token, /register and /.well-known/* are the Claude app connector (worker/lib/mcp.js).
+    "run_worker_first": ["/api/*", "/signage/*.mp4", "/docs/demo/*.mp4", "/loop", "/mcp", "/authorize", "/token", "/register", "/.well-known/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "romesjoy-admin",
+      "database_id": "3545d6c2-619a-497b-8f15-1c30b71e6014"
+    }
+  ],
+  // Photo uploads (event photos, artwork images). Bucket created 2026-10-13 in the same account.
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "romesjoy-media" }],
+  // Sign-in for the Claude app connector (OAuth clients, grants, tokens). Namespace created 2026-10-14.
+  "kv_namespaces": [{ "binding": "OAUTH_KV", "id": "14753048e70b4aaf99fed941817546da" }],
+  "vars": {
+    "PUBLIC_BASE_URL": "",
+    // Where the Claude app connector's sign-in may send its code (worker/lib/mcp.js): Claude's own sites, comma-separated.
+    "OAUTH_REDIRECT_HOSTS": "claude.ai,claude.com"
+  },
+  "observability": { "enabled": true }
 }

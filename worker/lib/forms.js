@@ -1,0 +1,112 @@
+// Rome's Joy admin Worker: website form submissions → inquiries table → email.
+import { bad, json, notFound, readBody, tooMany } from './http.js';
+import { first, insertRow, run } from './db.js';
+import { isEmail } from './validate.js';
+import { deliverInquiry } from './email.js';
+import { ARTWORK_STATUS_TEXT, PUBLIC_ARTWORK_SQL } from './public.js';
+
+const MAX_FIELDS = 20;
+const MAX_FIELD_LENGTH = 5000;
+const RATE_LIMIT = { count: 10, minutes: 10 };
+const KNOWN = new Set(['name', 'email', 'phone', 'message', 'website', 'source_url']);
+
+/**
+ * The absolute URL for a `_redirect` value, or null unless it is a path on this site. The value has to
+ * start with a single "/" and contain no backslash (URL parsing turns "/\evil.com" into another host),
+ * and the resolved origin still has to be ours.
+ */
+function sameSiteRedirect(value, base) {
+  if (typeof value !== 'string' || !/^\/(?![\/\\])/.test(value) || value.includes('\\')) return null;
+  let target;
+  try { target = new URL(value, base); } catch { return null; }
+  return target.origin === base.origin ? target.toString() : null;
+}
+
+/** The piece of this business that an "artwork" form names in artwork_id, if the website shows it (see public.js), or null. */
+export async function findArtwork(env, slug, artworkId) {
+  if (!/^\d{1,15}$/.test(artworkId || '')) return null;
+  try {
+    return await first(env, `SELECT a.id, a.title, a.artist, a.status FROM artworks a LEFT JOIN events e ON e.id = a.event_id
+      WHERE a.id = ? AND a.business_slug = ? AND ${PUBLIC_ARTWORK_SQL}`, [Number(artworkId), slug]);
+  } catch (err) {
+    if (/no such table/i.test(String(err?.message))) return null; // before the artworks migration: an ordinary form
+    throw err;
+  }
+}
+
+/**
+ * The fields to store. Title, artist and status of a piece are only ever the Worker's: for a piece the website shows
+ * they come from the catalog (first), and otherwise (any other id, any other form type) whatever the page sent for
+ * them is dropped, so a visitor cannot put words in the inbox that read like catalog facts.
+ */
+function storedFields(extra, artwork) {
+  const { artwork_id, artwork_title, artwork_artist, artwork_status, ...rest } = extra;
+  if (!artwork) return artwork_id ? { artwork_id, ...rest } : rest;
+  return {
+    artwork_id: String(artwork.id),
+    artwork_title: artwork.title,
+    ...(artwork.artist ? { artwork_artist: artwork.artist } : {}),
+    artwork_status: ARTWORK_STATUS_TEXT[artwork.status] || artwork.status,
+    ...rest,
+  };
+}
+
+const asText = (v) => (v == null ? '' : typeof v === 'string' ? v : typeof v === 'object' ? JSON.stringify(v) : String(v)).trim();
+
+/** POST /api/forms/:slug/:type — accepts JSON or a plain HTML form post. */
+export async function submit(ctx) {
+  const { slug, type } = ctx.params;
+  const contentType = (ctx.request.headers.get('Content-Type') || '').toLowerCase();
+  const isForm = contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data');
+  const body = await readBody(ctx.request);
+
+  if (!/^[a-z][a-z0-9_-]{0,31}$/.test(type)) throw bad('Unknown form type.', 'unknown_form');
+  const keys = Object.keys(body);
+  if (keys.length > MAX_FIELDS) throw bad(`Forms may send at most ${MAX_FIELDS} fields.`, 'too_many_fields');
+  const values = {};
+  for (const key of keys) {
+    const text = asText(body[key]);
+    if (text.length > MAX_FIELD_LENGTH) throw bad(`The "${key}" field is too long (max ${MAX_FIELD_LENGTH} characters).`, 'field_too_long');
+    values[key] = text;
+  }
+
+  // A plain <form> can ask to land back on a same-site page.
+  const redirect = isForm ? sameSiteRedirect(values._redirect, ctx.url) : null;
+  const finish = (payload) => (redirect ? new Response(null, { status: 303, headers: { Location: redirect } }) : json(payload));
+
+  // Honeypot: bots fill the hidden "website" field. Pretend it worked.
+  if (values.website) return finish({ ok: true });
+
+  const business = await first(ctx.env, 'SELECT * FROM businesses WHERE slug = ?', [slug]);
+  if (!business) throw notFound('No such business.', 'unknown_business');
+
+  const email = values.email ? values.email.toLowerCase() : null;
+  if (!values.message && !email) throw bad('Please include a message or an email address.', 'missing_fields');
+  if (email && !isEmail(email)) throw bad('That email address does not look right.', 'invalid_email');
+
+  // The visitor's IP is only kept for this rate limit, so it is dropped after a day.
+  await run(ctx.env, "UPDATE inquiries SET ip = NULL WHERE ip IS NOT NULL AND created_at < datetime('now', '-1 day')");
+  const recent = await first(ctx.env, `SELECT COUNT(*) AS n FROM inquiries WHERE ip = ? AND created_at > datetime('now', '-${RATE_LIMIT.minutes} minutes')`, [ctx.ip]);
+  if (recent.n >= RATE_LIMIT.count) throw tooMany('Too many submissions. Please try again in a few minutes.');
+
+  const extra = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (KNOWN.has(key) || key.startsWith('_') || !value) continue;
+    extra[key] = value;
+  }
+  const artwork = type === 'artwork' ? await findArtwork(ctx.env, slug, extra.artwork_id) : null;
+  const id = await insertRow(ctx.env, 'inquiries', {
+    business_slug: slug,
+    form_type: type,
+    name: values.name || null,
+    email,
+    phone: values.phone || null,
+    message: values.message || null,
+    fields_json: JSON.stringify(storedFields(extra, artwork)),
+    source_url: values.source_url || ctx.request.headers.get('Referer') || null,
+    ip: ctx.ip,
+  });
+  const inquiry = await first(ctx.env, 'SELECT * FROM inquiries WHERE id = ?', [id]);
+  const result = await deliverInquiry(ctx.env, business, inquiry, artwork);
+  return finish({ ok: true, id, emailed: result.sent });
+}

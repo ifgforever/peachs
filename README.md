@@ -90,13 +90,20 @@ assets/js/menu-data.js   menu content (edit prices here)
 assets/js/hero.js        the 3D pancake-stack hero (Three.js r169 from a CDN)
 assets/img/              food photos and brand marks
 menus/                   original menu PDF and images
-docs/                    content inventory and source notes
-signage/                 videos for the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, and the entrance screen (see signage/README.md)
+docs/                    content inventory, source notes and the admin API contract (docs/admin-api.md)
+romesjoy/ catering/ parkway-social/ mise-en-place/ blanc/ rjc-sausage/
+                         the other six concept sites (each with its own css/ and js/)
+assets/js/live.js        shared module every site uses to pull hours, notices, menus and events from the API
+admin/                   the staff back office (admin/index.html, admin.js, admin.css), see admin/README.md
+signage/                 the restaurant's TVs: the Peach's loop, the Rome's Joy family loop, the entrance screen,
+                         and the live screen signage/live.html (see signage/README.md)
 playlist/                the Parkway Ballroom playlist page
 merch/                   Peach's merch page and the rendered designs (img/)
 screen-network/          the free-TV flyer (PDF) and its preview image
-worker/index.js          answers byte-range requests for the .mp4 files so they play in Safari (Cloudflare's static
-                         assets always send the whole file); runs only for video paths, see wrangler.jsonc
+tv/                      the TV player page for Fire TV and Android boxes
+worker/                  the Cloudflare Worker: the /api/* admin backend (index.js, lib/), the database schema and
+                         seed, and byte-range video serving for the .mp4 files so they play in Safari (lib/video.js)
+wrangler.jsonc           Cloudflare config: one Worker serves the sites as static files, /api/*, the videos and /loop
 ```
 
-No build step and no frameworks; the only server code is the small video Worker. To change a price, edit `assets/js/menu-data.js`.
+No build step and no frameworks. Prices, hours, notices and events are edited in the back office (`admin/README.md`); `assets/js/menu-data.js` is only the fallback the Peach's page shows when the API is unreachable.

@@ -203,6 +203,8 @@ main:focus { outline: none; }
 .facts dt { font-size: .78rem; letter-spacing: .14em; text-transform: uppercase; color: var(--brass); font-weight: 600; }
 .facts dd { font-family: var(--f-display); font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.4rem); line-height: 1.2; margin-top: 4px; }
 .facts dd span { font-family: var(--f-sans); font-size: .95rem; color: rgba(244, 238, 227, .8); }
+/* The live hours summary ("Mon – Fri · 8:30 am – 5 pm") is longer than the static "8:30–5", so size it like a sentence. */
+.facts dd[data-live-set] { font-family: var(--f-sans); font-size: 1.05rem; font-weight: 500; line-height: 1.35; margin-top: 8px; }
 
 /* ---------- Story ---------- */
 .story__grid { display: grid; gap: clamp(32px, 6vw, 80px); align-items: center; }
@@ -320,6 +322,14 @@ main:focus { outline: none; }
 .inquiry__error { color: #A3261B; font-weight: 600; margin-bottom: 12px; }
 .inquiry__fine { margin-top: 12px; font-size: .85rem; color: var(--muted); text-align: center; }
 .inquiry__fine a { color: var(--bronze); }
+.inquiry__status { margin-bottom: 12px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--sage-soft); color: var(--ink); font-weight: 500; }
+.inquiry.is-sending { opacity: .75; }
+.visit__hours-note { display: block; font-size: .9rem; color: var(--muted); }
+
+/* Notice banner (text from the admin; hidden until there is one) */
+.notice { background: var(--sage-soft); color: var(--ink); font-size: .95rem; line-height: 1.35; border-bottom: 1px solid var(--line); }
+.notice__inner { margin: 0; padding-block: 10px; }
+.notice strong { font-size: .75rem; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--bronze); margin-right: .5em; }
 
 /* ---------- Gallery ---------- */
 .masonry { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }

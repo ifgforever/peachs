@@ -1,4 +1,6 @@
-/* Rome's Joy Companies concept: nav, hero word rotator, mailto contact form, reveals. */
+/* Rome's Joy Companies concept: nav, hero word rotator, contact form, reveals. */
+import { sendInquiry, formFields, setBusy } from '../../assets/js/live.js';
+
 (function () {
   'use strict';
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -52,12 +54,15 @@
     });
   });
 
-  /* ---- Contact form: compose a mailto (no backend in this concept) ---- */
+  /* ---- Contact form: POST to the admin API (saved + emailed); falls back to a mailto if that fails ---- */
   var form = document.querySelector('[data-mailto-form]');
   if (form) {
     var err = form.querySelector('[data-form-error]');
+    var status = form.querySelector('[data-form-status]');
+    var setStatus = function (message) { status.textContent = message; status.hidden = !message; };
     form.addEventListener('submit', function (e) {
       e.preventDefault();
+      if (form.getAttribute('aria-busy') === 'true') return;
       var name = form.elements.name, email = form.elements.email, msg = form.elements.message;
       var bad = [];
       [name, email, msg].forEach(function (f) {
@@ -73,11 +78,27 @@
       }
       err.hidden = true;
       var topic = form.elements.topic.value;
-      var body = 'Name: ' + name.value.trim() + '\nEmail: ' + email.value.trim() +
-        (form.elements.phone.value.trim() ? '\nPhone: ' + form.elements.phone.value.trim() : '') +
-        '\nTopic: ' + topic + '\n\n' + msg.value.trim();
-      window.location.href = 'mailto:ordering@romesjoy.com?subject=' +
-        encodeURIComponent('Website inquiry: ' + topic) + '&body=' + encodeURIComponent(body);
+      var fields = formFields(form);
+      var payload = {
+        name: fields.name, email: fields.email, phone: fields.phone, message: fields.message,
+        Topic: topic, website: fields.website
+      };
+      var openMailApp = function () {
+        var body = 'Name: ' + name.value.trim() + '\nEmail: ' + email.value.trim() +
+          (form.elements.phone.value.trim() ? '\nPhone: ' + form.elements.phone.value.trim() : '') +
+          '\nTopic: ' + topic + '\n\n' + msg.value.trim();
+        window.location.href = 'mailto:ordering@romesjoy.com?subject=' +
+          encodeURIComponent('Website inquiry: ' + topic) + '&body=' + encodeURIComponent(body);
+        setStatus('We couldn’t send that from here, so your email app should open with the message filled in. If it didn’t, email ordering@romesjoy.com.');
+      };
+      setBusy(form, true);
+      setStatus('Sending…');
+      sendInquiry('romesjoy', 'contact', payload).then(function () {
+        form.reset();
+        setStatus('Thanks, we got your message. We’ll reply within one business day.');
+        status.setAttribute('tabindex', '-1');
+        status.focus();
+      }, openMailApp).finally(function () { setBusy(form, false); });
     });
   }
 
